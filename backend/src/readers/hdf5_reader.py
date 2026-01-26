@@ -85,8 +85,38 @@ class HDF5Reader:
                                     'type': child_type,
                                     'shape': list(child.shape),
                                     'dtype': str(child.dtype),
-                                    'size': child.size
+                                    'size': child.size,
+                                    'ndim': child.ndim
                                 }
+                                
+                                # Add chunk info if available
+                                if child.chunks:
+                                    child_info['chunks'] = list(child.chunks)
+                                
+                                # Add compression info if available
+                                if child.compression:
+                                    child_info['compression'] = child.compression
+                                
+                                # Add attributes (limit to 10 for performance)
+                                if hasattr(child, 'attrs') and len(child.attrs) > 0:
+                                    attrs = {}
+                                    for attr_name in list(child.attrs.keys())[:10]:
+                                        try:
+                                            attr_value = child.attrs[attr_name]
+                                            # Convert to JSON-serializable type
+                                            if isinstance(attr_value, bytes):
+                                                attr_value = attr_value.decode('utf-8', errors='ignore')
+                                            elif hasattr(attr_value, 'tolist'):
+                                                attr_value = attr_value.tolist()
+                                            attrs[attr_name] = attr_value
+                                        except Exception as e:
+                                            logger.warning(f"Could not read attribute '{attr_name}': {e}")
+                                            attrs[attr_name] = f"<unreadable>"
+                                    
+                                    child_info['attributes'] = attrs
+                                    child_info['num_attributes'] = len(child.attrs)
+                                    if len(child.attrs) > 10:
+                                        child_info['attributes_truncated'] = True
                             else:
                                 child_type = 'unknown'
                                 child_info = {

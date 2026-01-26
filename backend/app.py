@@ -21,12 +21,15 @@ logger = logging.getLogger(__name__)
 
 # Initialize Flask app
 app = Flask(__name__)
+app.url_map.strict_slashes = False  # Prevent redirects that break CORS
 
-# Configure CORS
-cors_origins = os.getenv('CORS_ORIGINS', '').split(',')
-CORS(app, origins=cors_origins)
+# Configure CORS - Allow all origins for development
+CORS(app, 
+     resources={r"/*": {"origins": "*"}},
+     methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+     allow_headers=['Content-Type', 'Authorization'])
 
-logger.info(f"CORS configured with origins: {cors_origins}")
+logger.info("CORS configured to allow all origins")
 
 
 # Health check endpoint
