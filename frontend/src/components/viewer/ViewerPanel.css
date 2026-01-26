@@ -1,0 +1,135 @@
+/* Viewer Panel Styles - Simple Text Layout */
+.viewer-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-primary);
+    overflow: hidden;
+}
+
+.panel-canvas {
+    flex: 1;
+    overflow-y: auto;
+    padding: var(--spacing-xl);
+}
+
+/* Panel States */
+.panel-state {
+    padding: var(--spacing-xl) 0;
+}
+
+.state-text {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    line-height: 1.6;
+}
+
+.state-text.error-text {
+    color: var(--error);
+}
+
+/* Loading Spinner */
+.loading-spinner {
+    width: 32px;
+    height: 32px;
+    border: 3px solid var(--border);
+    border-top-color: var(--primary);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin-bottom: var(--spacing-md);
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* Simple Metadata Layout */
+.metadata-simple {
+    max-width: 800px;
+}
+
+/* Info Rows */
+.info-row {
+    display: flex;
+    padding: var(--spacing-sm) 0;
+    border-bottom: 1px solid var(--border);
+    gap: var(--spacing-xl);
+}
+
+.info-row:last-child {
+    border-bottom: none;
+}
+
+.info-row.indent {
+    padding-left: var(--spacing-lg);
+}
+
+.info-label {
+    min-width: 160px;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    flex-shrink: 0;
+}
+
+.info-value {
+    font-size: 0.875rem;
+    color: var(--text-primary);
+    word-break: break-word;
+    flex: 1;
+}
+
+.info-value.mono {
+    font-family: 'Monaco', 'Courier New', monospace;
+    font-size: 0.8125rem;
+}
+
+/* Section Titles */
+.info-section-title {
+    font-size: 0.875rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-top: var(--spacing-xl);
+    margin-bottom: var(--spacing-sm);
+    padding-bottom: var(--spacing-xs);
+    border-bottom: 2px solid var(--border);
+}
+
+/* JSON View */
+.json-view {
+    background: #1e1e1e;
+    color: #d4d4d4;
+    padding: var(--spacing-lg);
+    border-radius: var(--radius-md);
+    font-family: 'Monaco', 'Courier New', monospace;
+    font-size: 0.8125rem;
+    line-height: 1.6;
+    overflow-x: auto;
+    margin: var(--spacing-md) 0;
+    border: 1px solid var(--border);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .panel-canvas {
+        padding: var(--spacing-md);
+    }
+
+    .info-row {
+        flex-direction: column;
+        gap: var(--spacing-xs);
+    }
+
+    .info-label {
+        min-width: auto;
+        font-weight: 700;
+    }
+
+    .metadata-simple {
+        max-width: 100%;
+    }
+}

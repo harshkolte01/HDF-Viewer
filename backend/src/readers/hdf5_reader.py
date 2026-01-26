@@ -134,16 +134,103 @@ class HDF5Reader:
             logger.error(f"Error reading HDF5 children from '{key}' at '{path}': {e}")
             raise
     
+    def _get_type_info(self, dtype) -> Dict[str, Any]:
+        """Extract detailed type information from h5py dtype"""
+        import numpy as np
+        
+        type_info = {}
+        
+        # Determine type class
+        if dtype.kind in ['i', 'u']:  # Integer types
+            type_info['class'] = 'Integer'
+            type_info['signed'] = dtype.kind == 'i'
+        elif dtype.kind == 'f':  # Float types
+            type_info['class'] = 'Float'
+        elif dtype.kind in ['S', 'U', 'O']:  # String types
+            type_info['class'] = 'String'
+        elif dtype.kind == 'b':  # Boolean
+            type_info['class'] = 'Boolean'
+        else:
+            type_info['class'] = 'Unknown'
+        
+        # Endianness
+        if dtype.byteorder == '<':
+            type_info['endianness'] = 'little-endian'
+        elif dtype.byteorder == '>':
+            type_info['endianness'] = 'big-endian'
+        elif dtype.byteorder == '=':
+            type_info['endianness'] = 'native'
+        else:
+            type_info['endianness'] = 'not-applicable'
+        
+        # Size in bits
+        type_info['size'] = dtype.itemsize * 8
+        
+        return type_info
+    
+    def _get_raw_type_info(self, dtype) -> Dict[str, Any]:
+        """Extract raw type information for advanced users"""
+        raw_type = {
+            'type': dtype.num,
+            'size': dtype.itemsize,
+            'littleEndian': dtype.byteorder in ['<', '='],
+            'vlen': dtype.metadata is not None and 'vlen' in str(dtype.metadata),
+            'total_size': dtype.itemsize
+        }
+        
+        if dtype.kind in ['i', 'u']:
+            raw_type['signed'] = dtype.kind == 'i'
+        
+        return raw_type
+    
+    def _get_filters_info(self, dataset) -> List[Dict[str, Any]]:
+        """Extract filter/compression information"""
+        filters = []
+        
+        # Check for compression
+        if dataset.compression:
+            filter_info = {
+                'name': dataset.compression,
+                'id': 0  # Default ID
+            }
+            
+            if dataset.compression == 'gzip':
+                filter_info['id'] = 1
+                if dataset.compression_opts:
+                    filter_info['level'] = dataset.compression_opts
+            elif dataset.compression == 'lzf':
+                filter_info['id'] = 32000
+            elif dataset.compression == 'szip':
+                filter_info['id'] = 4
+            
+            filters.append(filter_info)
+        
+        # Check for shuffle filter
+        if hasattr(dataset, 'shuffle') and dataset.shuffle:
+            filters.append({
+                'name': 'shuffle',
+                'id': 2
+            })
+        
+        # Check for fletcher32 checksum
+        if hasattr(dataset, 'fletcher32') and dataset.fletcher32:
+            filters.append({
+                'name': 'fletcher32',
+                'id': 3
+            })
+        
+        return filters
+    
     def get_metadata(self, key: str, path: str) -> Dict[str, Any]:
         """
-        Get metadata for a specific path in HDF5 file
+        Get comprehensive metadata for a specific path in HDF5 file
         
         Args:
             key: S3 object key (filename)
             path: HDF5 internal path
             
         Returns:
-            Metadata dictionary
+            Comprehensive metadata dictionary with type info, filters, etc.
         """
         try:
             s3_path = self._get_s3_path(key)
@@ -158,33 +245,12 @@ class HDF5Reader:
                     
                     # Base metadata
                     metadata = {
-                        'name': path.split('/')[-1],
+                        'name': path.split('/')[-1] if path != '/' else '',
                         'path': path,
                     }
                     
-                    # Type-specific metadata
-                    if isinstance(obj, h5py.Group):
-                        metadata['type'] = 'group'
-                        metadata['num_children'] = len(obj.keys()) if hasattr(obj, 'keys') else 0
-                    elif isinstance(obj, h5py.Dataset):
-                        metadata['type'] = 'dataset'
-                        metadata['shape'] = list(obj.shape)
-                        metadata['dtype'] = str(obj.dtype)
-                        metadata['size'] = obj.size
-                        metadata['ndim'] = obj.ndim
-                        
-                        # Add chunk info if available
-                        if obj.chunks:
-                            metadata['chunks'] = list(obj.chunks)
-                        
-                        # Add compression info if available
-                        if obj.compression:
-                            metadata['compression'] = obj.compression
-                    else:
-                        metadata['type'] = 'unknown'
-                    
-                    # Get attributes (truncate if too many)
-                    attrs = {}
+                    # Get attributes first (common to all types)
+                    attrs = []
                     if hasattr(obj, 'attrs'):
                         for attr_name in list(obj.attrs.keys())[:20]:  # Limit to 20 attrs
                             try:
@@ -194,16 +260,48 @@ class HDF5Reader:
                                     attr_value = attr_value.decode('utf-8', errors='ignore')
                                 elif hasattr(attr_value, 'tolist'):
                                     attr_value = attr_value.tolist()
-                                attrs[attr_name] = attr_value
+                                attrs.append({
+                                    'name': attr_name,
+                                    'value': attr_value
+                                })
                             except Exception as e:
                                 logger.warning(f"Could not read attribute '{attr_name}': {e}")
-                                attrs[attr_name] = f"<unreadable: {type(attr_value).__name__}>"
                     
                     metadata['attributes'] = attrs
-                    metadata['num_attributes'] = len(obj.attrs) if hasattr(obj, 'attrs') else 0
                     
-                    if metadata['num_attributes'] > 20:
-                        metadata['attributes_truncated'] = True
+                    # Type-specific metadata
+                    if isinstance(obj, h5py.Group):
+                        metadata['kind'] = 'group'
+                        metadata['type'] = 'group'
+                        metadata['num_children'] = len(obj.keys()) if hasattr(obj, 'keys') else 0
+                        
+                    elif isinstance(obj, h5py.Dataset):
+                        metadata['kind'] = 'dataset'
+                        metadata['type'] = 'dataset'
+                        metadata['shape'] = list(obj.shape)
+                        metadata['dtype'] = str(obj.dtype)
+                        metadata['size'] = obj.size
+                        metadata['ndim'] = obj.ndim
+                        
+                        # Detailed type information
+                        metadata['type'] = self._get_type_info(obj.dtype)
+                        metadata['rawType'] = self._get_raw_type_info(obj.dtype)
+                        
+                        # Filters (compression, shuffle, etc.)
+                        metadata['filters'] = self._get_filters_info(obj)
+                        
+                        # Add chunk info if available
+                        if obj.chunks:
+                            metadata['chunks'] = list(obj.chunks)
+                        
+                        # Add compression info if available
+                        if obj.compression:
+                            metadata['compression'] = obj.compression
+                            if obj.compression_opts:
+                                metadata['compression_opts'] = obj.compression_opts
+                    else:
+                        metadata['kind'] = 'unknown'
+                        metadata['type'] = 'unknown'
             
             logger.info(f"Retrieved metadata for '{path}' in '{key}'")
             return metadata
