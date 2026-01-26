@@ -187,12 +187,14 @@ function SidebarTree({ fileKey, selectedPath, onSelect }) {
 
       <div className="sidebar-section">
         <div className="section-label">Structure</div>
-        <ul className="tree-root">
-          {treeError && <li className="tree-status error">{treeError}</li>}
-          {treeRoot ? renderNode(treeRoot) : (
-            <li className="tree-status">Select a file</li>
-          )}
-        </ul>
+        <div className="sidebar-tree">
+          <ul className="tree-root">
+            {treeError && <li className="tree-status error">{treeError}</li>}
+            {treeRoot ? renderNode(treeRoot) : (
+              <li className="tree-status">Select a file</li>
+            )}
+          </ul>
+        </div>
       </div>
     </aside>
   );
