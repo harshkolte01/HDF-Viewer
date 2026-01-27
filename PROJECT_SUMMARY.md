@@ -148,8 +148,8 @@ HDF Viewer/
 │   │       ├── files.py          # File routes
 │   │       └── hdf5.py           # HDF5 routes
 │   └── docs/
-│       ├── BACKEND_SUMMARY.md
-│       ├── METADATA_ENHANCEMENT_V2.md
+│       ├── BACKEND.md
+│       ├── AGENT_CONTEXT_2026-01-27.md
 │       └── ...
 │
 └── frontend/
@@ -346,8 +346,8 @@ GET /files/test1.h5/meta?path=/Unnamed/Connections
 
 ## 📚 Documentation
 
-- ✅ `backend/docs/BACKEND_SUMMARY.md`
-- ✅ `backend/docs/METADATA_ENHANCEMENT_V2.md`
+- ✅ `backend/docs/BACKEND.md`
+- ✅ `backend/docs/AGENT_CONTEXT_2026-01-27.md`
 - ✅ `frontend/docs/DASHBOARD_UI.md`
 - ✅ `frontend/docs/HOME_PAGE.md`
 - ✅ `frontend/docs/API_SETUP.md`
