@@ -3,12 +3,23 @@ HDF5 file reader with S3 support
 Provides lazy tree navigation and metadata extraction
 """
 import os
+import math
 import logging
+from typing import List, Dict, Any, Optional, Tuple
 import h5py
 import s3fs
-from typing import List, Dict, Any, Optional
+import numpy as np
 
 logger = logging.getLogger(__name__)
+
+MAX_PREVIEW_ELEMENTS = 250_000
+MAX_HEATMAP_SIZE = 512
+MAX_HEATMAP_ELEMENTS = 200_000
+MAX_LINE_POINTS = 5000
+MIN_LINE_POINTS = 2000
+TABLE_1D_MAX = 1000
+TABLE_2D_MAX = 200
+MAX_STATS_SAMPLE = 100_000
 
 
 class HDF5Reader:
@@ -29,10 +40,144 @@ class HDF5Reader:
         )
         
         logger.info(f"HDF5Reader initialized with S3 endpoint: {self.endpoint}")
-    
+
     def _get_s3_path(self, key: str) -> str:
         """Convert object key to S3 path"""
         return f"{self.bucket}/{key}"
+
+    def get_dataset_info(self, key: str, path: str) -> Dict[str, Any]:
+        """Get lightweight dataset info (shape, dtype, ndim) without full reads."""
+        try:
+            s3_path = self._get_s3_path(key)
+            logger.info(f"Reading HDF5 dataset info from '{key}' at path '{path}'")
+
+            with self.s3.open(s3_path, 'rb') as f:
+                with h5py.File(f, 'r') as hdf:
+                    if path not in hdf:
+                        raise ValueError(f"Path '{path}' not found in '{key}'")
+
+                    obj = hdf[path]
+                    if not isinstance(obj, h5py.Dataset):
+                        raise TypeError(f"Path '{path}' is not a dataset")
+
+                    return {
+                        'shape': list(obj.shape),
+                        'ndim': obj.ndim,
+                        'dtype': str(obj.dtype)
+                    }
+        except Exception as e:
+            logger.error(f"Error reading HDF5 dataset info from '{key}' at '{path}': {e}")
+            raise
+
+    def normalize_preview_axes(
+        self,
+        shape: List[int],
+        display_dims_param: Optional[str] = None,
+        fixed_indices_param: Optional[str] = None
+    ) -> Tuple[Tuple[int, int], Dict[int, int]]:
+        """Normalize display dims and fixed indices for preview slicing."""
+        ndim = len(shape)
+
+        display_dims = self._parse_display_dims(display_dims_param, ndim)
+        fixed_indices = self._parse_fixed_indices(fixed_indices_param, ndim)
+
+        for dim in list(fixed_indices.keys()):
+            if dim in display_dims:
+                del fixed_indices[dim]
+
+        for dim in range(ndim):
+            if dim in display_dims:
+                continue
+            if dim not in fixed_indices:
+                fixed_indices[dim] = self._default_index(shape, dim)
+            else:
+                fixed_indices[dim] = self._clamp_index(shape, dim, fixed_indices[dim])
+
+        return display_dims, fixed_indices
+
+    def get_preview(
+        self,
+        key: str,
+        path: str,
+        display_dims: Optional[Tuple[int, int]] = None,
+        fixed_indices: Optional[Dict[int, int]] = None,
+        mode: str = 'auto',
+        max_size: Optional[int] = None
+    ) -> Dict[str, Any]:
+        """Generate a preview payload for a dataset."""
+        try:
+            s3_path = self._get_s3_path(key)
+            logger.info(f"Generating HDF5 preview from '{key}' at path '{path}'")
+
+            with self.s3.open(s3_path, 'rb') as f:
+                with h5py.File(f, 'r') as hdf:
+                    if path not in hdf:
+                        raise ValueError(f"Path '{path}' not found in '{key}'")
+
+                    obj = hdf[path]
+                    if not isinstance(obj, h5py.Dataset):
+                        raise TypeError(f"Path '{path}' is not a dataset")
+
+                    shape = list(obj.shape)
+                    ndim = obj.ndim
+                    dtype = obj.dtype
+                    dtype_str = str(dtype)
+
+                    preview_type = '1d' if ndim == 1 else '2d' if ndim == 2 else 'nd'
+                    numeric = self._is_numeric_dtype(dtype)
+
+                    stats = self._compute_stats(obj, shape, numeric)
+
+                    if ndim == 1:
+                        table, plot = self._preview_1d(obj, numeric)
+                        profile = None
+                        display_dims_out = None
+                        fixed_indices_out = {}
+                    else:
+                        if display_dims is None or fixed_indices is None:
+                            display_dims, fixed_indices = self.normalize_preview_axes(
+                                shape,
+                                None,
+                                None
+                            )
+
+                        max_heatmap_size = min(max_size or MAX_HEATMAP_SIZE, MAX_HEATMAP_SIZE)
+                        table, plot, profile = self._preview_2d(
+                            obj,
+                            shape,
+                            display_dims,
+                            fixed_indices,
+                            max_heatmap_size,
+                            numeric
+                        )
+                        display_dims_out = list(display_dims)
+                        fixed_indices_out = fixed_indices
+
+                    return {
+                        'key': key,
+                        'path': path,
+                        'dtype': dtype_str,
+                        'shape': shape,
+                        'ndim': ndim,
+                        'preview_type': preview_type,
+                        'mode': mode,
+                        'display_dims': display_dims_out,
+                        'fixed_indices': fixed_indices_out,
+                        'stats': stats,
+                        'table': table,
+                        'plot': plot,
+                        'profile': profile,
+                        'limits': {
+                            'max_elements': MAX_PREVIEW_ELEMENTS,
+                            'max_heatmap_size': min(max_size or MAX_HEATMAP_SIZE, MAX_HEATMAP_SIZE),
+                            'max_line_points': MAX_LINE_POINTS,
+                            'table_1d_max': TABLE_1D_MAX,
+                            'table_2d_max': TABLE_2D_MAX
+                        }
+                    }
+        except Exception as e:
+            logger.error(f"Error generating HDF5 preview from '{key}' at '{path}': {e}")
+            raise
     
     def get_children(self, key: str, path: str = '/') -> List[Dict[str, Any]]:
         """
@@ -136,8 +281,6 @@ class HDF5Reader:
     
     def _get_type_info(self, dtype) -> Dict[str, Any]:
         """Extract detailed type information from h5py dtype"""
-        import numpy as np
-        
         type_info = {}
         
         # Determine type class
@@ -220,6 +363,343 @@ class HDF5Reader:
             })
         
         return filters
+
+    def _parse_display_dims(self, param: Optional[str], ndim: int) -> Tuple[int, int]:
+        if ndim <= 1:
+            return (0, 0)
+        if not param:
+            return (ndim - 2, ndim - 1)
+
+        dims = []
+        for part in param.split(','):
+            part = part.strip()
+            if not part:
+                continue
+            try:
+                dim = int(part)
+            except ValueError:
+                continue
+            if dim < 0:
+                dim = ndim + dim
+            if dim < 0 or dim >= ndim:
+                continue
+            if dim not in dims:
+                dims.append(dim)
+
+        if len(dims) >= 2:
+            return (dims[0], dims[1])
+        return (ndim - 2, ndim - 1)
+
+    def _parse_fixed_indices(self, param: Optional[str], ndim: int) -> Dict[int, int]:
+        indices: Dict[int, int] = {}
+        if not param:
+            return indices
+        for part in param.split(','):
+            part = part.strip()
+            if not part:
+                continue
+            if '=' in part:
+                dim_str, idx_str = part.split('=', 1)
+            elif ':' in part:
+                dim_str, idx_str = part.split(':', 1)
+            else:
+                continue
+            try:
+                dim = int(dim_str.strip())
+                idx = int(idx_str.strip())
+            except ValueError:
+                continue
+            if dim < 0:
+                dim = ndim + dim
+            if dim < 0 or dim >= ndim:
+                continue
+            indices[dim] = idx
+        return indices
+
+    def _default_index(self, shape: List[int], dim: int) -> int:
+        if shape[dim] <= 0:
+            return 0
+        return shape[dim] // 2
+
+    def _clamp_index(self, shape: List[int], dim: int, index: int) -> int:
+        if shape[dim] <= 0:
+            return 0
+        return max(0, min(index, shape[dim] - 1))
+
+    def _is_numeric_dtype(self, dtype) -> bool:
+        try:
+            return np.issubdtype(dtype, np.number) or np.issubdtype(dtype, np.bool_)
+        except Exception:
+            return False
+
+    def _total_elements(self, shape: List[int]) -> int:
+        total = 1
+        for dim in shape:
+            total *= int(dim)
+        return total
+
+    def _compute_strides(self, shape: List[int], target: int) -> List[int]:
+        total = self._total_elements(shape)
+        if total == 0:
+            return [1 for _ in shape]
+        if total <= target:
+            return [1 for _ in shape]
+        ndim = len(shape)
+        base = math.ceil((total / target) ** (1.0 / max(ndim, 1)))
+        return [max(1, int(base)) for _ in shape]
+
+    def _compute_stats(self, dataset, shape: List[int], numeric: bool) -> Dict[str, Any]:
+        if not numeric:
+            return {
+                'supported': False,
+                'reason': 'non-numeric'
+            }
+
+        total = self._total_elements(shape)
+        if total == 0:
+            return {
+                'supported': False,
+                'reason': 'empty'
+            }
+
+        strides = self._compute_strides(shape, MAX_STATS_SAMPLE)
+        indexer = tuple(slice(None, None, stride) for stride in strides)
+        sample = dataset[indexer]
+        arr = np.asarray(sample).ravel()
+
+        if arr.size == 0:
+            return {
+                'supported': False,
+                'reason': 'empty'
+            }
+
+        if np.iscomplexobj(arr):
+            return {
+                'supported': False,
+                'reason': 'complex'
+            }
+
+        if arr.size > MAX_STATS_SAMPLE:
+            arr = arr[:MAX_STATS_SAMPLE]
+
+        sampled = arr.size < total
+
+        arr = arr.astype(float, copy=False)
+        min_val = np.nanmin(arr)
+        max_val = np.nanmax(arr)
+        mean_val = np.nanmean(arr)
+        std_val = np.nanstd(arr)
+
+        return {
+            'supported': True,
+            'min': self._safe_number(min_val),
+            'max': self._safe_number(max_val),
+            'mean': self._safe_number(mean_val),
+            'std': self._safe_number(std_val),
+            'sample_size': int(arr.size),
+            'sampled': sampled,
+            'method': 'strided'
+        }
+
+    def _preview_1d(self, dataset, numeric: bool) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+        length = int(dataset.shape[0]) if dataset.shape else 0
+
+        table_n = min(TABLE_1D_MAX, length)
+        table_values = dataset[:table_n] if table_n > 0 else []
+        table_values = self._sanitize(table_values)
+
+        table = {
+            'kind': '1d',
+            'values': table_values,
+            'count': len(table_values),
+            'start': 0,
+            'step': 1
+        }
+
+        if not numeric:
+            plot = {
+                'supported': False,
+                'reason': 'non-numeric'
+            }
+            return table, plot
+
+        if length <= MAX_LINE_POINTS:
+            step = 1
+            y_values = dataset[:] if length > 0 else []
+        else:
+            target = min(MAX_LINE_POINTS, max(MIN_LINE_POINTS, 3000))
+            step = max(1, int(math.ceil(length / target)))
+            y_values = dataset[::step]
+            if len(y_values) > MAX_LINE_POINTS:
+                y_values = y_values[:MAX_LINE_POINTS]
+
+        y_values = self._sanitize(y_values)
+        x_values = list(range(0, step * len(y_values), step))
+
+        plot = {
+            'type': 'line',
+            'x': x_values,
+            'y': y_values,
+            'count': len(y_values),
+            'x_start': 0,
+            'x_step': step
+        }
+
+        return table, plot
+
+    def _preview_2d(
+        self,
+        dataset,
+        shape: List[int],
+        display_dims: Tuple[int, int],
+        fixed_indices: Dict[int, int],
+        max_heatmap_size: int,
+        numeric: bool
+    ) -> Tuple[Dict[str, Any], Dict[str, Any], Optional[Dict[str, Any]]]:
+        dim_row, dim_col = display_dims
+        rows = int(shape[dim_row])
+        cols = int(shape[dim_col])
+        needs_transpose = dim_row > dim_col
+
+        table_rows = min(TABLE_2D_MAX, rows)
+        table_cols = min(TABLE_2D_MAX, cols)
+        table_indexer = self._build_indexer(
+            len(shape),
+            display_dims,
+            fixed_indices,
+            {
+                dim_row: slice(0, table_rows, 1),
+                dim_col: slice(0, table_cols, 1)
+            }
+        )
+        table_data = dataset[tuple(table_indexer)] if table_rows > 0 and table_cols > 0 else []
+        if needs_transpose and hasattr(table_data, 'T'):
+            table_data = table_data.T
+        table_data = self._sanitize(table_data)
+        table = {
+            'kind': '2d',
+            'data': table_data,
+            'shape': [table_rows, table_cols],
+            'row_start': 0,
+            'col_start': 0,
+            'row_step': 1,
+            'col_step': 1
+        }
+
+        if not numeric or rows == 0 or cols == 0:
+            plot = {
+                'supported': False,
+                'reason': 'non-numeric' if not numeric else 'empty'
+            }
+            profile = None
+            return table, plot, profile
+
+        target_rows = min(rows, max_heatmap_size)
+        target_cols = min(cols, max_heatmap_size)
+        if target_rows * target_cols > MAX_HEATMAP_ELEMENTS:
+            scale = math.sqrt((target_rows * target_cols) / MAX_HEATMAP_ELEMENTS)
+            target_rows = max(1, int(math.floor(target_rows / scale)))
+            target_cols = max(1, int(math.floor(target_cols / scale)))
+
+        step_r = max(1, int(math.ceil(rows / target_rows)))
+        step_c = max(1, int(math.ceil(cols / target_cols)))
+
+        heatmap_indexer = self._build_indexer(
+            len(shape),
+            display_dims,
+            fixed_indices,
+            {
+                dim_row: slice(0, rows, step_r),
+                dim_col: slice(0, cols, step_c)
+            }
+        )
+        heatmap = dataset[tuple(heatmap_indexer)]
+        if needs_transpose and hasattr(heatmap, 'T'):
+            heatmap = heatmap.T
+        heatmap = self._sanitize(heatmap)
+
+        plot = {
+            'type': 'heatmap',
+            'data': heatmap,
+            'shape': [len(heatmap), len(heatmap[0]) if heatmap and isinstance(heatmap[0], list) else 0],
+            'row_start': 0,
+            'col_start': 0,
+            'row_step': step_r,
+            'col_step': step_c
+        }
+
+        row_index = rows // 2
+        target_line = min(MAX_LINE_POINTS, max(MIN_LINE_POINTS, 3000))
+        step_line = max(1, int(math.ceil(cols / target_line)))
+        line_indexer = self._build_indexer(
+            len(shape),
+            display_dims,
+            fixed_indices,
+            {
+                dim_row: row_index,
+                dim_col: slice(0, cols, step_line)
+            }
+        )
+        line_values = dataset[tuple(line_indexer)]
+        if len(line_values) > MAX_LINE_POINTS:
+            line_values = line_values[:MAX_LINE_POINTS]
+        line_values = self._sanitize(line_values)
+        line_x = list(range(0, step_line * len(line_values), step_line))
+
+        profile = {
+            'type': 'row',
+            'index': row_index,
+            'x': line_x,
+            'y': line_values,
+            'count': len(line_values),
+            'x_start': 0,
+            'x_step': step_line,
+            'dim_row': dim_row,
+            'dim_col': dim_col
+        }
+
+        return table, plot, profile
+
+    def _build_indexer(
+        self,
+        ndim: int,
+        display_dims: Tuple[int, int],
+        fixed_indices: Dict[int, int],
+        dim_slices: Dict[int, Any]
+    ) -> List[Any]:
+        indexer: List[Any] = []
+        for dim in range(ndim):
+            if dim in display_dims:
+                indexer.append(dim_slices.get(dim, slice(None)))
+            else:
+                indexer.append(fixed_indices.get(dim, 0))
+        return indexer
+
+    def _safe_number(self, value: Any) -> Optional[float]:
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return None
+        if math.isfinite(number):
+            return number
+        return None
+
+    def _sanitize(self, data: Any) -> Any:
+        if isinstance(data, bytes):
+            return data.decode('utf-8', errors='ignore')
+        if isinstance(data, complex):
+            return str(data)
+        if isinstance(data, (np.generic,)):
+            return self._sanitize(data.item())
+        if isinstance(data, float):
+            return self._safe_number(data)
+        if isinstance(data, np.ndarray):
+            return [self._sanitize(item) for item in data.tolist()]
+        if isinstance(data, list):
+            return [self._sanitize(item) for item in data]
+        if isinstance(data, tuple):
+            return [self._sanitize(item) for item in data]
+        return data
     
     def get_metadata(self, key: str, path: str) -> Dict[str, Any]:
         """

@@ -67,6 +67,20 @@ All routes are registered in `backend/app.py`.
     - `rawType`: low-level dtype info.
     - `filters`: compression and filter pipeline list.
 
+- GET `/files/<key>/preview?path=/some/path`
+  - Returns a lightweight preview payload for datasets (fast render).
+  - Cached by `(key, etag, path, preview_type, display_dims, fixed_indices, max_size, mode)`.
+  - Common fields: `path, dtype, shape, ndim, preview_type`.
+  - `stats`: sample-based `min/max/mean/std` with `sample_size`.
+  - `table`: small 1D/2D sample for immediate display.
+  - `plot`: line (1D) or heatmap (2D/ND) payload with downsampling.
+  - `profile`: row profile for 2D/ND planes (downsampled).
+  - Optional params:
+    - `display_dims=1,2` (2D plane for ND, defaults to last two dims)
+    - `fixed_indices=0=5,1=10` (indices for non-display dims, defaults to middle)
+    - `max_size=512` (max heatmap dimension, clamped to 512)
+    - `mode=auto` (reserved for preview strategy)
+
 ## Caching
 - Files cache: 30 seconds (`_files_cache`).
 - HDF5 cache: 300 seconds (`_hdf5_cache`).

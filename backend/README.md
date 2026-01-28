@@ -165,6 +165,46 @@ The server will start on `http://0.0.0.0:5000`
   }
   ```
 
+### Get HDF5 Preview
+- **URL:** `/files/<key>/preview?path=<hdf5_path>`
+- **Method:** `GET`
+- **Description:** Returns a fast preview payload for datasets (stats + table + plot). **Cached by (key, etag, path, preview_type, display_dims, fixed_indices, max_size, mode)**
+- **Optional Parameters:**
+  - `display_dims=1,2` (2D plane for ND datasets, default: last two dims)
+  - `fixed_indices=0=5,1=10` (indices for non-display dims, default: middle)
+  - `max_size=512` (max heatmap dimension, clamped)
+  - `mode=auto`
+- **Response (example):**
+  ```json
+  {
+    "success": true,
+    "key": "data.hdf5",
+    "path": "/group1/dataset1",
+    "dtype": "float64",
+    "shape": [1000, 1000],
+    "ndim": 2,
+    "preview_type": "2d",
+    "stats": {
+      "supported": true,
+      "min": -1.2,
+      "max": 5.3,
+      "mean": 0.12,
+      "std": 1.05,
+      "sample_size": 100000,
+      "sampled": true
+    },
+    "table": {
+      "kind": "2d",
+      "shape": [200, 200]
+    },
+    "plot": {
+      "type": "heatmap",
+      "shape": [256, 256]
+    },
+    "cached": false
+  }
+  ```
+
 ### Benchmark Performance
 - **URL:** `/benchmark`
 - **Method:** `GET`
