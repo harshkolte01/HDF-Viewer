@@ -19,6 +19,7 @@ export const API_ENDPOINTS = {
     // HDF5 navigation
     FILE_CHILDREN: (key) => `/files/${encodeURIComponent(key)}/children`,
     FILE_META: (key) => `/files/${encodeURIComponent(key)}/meta`,
+    FILE_PREVIEW: (key) => `/files/${encodeURIComponent(key)}/preview`,
 
     // Benchmarking (optional)
     BENCHMARK: '/benchmark',

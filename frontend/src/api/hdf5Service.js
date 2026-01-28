@@ -45,6 +45,18 @@ export const getFileMeta = async (key, path) => {
 };
 
 /**
+ * Get preview payload for a specific dataset path
+ * @param {string} key - File key/name
+ * @param {string} path - HDF5 internal path
+ * @param {object} params - Optional preview parameters
+ * @returns {Promise<object>}
+ */
+export const getFilePreview = async (key, path, params = {}) => {
+    const endpoint = API_ENDPOINTS.FILE_PREVIEW(key);
+    return await get(endpoint, { path, ...params });
+};
+
+/**
  * Check server health
  * @returns {Promise<{status: string, timestamp: string, service: string}>}
  */
@@ -65,6 +77,7 @@ export default {
     refreshFiles,
     getFileChildren,
     getFileMeta,
+    getFilePreview,
     checkHealth,
     runBenchmark,
 };

@@ -13,6 +13,7 @@ export {
     refreshFiles,
     getFileChildren,
     getFileMeta,
+    getFilePreview,
     checkHealth,
     runBenchmark,
 } from './hdf5Service';
