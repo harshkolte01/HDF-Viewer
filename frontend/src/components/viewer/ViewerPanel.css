@@ -279,6 +279,55 @@
     font-weight: 600;
 }
 
+/* Dimension Control Buttons */
+.dim-controls-buttons {
+    display: flex;
+    gap: var(--spacing-sm);
+    margin-top: var(--spacing-md);
+    padding-top: var(--spacing-md);
+    border-top: 1px solid var(--border);
+}
+
+.dim-set-btn,
+.dim-reset-btn {
+    padding: 0.5rem 1rem;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border);
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    flex: 1;
+}
+
+.dim-set-btn {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: white;
+}
+
+.dim-set-btn:hover:not(:disabled) {
+    background: var(--primary-hover);
+    border-color: var(--primary-hover);
+}
+
+.dim-reset-btn {
+    background: var(--surface-alt);
+    border-color: var(--border);
+    color: var(--text-primary);
+}
+
+.dim-reset-btn:hover:not(:disabled) {
+    background: var(--surface);
+    border-color: var(--text-secondary);
+}
+
+.dim-set-btn:disabled,
+.dim-reset-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
 .preview-content {
     background: var(--surface);
     border: 1px solid var(--border);
@@ -484,18 +533,29 @@
 
 .preview-heatmap {
     width: 100%;
+    height: 100%;
     display: flex;
     justify-content: center;
+    align-items: center;
+    padding: var(--spacing-lg);
+}
+
+.heatmap-container {
+    width: 100%;
+    height: 100%;
+    min-height: 400px;
+    max-height: 800px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
 }
 
 .heatmap-canvas {
-    width: 100%;
-    max-width: 720px;
-    height: auto;
     border-radius: var(--radius-md);
     border: 1px solid var(--border);
-    background: var(--surface-alt);
-    image-rendering: pixelated;
+    background: var(--surface);
+    box-shadow: var(--shadow-sm);
+    cursor: crosshair;
 }
 
 /* Responsive */

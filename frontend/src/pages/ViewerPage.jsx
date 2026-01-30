@@ -46,9 +46,14 @@ function ViewerPage({ fileKey, onBack }) {
   const [displayTab, setDisplayTab] = useState('table');
   const [displayDims, setDisplayDims] = useState(null);
   const [fixedIndices, setFixedIndices] = useState({});
+  // Staging state for dimension controls
+  const [stagedDisplayDims, setStagedDisplayDims] = useState(null);
+  const [stagedFixedIndices, setStagedFixedIndices] = useState({});
   const [notation, setNotation] = useState('auto');
   const [lineGrid, setLineGrid] = useState(true);
   const [lineAspect, setLineAspect] = useState('line');
+  const [heatmapGrid, setHeatmapGrid] = useState(true);
+  const [heatmapColormap, setHeatmapColormap] = useState('viridis');
 
   const showHeatmap = useMemo(() => preview?.ndim >= 2, [preview]);
   const displayDimsKey = useMemo(() => {
@@ -65,9 +70,13 @@ function ViewerPage({ fileKey, onBack }) {
     setDisplayTab('table');
     setDisplayDims(null);
     setFixedIndices({});
+    setStagedDisplayDims(null);
+    setStagedFixedIndices({});
     setPreview(null);
     setPreviewError(null);
     setPreviewLoading(false);
+    setHeatmapGrid(true);
+    setHeatmapColormap('viridis');
   }, [fileKey, selectedPath]);
 
   useEffect(() => {
@@ -149,24 +158,21 @@ function ViewerPage({ fileKey, onBack }) {
         });
 
         setDisplayDims((current) => {
-          if (Array.isArray(current) && current.length === 2) {
-            return current;
-          }
-          if (Array.isArray(data?.display_dims)) {
-            return data.display_dims;
-          }
-          return current;
+          const newDims = Array.isArray(current) && current.length === 2
+            ? current
+            : Array.isArray(data?.display_dims) ? data.display_dims : [0, 1];
+          setStagedDisplayDims(newDims); // Sync staging state
+          return newDims;
         });
 
         setFixedIndices((current) => {
-          if (Object.keys(current).length > 0) {
-            return current;
+          let newIndices = current;
+          if (Object.keys(current).length === 0 && data?.fixed_indices) {
+            const next = normalizeFixedIndices(data.fixed_indices);
+            newIndices = Object.keys(next).length > 0 ? next : current;
           }
-          if (!data?.fixed_indices) {
-            return current;
-          }
-          const next = normalizeFixedIndices(data.fixed_indices);
-          return Object.keys(next).length > 0 ? next : current;
+          setStagedFixedIndices(newIndices); // Sync staging state
+          return newIndices;
         });
       } catch (err) {
         setPreviewError(err.message || 'Failed to load preview');
@@ -179,6 +185,66 @@ function ViewerPage({ fileKey, onBack }) {
 
     fetchPreview();
   }, [fileKey, selectedPath, viewMode, displayDimsKey, fixedIndicesKey]);
+
+  // Dimension control handlers for staging
+  const handleStagedDisplayDimsChange = (nextDims, shape) => {
+    if (!Array.isArray(nextDims) || nextDims.length !== 2) return;
+    logPreview('staged_display_dims_change', nextDims);
+    setStagedDisplayDims(nextDims);
+    
+    // Clear staged fixed indices for dimensions that are now display dimensions
+    setStagedFixedIndices((current) => {
+      const next = { ...current };
+      nextDims.forEach((dim) => {
+        delete next[dim];
+      });
+      // Add default values for non-display dimensions
+      shape?.forEach((size, dim) => {
+        if (nextDims.includes(dim)) return;
+        const max = Math.max(0, size - 1);
+        const fallback = Math.floor(size / 2);
+        if (!Number.isFinite(next[dim])) {
+          next[dim] = fallback;
+        } else {
+          next[dim] = Math.max(0, Math.min(max, next[dim]));
+        }
+      });
+      return next;
+    });
+  };
+
+  const handleStagedFixedIndexChange = (dim, value, size) => {
+    const max = Math.max(0, size - 1);
+    const clamped = Math.max(0, Math.min(max, value));
+    setStagedFixedIndices((current) => ({
+      ...current,
+      [dim]: clamped
+    }));
+  };
+
+  const handleApplyDimensions = () => {
+    // Apply staged changes to actual state
+    setDisplayDims(stagedDisplayDims);
+    setFixedIndices(stagedFixedIndices);
+  };
+
+  const handleResetDimensions = () => {
+    // Reset to defaults based on current preview data
+    if (preview?.shape) {
+      const defaultDisplayDims = preview.display_dims || [0, 1];
+      const defaultFixedIndices = {};
+      
+      // Set default fixed indices for non-display dimensions
+      preview.shape.forEach((size, dim) => {
+        if (!defaultDisplayDims.includes(dim)) {
+          defaultFixedIndices[dim] = Math.floor(size / 2);
+        }
+      });
+      
+      setStagedDisplayDims(defaultDisplayDims);
+      setStagedFixedIndices(defaultFixedIndices);
+    }
+  };
 
   const handleDisplayDimsChange = (nextDims, shape) => {
     if (!Array.isArray(nextDims) || nextDims.length !== 2) return;
@@ -240,6 +306,10 @@ function ViewerPage({ fileKey, onBack }) {
             onLineGridChange={setLineGrid}
             lineAspect={lineAspect}
             onLineAspectChange={setLineAspect}
+            heatmapGrid={heatmapGrid}
+            onHeatmapGridChange={setHeatmapGrid}
+            heatmapColormap={heatmapColormap}
+            onHeatmapColormapChange={setHeatmapColormap}
           />
         )}
         <ViewerPanel
@@ -254,11 +324,17 @@ function ViewerPage({ fileKey, onBack }) {
           activeTab={displayTab}
           displayDims={displayDims}
           fixedIndices={fixedIndices}
-          onDisplayDimsChange={handleDisplayDimsChange}
-          onFixedIndexChange={handleFixedIndexChange}
+          stagedDisplayDims={stagedDisplayDims}
+          stagedFixedIndices={stagedFixedIndices}
+          onDisplayDimsChange={handleStagedDisplayDimsChange}
+          onFixedIndexChange={handleStagedFixedIndexChange}
+          onApplyDimensions={handleApplyDimensions}
+          onResetDimensions={handleResetDimensions}
           notation={notation}
           lineGrid={lineGrid}
           lineAspect={lineAspect}
+          heatmapGrid={heatmapGrid}
+          heatmapColormap={heatmapColormap}
         />
       </section>
     </div>

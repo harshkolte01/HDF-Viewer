@@ -9,7 +9,11 @@ function PreviewToolbar({
   lineGrid,
   onLineGridChange,
   lineAspect,
-  onLineAspectChange
+  onLineAspectChange,
+  heatmapGrid,
+  onHeatmapGridChange,
+  heatmapColormap,
+  onHeatmapColormapChange
 }) {
   const handleNotation = (value) => {
     if (disabled) return;
@@ -24,6 +28,16 @@ function PreviewToolbar({
   const handleLineAspect = (value) => {
     if (disabled) return;
     onLineAspectChange?.(value);
+  };
+
+  const handleHeatmapGrid = () => {
+    if (disabled) return;
+    onHeatmapGridChange?.(!heatmapGrid);
+  };
+
+  const handleHeatmapColormap = (value) => {
+    if (disabled) return;
+    onHeatmapColormapChange?.(value);
   };
 
   return (
@@ -75,6 +89,41 @@ function PreviewToolbar({
                   type="button"
                   className={`aspect-tab ${lineAspect === value ? 'active' : ''}`}
                   onClick={() => handleLineAspect(value)}
+                  disabled={disabled}
+                >
+                  {value.charAt(0).toUpperCase() + value.slice(1)}
+                </button>
+              ))}
+            </div>
+          </div>
+          <button
+            type="button"
+            className="subbar-export"
+            onClick={onExport}
+            disabled={disabled}
+          >
+            Export
+          </button>
+        </div>
+      ) : activeTab === 'heatmap' ? (
+        <div className="subbar-actions">
+          <button
+            type="button"
+            className={`subbar-toggle ${heatmapGrid ? 'active' : ''}`}
+            onClick={handleHeatmapGrid}
+            disabled={disabled}
+          >
+            Grid
+          </button>
+          <div className="colormap-group">
+            <span className="colormap-label">Color</span>
+            <div className="colormap-tabs">
+              {['viridis', 'plasma', 'inferno', 'magma', 'cool', 'hot'].map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  className={`colormap-tab ${heatmapColormap === value ? 'active' : ''}`}
+                  onClick={() => handleHeatmapColormap(value)}
                   disabled={disabled}
                 >
                   {value.charAt(0).toUpperCase() + value.slice(1)}

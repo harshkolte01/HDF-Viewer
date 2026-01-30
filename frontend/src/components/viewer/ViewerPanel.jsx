@@ -573,67 +573,528 @@ const renderTable = (preview, notation) => {
   );
 };
 
-const renderHeatmap = (preview) => {
-  if (preview?.plot?.type !== 'heatmap') {
+const renderHeatmap = (preview, heatmapColormap, heatmapGrid) => {
+    if (!preview || preview.ndim < 2) {
+      return (
+        <div className="panel-state">
+          <div className="state-text">Heatmap requires 2D or higher dimensional data.</div>
+        </div>
+      );
+    }
+
+    // Get heatmap data based on preview structure
+    let heatmapData = null;
+    
+    if (preview.table?.kind === '2d' && preview.table?.data) {
+      // For 2D table data
+      heatmapData = preview.table.data;
+    } else if (preview.plot?.type === 'heatmap' && preview.plot?.data) {
+      // For explicit heatmap plot data
+      heatmapData = preview.plot.data;
+    } else if (Array.isArray(preview.data)) {
+      // For direct data array
+      heatmapData = preview.data;
+    }
+    
+    if (!heatmapData || !Array.isArray(heatmapData)) {
+      return (
+        <div className="panel-state">
+          <div className="state-text">No valid 2D data available for heatmap visualization.</div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="preview-heatmap">
+        <HeatmapChart 
+          data={heatmapData} 
+          shape={preview.shape}
+          colormap={heatmapColormap}
+          showGrid={heatmapGrid}
+        />
+      </div>
+    );
+  };
+
+function HeatmapChart({ data, shape, colormap = 'viridis', showGrid = true }) {
+  const containerRef = useRef(null);
+  const svgRef = useRef(null);
+  const dragRef = useRef(null);
+  const rawClipId = useId();
+  const clipId = useMemo(() => `heatmap-clip-${rawClipId.replace(/:/g, '')}`, [rawClipId]);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [zoom, setZoom] = useState(1);
+  const [panEnabled, setPanEnabled] = useState(false);
+  const [isPanning, setIsPanning] = useState(false);
+  const [hover, setHover] = useState(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [colorRange, setColorRange] = useState({ min: 0, max: 1 });
+
+  // Colormap definitions
+  const colormaps = {
+    viridis: [
+      [0.267, 0.004, 0.329], [0.282, 0.140, 0.457], [0.253, 0.265, 0.529],
+      [0.206, 0.371, 0.553], [0.163, 0.471, 0.558], [0.127, 0.566, 0.550],
+      [0.134, 0.658, 0.517], [0.266, 0.748, 0.441], [0.477, 0.821, 0.318],
+      [0.741, 0.873, 0.149], [0.993, 0.906, 0.143]
+    ],
+    plasma: [
+      [0.050, 0.030, 0.529], [0.258, 0.013, 0.615], [0.417, 0.006, 0.659],
+      [0.550, 0.044, 0.667], [0.663, 0.108, 0.643], [0.763, 0.178, 0.593],
+      [0.848, 0.255, 0.530], [0.916, 0.340, 0.449], [0.966, 0.435, 0.354],
+      [0.992, 0.549, 0.235], [0.987, 0.680, 0.079]
+    ],
+    inferno: [
+      [0.001, 0.000, 0.014], [0.116, 0.023, 0.109], [0.258, 0.013, 0.208],
+      [0.408, 0.038, 0.267], [0.550, 0.089, 0.282], [0.683, 0.163, 0.264],
+      [0.798, 0.255, 0.224], [0.888, 0.368, 0.162], [0.951, 0.498, 0.074],
+      [0.988, 0.645, 0.039], [0.988, 0.807, 0.144]
+    ],
+    magma: [
+      [0.001, 0.000, 0.014], [0.116, 0.021, 0.111], [0.258, 0.017, 0.210],
+      [0.408, 0.044, 0.269], [0.550, 0.096, 0.285], [0.683, 0.170, 0.267],
+      [0.798, 0.263, 0.227], [0.888, 0.375, 0.167], [0.951, 0.506, 0.079],
+      [0.988, 0.652, 0.042], [0.987, 0.991, 0.749]
+    ],
+    cool: [
+      [0.000, 1.000, 1.000], [0.125, 0.875, 1.000], [0.250, 0.750, 1.000],
+      [0.375, 0.625, 1.000], [0.500, 0.500, 1.000], [0.625, 0.375, 1.000],
+      [0.750, 0.250, 1.000], [0.875, 0.125, 1.000], [1.000, 0.000, 1.000]
+    ],
+    hot: [
+      [0.000, 0.000, 0.000], [0.333, 0.000, 0.000], [0.667, 0.000, 0.000],
+      [1.000, 0.000, 0.000], [1.000, 0.333, 0.000], [1.000, 0.667, 0.000],
+      [1.000, 1.000, 0.000], [1.000, 1.000, 0.333], [1.000, 1.000, 0.667],
+      [1.000, 1.000, 1.000]
+    ]
+  };
+
+  // Calculate data statistics and setup
+  const stats = useMemo(() => {
+    if (!data || !Array.isArray(data)) return { min: 0, max: 1, rows: 0, cols: 0 };
+    const rows = data.length;
+    const cols = data[0]?.length || 0;
+    if (rows === 0 || cols === 0) return { min: 0, max: 1, rows: 0, cols: 0 };
+    
+    const flat = data.flat().filter(v => Number.isFinite(Number(v)));
+    if (flat.length === 0) return { min: 0, max: 1, rows, cols };
+    
+    const numbers = flat.map(Number);
+    const min = Math.min(...numbers);
+    const max = Math.max(...numbers);
+    return { min, max: max === min ? min + 1 : max, rows, cols };
+  }, [data]);
+
+  useEffect(() => {
+    setColorRange(stats);
+  }, [stats]);
+
+  // Get color from colormap
+  const getColor = useCallback((value) => {
+    if (value === null || value === undefined || !Number.isFinite(value)) {
+      return '#888888'; // Gray for invalid values
+    }
+    
+    const normalized = stats.max === stats.min ? 0 : (value - stats.min) / (stats.max - stats.min);
+    const clamped = Math.max(0, Math.min(1, normalized));
+    const colors = colormaps[colormap] || colormaps.viridis;
+    const index = clamped * (colors.length - 1);
+    const lower = Math.floor(index);
+    const upper = Math.ceil(index);
+    const fraction = index - lower;
+    
+    if (lower === upper) {
+      const [r, g, b] = colors[lower];
+      return `rgb(${Math.round(r * 255)}, ${Math.round(g * 255)}, ${Math.round(b * 255)})`;
+    }
+    
+    const [r1, g1, b1] = colors[lower];
+    const [r2, g2, b2] = colors[upper];
+    return `rgb(${Math.round((r1 + (r2 - r1) * fraction) * 255)}, ${Math.round((g1 + (g2 - g1) * fraction) * 255)}, ${Math.round((b1 + (b2 - b1) * fraction) * 255)})`;
+  }, [colormap, stats]);
+
+  useEffect(() => {
+    setPan({ x: 0, y: 0 });
+    setZoom(1);
+    setHover(null);
+  }, [data]);
+
+  useEffect(() => {
+    const handleChange = () => {
+      setIsFullscreen(Boolean(document.fullscreenElement));
+    };
+    document.addEventListener('fullscreenchange', handleChange);
+    return () => document.removeEventListener('fullscreenchange', handleChange);
+  }, []);
+
+  if (!data || stats.rows === 0 || stats.cols === 0) {
     return (
       <div className="panel-state">
-        <div className="state-text">Heatmap preview not available.</div>
+        <div className="state-text">No valid heatmap data available.</div>
       </div>
     );
   }
 
-  return (
-    <div className="preview-heatmap">
-      <HeatmapCanvas data={preview.plot.data || []} />
-    </div>
-  );
-};
+  const width = 760;
+  const height = 420;
+  const minZoom = 1;
+  const maxZoom = 6;
+  const padding = 50;
+  const chartW = width - padding * 2 - 80; // Extra space for color bar
+  const chartH = height - padding * 2;
+  const cellWidth = chartW / stats.cols;
+  const cellHeight = chartH / stats.rows;
 
-function HeatmapCanvas({ data }) {
-  const canvasRef = useRef(null);
+  const clampValue = (value, min, max) => Math.max(min, Math.min(max, value));
+
+  const getPanBounds = (scale) => {
+    // Calculate the scaled chart dimensions
+    const scaledW = chartW * scale;
+    const scaledH = chartH * scale;
+    
+    // Calculate bounds to keep the scaled chart within the viewport
+    const maxPanX = Math.max(0, scaledW - chartW);
+    const maxPanY = Math.max(0, scaledH - chartH);
+    
+    return {
+      minX: -maxPanX,
+      maxX: 0,
+      minY: -maxPanY,
+      maxY: 0
+    };
+  };
+
+  const clampPan = (targetPan, scale) => {
+    const bounds = getPanBounds(scale);
+    return {
+      x: clampValue(targetPan.x, bounds.minX, bounds.maxX),
+      y: clampValue(targetPan.y, bounds.minY, bounds.maxY)
+    };
+  };
+
+  const applyZoom = (targetZoom, anchor = null) => {
+    const clamped = clampValue(targetZoom, minZoom, maxZoom);
+    if (Math.abs(clamped - zoom) < 0.01) return;
+    
+    setPan((current) => {
+      let nextPan = current;
+      
+      if (anchor) {
+        // Only zoom around anchor if it's within the chart area
+        const isInChart = anchor.x >= padding && anchor.x <= padding + chartW &&
+                         anchor.y >= padding && anchor.y <= padding + chartH;
+        
+        if (isInChart) {
+          // Calculate the chart-relative anchor point
+          const chartRelativeX = anchor.x - padding;
+          const chartRelativeY = anchor.y - padding;
+          
+          // Apply zoom around this point
+          const scale = clamped / zoom;
+          nextPan = {
+            x: current.x - chartRelativeX * (scale - 1),
+            y: current.y - chartRelativeY * (scale - 1)
+          };
+        }
+      }
+      
+      return clampPan(nextPan, clamped);
+    });
+    setZoom(clamped);
+  };
+
+  const getViewPoint = (event) => {
+    if (!svgRef.current) return null;
+    const rect = svgRef.current.getBoundingClientRect();
+    const x = ((event.clientX - rect.left) / rect.width) * width;
+    const y = ((event.clientY - rect.top) / rect.height) * height;
+    return { x, y };
+  };
+
+  const handleWheel = useCallback((event) => {
+    if (!svgRef.current) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const point = getViewPoint(event);
+    const delta = event.deltaY > 0 ? 0.9 : 1.1;
+    applyZoom(zoom * delta, point || { x: width / 2, y: height / 2 });
+  }, [zoom]);
 
   useEffect(() => {
-    if (!canvasRef.current || !Array.isArray(data) || data.length === 0) return;
-    const rows = data.length;
-    const cols = data[0]?.length || 0;
-    if (cols === 0) return;
+    const svg = svgRef.current;
+    if (!svg) return undefined;
+    const listener = (event) => handleWheel(event);
+    svg.addEventListener('wheel', listener, { passive: false });
+    return () => {
+      svg.removeEventListener('wheel', listener);
+    };
+  }, [handleWheel]);
 
-    const flat = data.flat().map((value) => normalizeNumber(value));
-    const valid = flat.filter((value) => value !== null);
-    if (valid.length === 0) return;
+  const handleMouseDown = (event) => {
+    if (!panEnabled) return;
+    const point = getViewPoint(event);
+    if (!point) return;
+    setIsPanning(true);
+    dragRef.current = point;
+  };
 
-    const min = Math.min(...valid);
-    const max = Math.max(...valid);
-    const span = max - min || 1;
+  const handleMouseUp = () => {
+    setIsPanning(false);
+    dragRef.current = null;
+  };
 
-    const canvas = canvasRef.current;
-    canvas.width = cols;
-    canvas.height = rows;
-    const ctx = canvas.getContext('2d');
-    const image = ctx.createImageData(cols, rows);
+  const handleMouseLeave = () => {
+    handleMouseUp();
+    setHover(null);
+  };
 
-    for (let r = 0; r < rows; r += 1) {
-      for (let c = 0; c < cols; c += 1) {
-        const idx = (r * cols + c) * 4;
-        const value = normalizeNumber(data[r][c]);
-        const t = value === null ? 0 : (value - min) / span;
-        const baseR = 242;
-        const baseG = 246;
-        const baseB = 255;
-        const targetR = 37;
-        const targetG = 99;
-        const targetB = 235;
-        image.data[idx] = Math.round(baseR + (targetR - baseR) * t);
-        image.data[idx + 1] = Math.round(baseG + (targetG - baseG) * t);
-        image.data[idx + 2] = Math.round(baseB + (targetB - baseB) * t);
-        image.data[idx + 3] = value === null ? 0 : 255;
-      }
+  const handleMouseMove = (event) => {
+    const point = getViewPoint(event);
+    if (!point) return;
+
+    if (panEnabled && isPanning && dragRef.current) {
+      const dx = point.x - dragRef.current.x;
+      const dy = point.y - dragRef.current.y;
+      setPan((current) => clampPan({
+        x: current.x + dx,
+        y: current.y + dy
+      }, zoom));
+      dragRef.current = point;
+      return;
     }
 
-    ctx.putImageData(image, 0, 0);
-  }, [data]);
+    // Calculate hover position
+    const baseX = (point.x - pan.x) / zoom;
+    const baseY = (point.y - pan.y) / zoom;
+    const ratioX = (baseX - padding) / chartW;
+    const ratioY = (baseY - padding) / chartH;
+    
+    if (ratioX < 0 || ratioX > 1 || ratioY < 0 || ratioY > 1) {
+      setHover(null);
+      return;
+    }
 
-  return <canvas ref={canvasRef} className="heatmap-canvas" />;
+    const col = Math.floor(ratioX * stats.cols);
+    const row = Math.floor((1 - ratioY) * stats.rows); // Flip Y for bottom-up indexing
+    
+    if (col >= 0 && col < stats.cols && row >= 0 && row < stats.rows) {
+      const value = data[row] && data[row][col] !== undefined ? Number(data[row][col]) : null;
+      setHover({ row, col, value });
+    } else {
+      setHover(null);
+    }
+  };
+
+  const resetView = () => {
+    setPan({ x: 0, y: 0 });
+    setZoom(minZoom);
+  };
+
+  const toggleFullscreen = async () => {
+    if (!containerRef.current) return;
+    if (document.fullscreenElement) {
+      await document.exitFullscreen();
+    } else {
+      await containerRef.current.requestFullscreen();
+    }
+  };
+
+  const formatScaleValue = (value) => {
+    if (Math.abs(value) >= 1e6 || (Math.abs(value) < 1e-3 && value !== 0)) {
+      return value.toExponential(2);
+    }
+    return value.toFixed(Math.abs(value) >= 10 ? 1 : 2);
+  };
+
+  return (
+    <div className={`line-chart-shell ${isFullscreen ? 'is-fullscreen' : ''}`} ref={containerRef}>
+      <div className="line-chart-toolbar">
+        <div className="line-tool-group">
+          <button
+            type="button"
+            className={`line-tool-btn ${panEnabled ? 'active' : ''}`}
+            onClick={() => setPanEnabled((value) => !value)}
+          >
+            Hand
+          </button>
+          <button type="button" className="line-tool-btn" onClick={() => applyZoom(zoom * 1.15)}>
+            Zoom +
+          </button>
+          <button type="button" className="line-tool-btn" onClick={() => applyZoom(zoom / 1.15)}>
+            Zoom -
+          </button>
+          <button type="button" className="line-tool-btn" onClick={resetView}>
+            Reset
+          </button>
+        </div>
+        <div className="line-tool-group">
+          <span className="line-zoom-label">{Math.round(zoom * 100)}%</span>
+          <button type="button" className="line-tool-btn" onClick={toggleFullscreen}>
+            {isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
+          </button>
+        </div>
+      </div>
+      <div className="line-chart-stage">
+        <svg
+          ref={svgRef}
+          className={`line-chart-canvas ${panEnabled ? 'is-pan' : ''} ${isPanning ? 'is-grabbing' : ''}`}
+          viewBox={`0 0 ${width} ${height}`}
+          onMouseDown={handleMouseDown}
+          onMouseUp={handleMouseUp}
+          onMouseMove={handleMouseMove}
+          onMouseLeave={handleMouseLeave}
+        >
+          <defs>
+            <clipPath id={clipId}>
+              <rect x={padding} y={padding} width={chartW} height={chartH} />
+            </clipPath>
+            {/* Color gradient definition */}
+            <linearGradient id={`colorscale-${clipId}`} x1="0%" y1="100%" x2="0%" y2="0%">
+              {colormaps[colormap]?.map(([r, g, b], index) => (
+                <stop
+                  key={index}
+                  offset={`${(index / (colormaps[colormap].length - 1)) * 100}%`}
+                  stopColor={`rgb(${Math.round(r * 255)}, ${Math.round(g * 255)}, ${Math.round(b * 255)})`}
+                />
+              ))}
+            </linearGradient>
+          </defs>
+          
+          {/* Fixed chart border */}
+          <rect
+            x={padding}
+            y={padding}
+            width={chartW}
+            height={chartH}
+            fill="none"
+            stroke="#D9E2F2"
+            strokeWidth="2"
+          />
+          
+          {/* Zoomable heatmap content */}
+          <g clipPath={`url(#${clipId})`}>
+            <g transform={`translate(${padding + pan.x}, ${padding + pan.y}) scale(${zoom})`}>
+              {/* Heatmap cells */}
+              {data.map((row, rowIdx) =>
+                row.map((value, colIdx) => (
+                  <rect
+                    key={`${rowIdx}-${colIdx}`}
+                    x={colIdx * cellWidth}
+                    y={(stats.rows - 1 - rowIdx) * cellHeight} // Flip Y
+                    width={cellWidth}
+                    height={cellHeight}
+                    fill={getColor(value)}
+                    stroke={showGrid ? '#ffffff' : 'none'}
+                    strokeWidth={showGrid ? 0.5 / zoom : 0} // Scale stroke with zoom
+                    strokeOpacity={0.5}
+                  />
+                ))
+              )}
+            </g>
+          </g>
+
+          {/* Fixed axes (not affected by zoom/pan) */}
+          <g fill="#0F172A" fontSize="11" fontFamily="Inter">
+            {/* X-axis labels */}
+            {Array.from({ length: Math.min(stats.cols, 10) }, (_, i) => {
+              const col = Math.round((i / 9) * (stats.cols - 1));
+              return (
+                <text
+                  key={`x-${col}`}
+                  x={padding + (col + 0.5) * cellWidth}
+                  y={padding + chartH + 16}
+                  textAnchor="middle"
+                  fill="#0F172A"
+                >
+                  {col}
+                </text>
+              );
+            })}
+            
+            {/* Y-axis labels */}
+            {Array.from({ length: Math.min(stats.rows, 10) }, (_, i) => {
+              const row = Math.round((i / 9) * (stats.rows - 1));
+              return (
+                <text
+                  key={`y-${row}`}
+                  x={padding - 10}
+                  y={padding + (stats.rows - 1 - row + 0.5) * cellHeight + 4}
+                  textAnchor="end"
+                  fill="#0F172A"
+                >
+                  {row}
+                </text>
+              );
+            })}
+
+            {/* Axis titles */}
+            <text x={width / 2} y={height - 10} textAnchor="middle" fontSize="13" fontWeight="500">
+              Column Index
+            </text>
+            <text
+              x={20}
+              y={height / 2}
+              textAnchor="middle"
+              fontSize="13"
+              fontWeight="500"
+              transform={`rotate(-90, 20, ${height / 2})`}
+            >
+              Row Index
+            </text>
+          </g>
+
+          {/* Color scale bar (outside transform) */}
+          <g>
+            <rect
+              x={width - 70}
+              y={padding}
+              width={20}
+              height={chartH}
+              fill={`url(#colorscale-${clipId})`}
+              stroke="#D9E2F2"
+              strokeWidth="1"
+            />
+            
+            {/* Color scale labels */}
+            <g fill="#0F172A" fontSize="10" fontFamily="Inter">
+              <text x={width - 45} y={padding + 5} textAnchor="start">
+                {formatScaleValue(stats.max)}
+              </text>
+              <text x={width - 45} y={padding + chartH} textAnchor="start">
+                {formatScaleValue(stats.min)}
+              </text>
+              <text x={width - 45} y={padding + chartH / 2} textAnchor="start">
+                {formatScaleValue((stats.min + stats.max) / 2)}
+              </text>
+            </g>
+          </g>
+
+          {/* Hover tooltip */}
+          {hover && (
+            <g>
+              <rect
+                x={10}
+                y={10}
+                width={120}
+                height={50}
+                fill="#FFFFFF"
+                stroke="#D9E2F2"
+                strokeWidth="1"
+                rx="4"
+                opacity="0.95"
+              />
+              <text x={16} y={25} fontSize="10" fill="#0F172A">
+                Row: {hover.row}, Col: {hover.col}
+              </text>
+              <text x={16} y={40} fontSize="10" fill="#0F172A">
+                Value: {hover.value !== null ? formatScaleValue(hover.value) : 'N/A'}
+              </text>
+            </g>
+          )}
+        </svg>
+      </div>
+    </div>
+  );
 }
 
 function ViewerPanel({
@@ -648,11 +1109,17 @@ function ViewerPanel({
   activeTab,
   displayDims,
   fixedIndices,
+  stagedDisplayDims,
+  stagedFixedIndices,
   onDisplayDimsChange,
   onFixedIndexChange,
+  onApplyDimensions,
+  onResetDimensions,
   notation,
   lineGrid,
-  lineAspect
+  lineAspect,
+  heatmapGrid,
+  heatmapColormap
 }) {
   const isInspect = viewMode === 'inspect';
   const isDisplay = viewMode === 'display';
@@ -663,8 +1130,8 @@ function ViewerPanel({
   const lineSeries = getLineSeries(preview);
   const isLineTab = activeTab === 'line';
 
-  const resolvedDisplayDims = Array.isArray(displayDims) && displayDims.length === 2
-    ? displayDims
+  const resolvedDisplayDims = Array.isArray(stagedDisplayDims) && stagedDisplayDims.length === 2
+    ? stagedDisplayDims
     : (Array.isArray(preview?.display_dims) ? preview.display_dims : [0, 1]);
   const yDim = resolvedDisplayDims[0];
   const xDim = resolvedDisplayDims[1];
@@ -802,7 +1269,7 @@ function ViewerPanel({
                         {preview.shape.map((size, dim) => {
                           if (resolvedDisplayDims.includes(dim)) return null;
                           const max = Math.max(0, size - 1);
-                          const current = fixedIndices?.[dim] ?? Math.floor(size / 2);
+                          const current = stagedFixedIndices?.[dim] ?? Math.floor(size / 2);
                           return (
                             <div className="dim-slider" key={dim}>
                               <label>Dim {dim} index</label>
@@ -826,6 +1293,26 @@ function ViewerPanel({
                           );
                         })}
                       </div>
+                      
+                      {/* Set/Reset buttons */}
+                      <div className="dim-controls-buttons">
+                        <button
+                          type="button"
+                          className="dim-set-btn"
+                          onClick={onApplyDimensions}
+                          disabled={!preview}
+                        >
+                          Set
+                        </button>
+                        <button
+                          type="button"
+                          className="dim-reset-btn"
+                          onClick={onResetDimensions}
+                          disabled={!preview}
+                        >
+                          Reset
+                        </button>
+                      </div>
                     </div>
                   )}
                 </aside>
@@ -841,7 +1328,7 @@ function ViewerPanel({
                     aspectMode={lineAspect}
                   />
                 )}
-                {activeTab === 'heatmap' && canShowHeatmap && renderHeatmap(preview)}
+                {activeTab === 'heatmap' && canShowHeatmap && renderHeatmap(preview, heatmapColormap, heatmapGrid)}
               </div>
             </div>
           </div>
@@ -1043,8 +1530,11 @@ function ViewerPanel({
   );
 }
 
-HeatmapCanvas.propTypes = {
-  data: PropTypes.array
+HeatmapChart.propTypes = {
+  data: PropTypes.array.isRequired,
+  shape: PropTypes.array,
+  colormap: PropTypes.string,
+  showGrid: PropTypes.bool
 };
 
 ViewerPanel.propTypes = {
@@ -1059,11 +1549,17 @@ ViewerPanel.propTypes = {
   activeTab: PropTypes.string,
   displayDims: PropTypes.array,
   fixedIndices: PropTypes.object,
+  stagedDisplayDims: PropTypes.array,
+  stagedFixedIndices: PropTypes.object,
   onDisplayDimsChange: PropTypes.func,
   onFixedIndexChange: PropTypes.func,
+  onApplyDimensions: PropTypes.func,
+  onResetDimensions: PropTypes.func,
   notation: PropTypes.string,
   lineGrid: PropTypes.bool,
-  lineAspect: PropTypes.string
+  lineAspect: PropTypes.string,
+  heatmapGrid: PropTypes.bool,
+  heatmapColormap: PropTypes.string
 };
 
 export default ViewerPanel;
