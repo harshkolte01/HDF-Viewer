@@ -14,6 +14,7 @@ export {
     getFileChildren,
     getFileMeta,
     getFilePreview,
+    getFileData,
     checkHealth,
     runBenchmark,
 } from './hdf5Service';

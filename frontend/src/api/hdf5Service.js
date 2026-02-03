@@ -57,6 +57,18 @@ export const getFilePreview = async (key, path, params = {}) => {
 };
 
 /**
+ * Get full data payload for a specific dataset path
+ * @param {string} key - File key/name
+ * @param {string} path - HDF5 internal path
+ * @param {object} params - Data parameters (mode, selection, limits)
+ * @returns {Promise<object>}
+ */
+export const getFileData = async (key, path, params = {}) => {
+    const endpoint = API_ENDPOINTS.FILE_DATA(key);
+    return await get(endpoint, { path, ...params });
+};
+
+/**
  * Check server health
  * @returns {Promise<{status: string, timestamp: string, service: string}>}
  */
@@ -78,6 +90,7 @@ export default {
     getFileChildren,
     getFileMeta,
     getFilePreview,
+    getFileData,
     checkHealth,
     runBenchmark,
 };

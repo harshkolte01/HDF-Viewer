@@ -81,6 +81,117 @@ All routes are registered in `backend/app.py`.
     - `max_size=512` (max heatmap dimension, clamped to 512)
     - `mode=auto` (reserved for preview strategy)
 
+## Phase 1 - /data Contract (Frozen)
+This is the **locked request/response contract** for the upcoming `/files/<key>/data` endpoint. Implementation will follow this shape.
+
+**Endpoint**
+- `GET /files/<key>/data`
+
+**Common request query params**
+- `path` (required): dataset path in the HDF5 file.
+- `mode` (required): one of `matrix`, `heatmap`, `line`.
+- `display_dims` (optional): two comma-separated dimension indices (e.g., `1,2`).
+  - Default: last two dims for `ndim >= 2`.
+  - Used to select the 2D plane for `ndim > 2`.
+  - Rule: the two dims must be distinct (backend validates).
+- `fixed_indices` (optional): comma-separated `dim=index` pairs (e.g., `0=5,3=10`).
+  - Applies to non-display dims.
+  - Defaults to the middle index of each non-display dim.
+
+**Response format**
+- v1: JSON (current). Size-capped `data`.
+- v2: binary payload (future). Same metadata, `data` in binary.
+
+**Common response fields**
+```
+{
+  "success": true,
+  "key": "file.h5",
+  "path": "/some/dataset",
+  "mode": "matrix|heatmap|line",
+  "dtype": "float32",
+  "data": [[1,2,3],[4,5,6]],
+  "shape": [2, 3],
+  "source_shape": [100, 200, 10],
+  "source_ndim": 3,
+  "display_dims": [1, 2],
+  "fixed_indices": { "0": 5 },
+  "stats": { "min": 0.1, "max": 9.8 },
+  "downsample_info": { "row_step": 4, "col_step": 4 }
+}
+```
+
+### Mode A - `matrix`
+Purpose: return a **page/block** of a 2D plane for fast table rendering.
+
+**Request params**
+- `row_offset` (optional, default `0`)
+- `row_limit` (optional, default `100`)
+- `col_offset` (optional, default `0`)
+- `col_limit` (optional, default `100`)
+- `row_step` (optional, default `1`)
+- `col_step` (optional, default `1`)
+
+**Response payload**
+```
+{
+  "data": [[1,2,3],[4,5,6]],
+  "shape": [2, 3],
+  "dtype": "float32",
+  "row_offset": 0,
+  "col_offset": 0,
+  "downsample_info": { "row_step": 1, "col_step": 1 }
+}
+```
+
+### Mode B - `heatmap`
+Purpose: return a **2D plane** optionally **downsampled** for heatmap view.
+
+**Request params**
+- `max_size` (optional, default `512`): max size for each axis after downsampling.
+
+**Response payload**
+```
+{
+  "data": [[0.1,0.2],[0.3,0.4]],
+  "shape": [2, 2],
+  "dtype": "float32",
+  "stats": { "min": 0.1, "max": 0.4 },
+  "row_offset": 0,
+  "col_offset": 0,
+  "downsample_info": { "row_step": 4, "col_step": 4 },
+  "sampled": true
+}
+```
+
+### Mode C - `line`
+Purpose: return a **1D profile** for line charts.
+
+**Request params**
+- `line_dim` (optional): `row` or `col` for a chosen 2D plane.
+- `line_index` (optional, default middle index of the opposite axis).
+- `line_offset` (optional, default `0`)
+- `line_limit` (optional, default full length from offset)
+- For general nD profiles, use `line_dim` plus `fixed_indices` across the other dims.
+
+**Response payload**
+```
+{
+  "data": [10,12,9,7],
+  "shape": [4],
+  "dtype": "float32",
+  "axis": "row",
+  "index": 128,
+  "line_offset": 0,
+  "downsample_info": { "step": 1 }
+}
+```
+
+**Error responses**
+- `400` invalid or missing params (`path`, `mode`, or malformed indices).
+- `404` dataset path not found.
+- `400` when `path` points to a non-dataset object.
+
 ## Caching
 - Files cache: 30 seconds (`_files_cache`).
 - HDF5 cache: 300 seconds (`_hdf5_cache`).
@@ -105,6 +216,6 @@ Located in `backend/scripts/`:
 - CORS currently allows all origins and ignores `CORS_ORIGINS`.
 
 ## Not implemented yet
-- `/data` endpoint for actual dataset values.
+- `/data` endpoint for actual dataset values (contract frozen above).
 - Authentication/authorization.
 - Persistent cache (Redis).

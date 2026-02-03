@@ -336,6 +336,137 @@
     min-height: 300px;
 }
 
+.data-section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+}
+
+.data-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    flex-wrap: wrap;
+}
+
+.data-btn {
+    border: 1px solid var(--border);
+    background: var(--surface-alt);
+    color: var(--text-primary);
+    font-size: 0.8rem;
+    font-weight: 600;
+    padding: 0.4rem 0.75rem;
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.data-btn:hover:not(:disabled) {
+    border-color: var(--primary);
+    color: var(--primary);
+}
+
+.data-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.data-status {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
+.data-status.error {
+    color: var(--error);
+}
+
+.matrix-table-shell {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--surface-alt);
+    overflow: hidden;
+}
+
+.matrix-table {
+    position: relative;
+    height: 520px;
+    overflow: auto;
+    background: var(--surface);
+}
+
+.matrix-spacer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    pointer-events: none;
+}
+
+.matrix-header {
+    position: sticky;
+    top: 0;
+    left: 0;
+    z-index: 5;
+    display: flex;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+}
+
+.matrix-header-corner {
+    background: var(--surface-alt);
+    border-right: 1px solid var(--border);
+}
+
+.matrix-header-cells {
+    position: relative;
+}
+
+.matrix-index {
+    position: absolute;
+    top: 28px;
+    left: 0;
+    z-index: 4;
+    background: var(--surface-alt);
+    border-right: 1px solid var(--border);
+}
+
+.matrix-cells {
+    position: absolute;
+    top: 28px;
+    left: 60px;
+}
+
+.matrix-cell {
+    position: absolute;
+    border: 1px solid var(--border);
+    padding: 0.2rem 0.35rem;
+    font-size: 0.75rem;
+    color: var(--text-primary);
+    background: var(--surface);
+    text-align: right;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    box-sizing: border-box;
+}
+
+.matrix-cell-header {
+    position: absolute;
+    background: var(--surface-alt);
+    font-weight: 700;
+    color: var(--text-secondary);
+    text-align: center;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.matrix-cell-index {
+    position: absolute;
+    background: var(--surface-alt);
+    font-weight: 700;
+    color: var(--text-secondary);
+    text-align: center;
+}
+
 .preview-layout.is-line .preview-content {
     background: transparent;
     border: none;

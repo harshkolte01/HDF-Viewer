@@ -178,6 +178,256 @@ class HDF5Reader:
         except Exception as e:
             logger.error(f"Error generating HDF5 preview from '{key}' at '{path}': {e}")
             raise
+
+    def get_matrix(
+        self,
+        key: str,
+        path: str,
+        display_dims: Tuple[int, int],
+        fixed_indices: Dict[int, int],
+        row_offset: int,
+        row_limit: int,
+        col_offset: int,
+        col_limit: int,
+        row_step: int = 1,
+        col_step: int = 1
+    ) -> Dict[str, Any]:
+        """Extract a 2D matrix block from a dataset."""
+        try:
+            s3_path = self._get_s3_path(key)
+            logger.info(f"Reading HDF5 matrix from '{key}' at path '{path}'")
+
+            with self.s3.open(s3_path, 'rb') as f:
+                with h5py.File(f, 'r') as hdf:
+                    if path not in hdf:
+                        raise ValueError(f"Path '{path}' not found in '{key}'")
+
+                    obj = hdf[path]
+                    if not isinstance(obj, h5py.Dataset):
+                        raise TypeError(f"Path '{path}' is not a dataset")
+
+                    shape = list(obj.shape)
+                    ndim = obj.ndim
+                    if ndim < 2:
+                        raise TypeError("Matrix mode requires a 2D or higher dataset")
+
+                    row_dim, col_dim = display_dims
+                    rows = int(shape[row_dim])
+                    cols = int(shape[col_dim])
+                    needs_transpose = row_dim > col_dim
+
+                    row_offset = max(0, min(row_offset, rows))
+                    col_offset = max(0, min(col_offset, cols))
+                    row_limit = max(0, min(row_limit, rows - row_offset))
+                    col_limit = max(0, min(col_limit, cols - col_offset))
+
+                    out_rows = int(math.ceil(row_limit / row_step)) if row_limit > 0 else 0
+                    out_cols = int(math.ceil(col_limit / col_step)) if col_limit > 0 else 0
+
+                    if row_limit == 0 or col_limit == 0:
+                        data = []
+                    else:
+                        row_slice = slice(row_offset, row_offset + row_limit, row_step)
+                        col_slice = slice(col_offset, col_offset + col_limit, col_step)
+                        indexer = self._build_indexer(
+                            ndim,
+                            display_dims,
+                            fixed_indices,
+                            {
+                                row_dim: row_slice,
+                                col_dim: col_slice
+                            }
+                        )
+                        data = obj[tuple(indexer)]
+                        if needs_transpose and hasattr(data, 'T'):
+                            data = data.T
+                        data = self._sanitize(data)
+
+                    return {
+                        'data': data,
+                        'shape': [out_rows, out_cols],
+                        'dtype': str(obj.dtype),
+                        'row_offset': row_offset,
+                        'col_offset': col_offset,
+                        'downsample_info': {
+                            'row_step': row_step,
+                            'col_step': col_step
+                        }
+                    }
+        except Exception as e:
+            logger.error(f"Error reading HDF5 matrix from '{key}' at '{path}': {e}")
+            raise
+
+    def get_line(
+        self,
+        key: str,
+        path: str,
+        display_dims: Optional[Tuple[int, int]],
+        fixed_indices: Dict[int, int],
+        line_dim,
+        line_index: Optional[int],
+        line_offset: int,
+        line_limit: int,
+        line_step: int
+    ) -> Dict[str, Any]:
+        """Extract a 1D line profile from a dataset."""
+        try:
+            s3_path = self._get_s3_path(key)
+            logger.info(f"Reading HDF5 line from '{key}' at path '{path}'")
+
+            with self.s3.open(s3_path, 'rb') as f:
+                with h5py.File(f, 'r') as hdf:
+                    if path not in hdf:
+                        raise ValueError(f"Path '{path}' not found in '{key}'")
+
+                    obj = hdf[path]
+                    if not isinstance(obj, h5py.Dataset):
+                        raise TypeError(f"Path '{path}' is not a dataset")
+
+                    shape = list(obj.shape)
+                    ndim = obj.ndim
+
+                    axis = None
+                    index = None
+                    if ndim == 1:
+                        vary_dim = 0
+                        axis = 'dim'
+                    elif isinstance(line_dim, int):
+                        vary_dim = line_dim
+                        axis = 'dim'
+                    else:
+                        if display_dims is None:
+                            raise ValueError("display_dims required for row/col line")
+                        row_dim, col_dim = display_dims
+                        if line_dim == 'col':
+                            vary_dim = row_dim
+                            axis = 'col'
+                            index = line_index
+                        else:
+                            vary_dim = col_dim
+                            axis = 'row'
+                            index = line_index
+
+                    line_offset = max(0, line_offset)
+                    line_limit = max(0, line_limit)
+
+                    if line_limit == 0:
+                        data = []
+                        out_count = 0
+                    else:
+                        line_slice = slice(line_offset, line_offset + line_limit, line_step)
+                        indexer = []
+                        for dim in range(ndim):
+                            if dim == vary_dim:
+                                indexer.append(line_slice)
+                                continue
+                            if axis in ('row', 'col'):
+                                if axis == 'row' and dim == display_dims[0]:
+                                    indexer.append(index)
+                                    continue
+                                if axis == 'col' and dim == display_dims[1]:
+                                    indexer.append(index)
+                                    continue
+                            indexer.append(fixed_indices.get(dim, 0))
+                        data = obj[tuple(indexer)]
+                        data = self._sanitize(data)
+                        out_count = int(math.ceil(line_limit / line_step))
+
+                    return {
+                        'data': data,
+                        'shape': [out_count],
+                        'dtype': str(obj.dtype),
+                        'axis': axis,
+                        'index': index,
+                        'downsample_info': {
+                            'step': line_step
+                        }
+                    }
+        except Exception as e:
+            logger.error(f"Error reading HDF5 line from '{key}' at '{path}': {e}")
+            raise
+
+    def get_heatmap(
+        self,
+        key: str,
+        path: str,
+        display_dims: Tuple[int, int],
+        fixed_indices: Dict[int, int],
+        max_size: int
+    ) -> Dict[str, Any]:
+        """Extract a downsampled 2D heatmap plane from a dataset."""
+        try:
+            s3_path = self._get_s3_path(key)
+            logger.info(f"Reading HDF5 heatmap from '{key}' at path '{path}'")
+
+            with self.s3.open(s3_path, 'rb') as f:
+                with h5py.File(f, 'r') as hdf:
+                    if path not in hdf:
+                        raise ValueError(f"Path '{path}' not found in '{key}'")
+
+                    obj = hdf[path]
+                    if not isinstance(obj, h5py.Dataset):
+                        raise TypeError(f"Path '{path}' is not a dataset")
+
+                    shape = list(obj.shape)
+                    ndim = obj.ndim
+                    if ndim < 2:
+                        raise TypeError("Heatmap mode requires a 2D or higher dataset")
+
+                    row_dim, col_dim = display_dims
+                    rows = int(shape[row_dim])
+                    cols = int(shape[col_dim])
+                    needs_transpose = row_dim > col_dim
+
+                    target_rows = min(rows, max_size)
+                    target_cols = min(cols, max_size)
+
+                    step_r = max(1, int(math.ceil(rows / target_rows))) if target_rows > 0 else 1
+                    step_c = max(1, int(math.ceil(cols / target_cols))) if target_cols > 0 else 1
+
+                    row_slice = slice(0, rows, step_r)
+                    col_slice = slice(0, cols, step_c)
+                    indexer = self._build_indexer(
+                        ndim,
+                        display_dims,
+                        fixed_indices,
+                        {
+                            row_dim: row_slice,
+                            col_dim: col_slice
+                        }
+                    )
+                    raw = obj[tuple(indexer)]
+                    if needs_transpose and hasattr(raw, 'T'):
+                        raw = raw.T
+                    data = self._sanitize(raw)
+
+                    sampled = step_r > 1 or step_c > 1
+                    numeric = self._is_numeric_dtype(obj.dtype)
+                    stats = {'min': None, 'max': None}
+                    if numeric:
+                        try:
+                            arr = np.asarray(raw).astype(float, copy=False)
+                            stats['min'] = self._safe_number(np.nanmin(arr)) if arr.size else None
+                            stats['max'] = self._safe_number(np.nanmax(arr)) if arr.size else None
+                        except Exception:
+                            stats = {'min': None, 'max': None}
+
+                    return {
+                        'data': data,
+                        'shape': [len(data), len(data[0]) if data and isinstance(data[0], list) else 0],
+                        'dtype': str(obj.dtype),
+                        'stats': stats,
+                        'row_offset': 0,
+                        'col_offset': 0,
+                        'downsample_info': {
+                            'row_step': step_r,
+                            'col_step': step_c
+                        },
+                        'sampled': sampled
+                    }
+        except Exception as e:
+            logger.error(f"Error reading HDF5 heatmap from '{key}' at '{path}': {e}")
+            raise
     
     def get_children(self, key: str, path: str = '/') -> List[Dict[str, Any]]:
         """

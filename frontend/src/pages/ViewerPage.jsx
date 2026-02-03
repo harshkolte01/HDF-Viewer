@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { getFileMeta, getFilePreview } from '../api';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { getFileMeta, getFilePreview, getFileData } from '../api';
 import SidebarTree from '../components/viewer/SidebarTree';
 import TopBar from '../components/viewer/TopBar';
 import PreviewToolbar from '../components/viewer/PreviewToolbar';
@@ -7,6 +7,9 @@ import ViewerPanel from '../components/viewer/ViewerPanel';
 import './ViewerPage.css';
 
 const DEBUG = import.meta.env.DEV;
+const MATRIX_BLOCK_ROWS = 200;
+const MATRIX_BLOCK_COLS = 50;
+const HEATMAP_MAX_SIZE = 1024;
 
 const logPreview = (...args) => {
   if (!DEBUG) return;
@@ -54,6 +57,25 @@ function ViewerPage({ fileKey, onBack }) {
   const [lineAspect, setLineAspect] = useState('line');
   const [heatmapGrid, setHeatmapGrid] = useState(true);
   const [heatmapColormap, setHeatmapColormap] = useState('viridis');
+  const [matrixEnabled, setMatrixEnabled] = useState(false);
+  const [matrixLoading, setMatrixLoading] = useState(false);
+  const [matrixError, setMatrixError] = useState(null);
+  const [matrixVersion, setMatrixVersion] = useState(0);
+  const matrixCacheRef = useRef(new Map());
+  const matrixPendingRef = useRef(new Set());
+
+  const [heatmapEnabled, setHeatmapEnabled] = useState(false);
+  const [heatmapLoading, setHeatmapLoading] = useState(false);
+  const [heatmapError, setHeatmapError] = useState(null);
+  const [heatmapData, setHeatmapData] = useState(null);
+  const heatmapKeyRef = useRef('');
+
+  const [lineEnabled, setLineEnabled] = useState(false);
+  const [lineLoading, setLineLoading] = useState(false);
+  const [lineError, setLineError] = useState(null);
+  const [lineData, setLineData] = useState(null);
+  const lineKeyRef = useRef('');
+  const lineTimerRef = useRef(null);
 
   const showHeatmap = useMemo(() => preview?.ndim >= 2, [preview]);
   const displayDimsKey = useMemo(() => {
@@ -61,6 +83,42 @@ function ViewerPage({ fileKey, onBack }) {
     return displayDims.join(',');
   }, [displayDims]);
   const fixedIndicesKey = useMemo(() => buildFixedIndicesParam(fixedIndices) || '', [fixedIndices]);
+  const selectionKey = useMemo(() => {
+    if (!fileKey || !selectedPath) return '';
+    return [fileKey, selectedPath, displayDimsKey, fixedIndicesKey].join('|');
+  }, [fileKey, selectedPath, displayDimsKey, fixedIndicesKey]);
+  const matrixShape = useMemo(() => {
+    if (!preview?.shape || !Array.isArray(displayDims) || displayDims.length !== 2) return null;
+    const rows = preview.shape[displayDims[0]];
+    const cols = preview.shape[displayDims[1]];
+    if (!Number.isFinite(rows) || !Number.isFinite(cols)) return null;
+    return { rows, cols };
+  }, [preview, displayDims]);
+
+  const resetDataState = useCallback(() => {
+    matrixCacheRef.current = new Map();
+    matrixPendingRef.current = new Set();
+    setMatrixEnabled(false);
+    setMatrixLoading(false);
+    setMatrixError(null);
+    setMatrixVersion(0);
+
+    setHeatmapEnabled(false);
+    setHeatmapLoading(false);
+    setHeatmapError(null);
+    setHeatmapData(null);
+    heatmapKeyRef.current = '';
+
+    setLineEnabled(false);
+    setLineLoading(false);
+    setLineError(null);
+    setLineData(null);
+    lineKeyRef.current = '';
+    if (lineTimerRef.current) {
+      clearTimeout(lineTimerRef.current);
+      lineTimerRef.current = null;
+    }
+  }, []);
 
   useEffect(() => {
     setSelectedPath('/');
@@ -77,6 +135,7 @@ function ViewerPage({ fileKey, onBack }) {
     setPreviewLoading(false);
     setHeatmapGrid(true);
     setHeatmapColormap('viridis');
+    resetDataState();
   }, [fileKey, selectedPath]);
 
   useEffect(() => {
@@ -84,6 +143,11 @@ function ViewerPage({ fileKey, onBack }) {
       setDisplayTab('table');
     }
   }, [preview, displayTab]);
+
+  useEffect(() => {
+    if (!selectionKey) return;
+    resetDataState();
+  }, [selectionKey, resetDataState]);
 
   useEffect(() => {
     const fetchMeta = async () => {
@@ -185,6 +249,175 @@ function ViewerPage({ fileKey, onBack }) {
 
     fetchPreview();
   }, [fileKey, selectedPath, viewMode, displayDimsKey, fixedIndicesKey]);
+
+  const buildMatrixCacheKey = useCallback((rowOffset, colOffset, rowLimit, colLimit) => {
+    if (!selectionKey) return '';
+    return `${selectionKey}|r${rowOffset}|c${colOffset}|rl${rowLimit}|cl${colLimit}|rs1|cs1`;
+  }, [selectionKey]);
+
+  const getMatrixBlock = useCallback((rowOffset, colOffset, rowLimit, colLimit) => {
+    const key = buildMatrixCacheKey(rowOffset, colOffset, rowLimit, colLimit);
+    if (!key) return null;
+    return matrixCacheRef.current.get(key) || null;
+  }, [buildMatrixCacheKey]);
+
+  const requestMatrixBlock = useCallback(async (rowOffset, colOffset, rowLimit, colLimit) => {
+    if (!fileKey || !selectedPath || !matrixShape) return;
+    const safeRowLimit = Math.min(rowLimit, Math.max(0, matrixShape.rows - rowOffset));
+    const safeColLimit = Math.min(colLimit, Math.max(0, matrixShape.cols - colOffset));
+    if (safeRowLimit <= 0 || safeColLimit <= 0) return;
+
+    const key = buildMatrixCacheKey(rowOffset, colOffset, safeRowLimit, safeColLimit);
+    if (!key || matrixCacheRef.current.has(key) || matrixPendingRef.current.has(key)) return;
+
+    matrixPendingRef.current.add(key);
+    setMatrixLoading(true);
+    setMatrixError(null);
+
+    try {
+      const params = {
+        mode: 'matrix',
+        row_offset: rowOffset,
+        row_limit: safeRowLimit,
+        col_offset: colOffset,
+        col_limit: safeColLimit
+      };
+      if (displayDimsKey) params.display_dims = displayDimsKey;
+      if (fixedIndicesKey) params.fixed_indices = fixedIndicesKey;
+
+      const data = await getFileData(fileKey, selectedPath, params);
+      matrixCacheRef.current.set(key, data);
+      setMatrixVersion((value) => value + 1);
+    } catch (err) {
+      setMatrixError(err.message || 'Failed to load matrix data');
+    } finally {
+      matrixPendingRef.current.delete(key);
+      setMatrixLoading(matrixPendingRef.current.size > 0);
+    }
+  }, [fileKey, selectedPath, matrixShape, buildMatrixCacheKey, displayDimsKey, fixedIndicesKey]);
+
+  const handleEnableMatrix = useCallback(() => {
+    if (!matrixShape) return;
+    setMatrixEnabled(true);
+    const initialRows = Math.min(MATRIX_BLOCK_ROWS, matrixShape.rows);
+    const initialCols = Math.min(MATRIX_BLOCK_COLS, matrixShape.cols);
+    requestMatrixBlock(0, 0, initialRows, initialCols);
+  }, [matrixShape, requestMatrixBlock]);
+
+  const requestHeatmap = useCallback(async (maxSize) => {
+    if (!fileKey || !selectedPath) return;
+    const requestKey = `${selectionKey}|heatmap|max=${maxSize}`;
+    if (heatmapKeyRef.current === requestKey && heatmapData) return;
+
+    setHeatmapEnabled(true);
+    setHeatmapLoading(true);
+    setHeatmapError(null);
+    heatmapKeyRef.current = requestKey;
+
+    try {
+      const params = {
+        mode: 'heatmap',
+        max_size: maxSize
+      };
+      if (displayDimsKey) params.display_dims = displayDimsKey;
+      if (fixedIndicesKey) params.fixed_indices = fixedIndicesKey;
+
+      const data = await getFileData(fileKey, selectedPath, params);
+      setHeatmapData(data);
+    } catch (err) {
+      setHeatmapError(err.message || 'Failed to load heatmap data');
+    } finally {
+      setHeatmapLoading(false);
+    }
+  }, [fileKey, selectedPath, selectionKey, displayDimsKey, fixedIndicesKey, heatmapData]);
+
+  const handleHeatmapZoom = useCallback((zoomLevel) => {
+    if (zoomLevel <= 1) return;
+    requestHeatmap(HEATMAP_MAX_SIZE);
+  }, [requestHeatmap]);
+
+  const resolveLineParams = useCallback((range) => {
+    if (!preview?.shape) return null;
+    const shape = preview.shape;
+    const ndim = preview.ndim ?? shape.length;
+    let lineDim = null;
+    let lineIndex = null;
+    let lineLength = 0;
+
+    if (ndim === 1) {
+      lineLength = shape[0];
+    } else if (Array.isArray(displayDims) && displayDims.length === 2) {
+      const rows = shape[displayDims[0]];
+      const cols = shape[displayDims[1]];
+      lineDim = 'row';
+      lineIndex = Math.floor(rows / 2);
+      lineLength = cols;
+    } else {
+      lineLength = shape[0];
+    }
+
+    if (!Number.isFinite(lineLength) || lineLength <= 0) return null;
+
+    let lineOffset = 0;
+    let lineLimit = lineLength;
+    if (range && Number.isFinite(range.start) && Number.isFinite(range.end)) {
+      const start = Math.max(0, Math.floor(Math.min(range.start, range.end)));
+      const end = Math.min(lineLength - 1, Math.ceil(Math.max(range.start, range.end)));
+      lineOffset = Math.min(start, lineLength - 1);
+      lineLimit = Math.max(0, end - lineOffset + 1);
+    }
+
+    return {
+      line_dim: lineDim,
+      line_index: lineIndex,
+      line_offset: lineOffset,
+      line_limit: lineLimit,
+      line_length: lineLength
+    };
+  }, [preview, displayDims]);
+
+  const requestLine = useCallback(async (range) => {
+    if (!fileKey || !selectedPath) return;
+    const params = resolveLineParams(range);
+    if (!params) return;
+
+    const requestKey = `${selectionKey}|line|${params.line_dim}|${params.line_index}|${params.line_offset}|${params.line_limit}`;
+    if (lineKeyRef.current === requestKey && lineData) return;
+
+    setLineEnabled(true);
+    setLineLoading(true);
+    setLineError(null);
+    lineKeyRef.current = requestKey;
+
+    try {
+      const query = {
+        mode: 'line',
+        line_offset: params.line_offset,
+        line_limit: params.line_limit
+      };
+      if (params.line_dim) query.line_dim = params.line_dim;
+      if (Number.isFinite(params.line_index)) query.line_index = params.line_index;
+      if (displayDimsKey) query.display_dims = displayDimsKey;
+      if (fixedIndicesKey) query.fixed_indices = fixedIndicesKey;
+
+      const data = await getFileData(fileKey, selectedPath, query);
+      setLineData(data);
+    } catch (err) {
+      setLineError(err.message || 'Failed to load line data');
+    } finally {
+      setLineLoading(false);
+    }
+  }, [fileKey, selectedPath, selectionKey, resolveLineParams, displayDimsKey, fixedIndicesKey, lineData]);
+
+  const handleLineViewChange = useCallback((range) => {
+    if (!range) return;
+    if (lineTimerRef.current) {
+      clearTimeout(lineTimerRef.current);
+    }
+    lineTimerRef.current = setTimeout(() => {
+      requestLine(range);
+    }, 250);
+  }, [requestLine]);
 
   // Dimension control handlers for staging
   const handleStagedDisplayDimsChange = (nextDims, shape) => {
@@ -335,6 +568,27 @@ function ViewerPage({ fileKey, onBack }) {
           lineAspect={lineAspect}
           heatmapGrid={heatmapGrid}
           heatmapColormap={heatmapColormap}
+          matrixEnabled={matrixEnabled}
+          matrixLoading={matrixLoading}
+          matrixError={matrixError}
+          matrixVersion={matrixVersion}
+          matrixShape={matrixShape}
+          matrixBlockSize={{ rows: MATRIX_BLOCK_ROWS, cols: MATRIX_BLOCK_COLS }}
+          getMatrixBlock={getMatrixBlock}
+          onRequestMatrixBlock={requestMatrixBlock}
+          onEnableMatrix={handleEnableMatrix}
+          heatmapEnabled={heatmapEnabled}
+          heatmapLoading={heatmapLoading}
+          heatmapError={heatmapError}
+          heatmapData={heatmapData}
+          onEnableHeatmap={() => requestHeatmap(HEATMAP_MAX_SIZE)}
+          onHeatmapZoom={handleHeatmapZoom}
+          lineEnabled={lineEnabled}
+          lineLoading={lineLoading}
+          lineError={lineError}
+          lineData={lineData}
+          onEnableLine={() => requestLine(null)}
+          onLineViewChange={handleLineViewChange}
         />
       </section>
     </div>
