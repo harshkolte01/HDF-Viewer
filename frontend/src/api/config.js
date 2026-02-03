@@ -20,6 +20,7 @@ export const API_ENDPOINTS = {
     FILE_CHILDREN: (key) => `/files/${encodeURIComponent(key)}/children`,
     FILE_META: (key) => `/files/${encodeURIComponent(key)}/meta`,
     FILE_PREVIEW: (key) => `/files/${encodeURIComponent(key)}/preview`,
+    FILE_DATA: (key) => `/files/${encodeURIComponent(key)}/data`,
 
     // Benchmarking (optional)
     BENCHMARK: '/benchmark',

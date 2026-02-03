@@ -103,7 +103,16 @@ const normalizeNumber = (value) => {
 
 const clampValue = (value, min, max) => Math.min(max, Math.max(min, value));
 
-const getLineSeries = (preview) => {
+const getLineSeries = (preview, lineData) => {
+  if (lineData?.data && Array.isArray(lineData.data)) {
+    const step = Number(lineData.downsample_info?.step) || 1;
+    const offset = Number.isFinite(Number(lineData.line_offset)) ? Number(lineData.line_offset) : 0;
+    return {
+      type: 'line',
+      x: lineData.data.map((_, idx) => offset + idx * step),
+      y: lineData.data
+    };
+  }
   if (!preview) return null;
   if (preview.plot?.type === 'line') {
     return preview.plot;
@@ -127,7 +136,187 @@ const buildLinePoints = (series) => {
   })).filter((point) => point.y !== null);
 };
 
-function LineChart({ series, notation, gridEnabled, aspectMode }) {
+const MATRIX_ROW_HEIGHT = 28;
+const MATRIX_COL_WIDTH = 96;
+const MATRIX_HEADER_HEIGHT = 28;
+const MATRIX_INDEX_WIDTH = 60;
+const MATRIX_OVERSCAN = 4;
+
+function VirtualMatrixTable({
+  rows,
+  cols,
+  blockRows,
+  blockCols,
+  getBlock,
+  onRequestBlock,
+  notation,
+  cacheVersion
+}) {
+  const containerRef = useRef(null);
+  const [viewport, setViewport] = useState({
+    width: 0,
+    height: 0,
+    scrollTop: 0,
+    scrollLeft: 0
+  });
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return undefined;
+
+    const updateViewport = () => {
+      setViewport({
+        width: container.clientWidth,
+        height: container.clientHeight,
+        scrollTop: container.scrollTop,
+        scrollLeft: container.scrollLeft
+      });
+    };
+
+    updateViewport();
+
+    const handleScroll = () => updateViewport();
+    container.addEventListener('scroll', handleScroll, { passive: true });
+
+    const resizeObserver = new ResizeObserver(updateViewport);
+    resizeObserver.observe(container);
+
+    return () => {
+      container.removeEventListener('scroll', handleScroll);
+      resizeObserver.disconnect();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (rows <= 0 || cols <= 0) return;
+    const visibleRowStart = Math.max(0, Math.floor(viewport.scrollTop / MATRIX_ROW_HEIGHT) - MATRIX_OVERSCAN);
+    const visibleRowEnd = Math.min(
+      rows - 1,
+      Math.floor((viewport.scrollTop + viewport.height) / MATRIX_ROW_HEIGHT) + MATRIX_OVERSCAN
+    );
+    const visibleColStart = Math.max(0, Math.floor(viewport.scrollLeft / MATRIX_COL_WIDTH) - MATRIX_OVERSCAN);
+    const visibleColEnd = Math.min(
+      cols - 1,
+      Math.floor((viewport.scrollLeft + viewport.width) / MATRIX_COL_WIDTH) + MATRIX_OVERSCAN
+    );
+
+    const blockRowStart = Math.floor(visibleRowStart / blockRows) * blockRows;
+    const blockRowEnd = Math.floor(visibleRowEnd / blockRows) * blockRows;
+    const blockColStart = Math.floor(visibleColStart / blockCols) * blockCols;
+    const blockColEnd = Math.floor(visibleColEnd / blockCols) * blockCols;
+
+    for (let row = blockRowStart; row <= blockRowEnd; row += blockRows) {
+      const rowLimit = Math.min(blockRows, rows - row);
+      for (let col = blockColStart; col <= blockColEnd; col += blockCols) {
+        const colLimit = Math.min(blockCols, cols - col);
+        onRequestBlock?.(row, col, rowLimit, colLimit);
+      }
+    }
+  }, [rows, cols, blockRows, blockCols, viewport, onRequestBlock]);
+
+  const visibleRowStart = Math.max(0, Math.floor(viewport.scrollTop / MATRIX_ROW_HEIGHT) - MATRIX_OVERSCAN);
+  const visibleRowEnd = Math.min(
+    rows - 1,
+    Math.floor((viewport.scrollTop + viewport.height) / MATRIX_ROW_HEIGHT) + MATRIX_OVERSCAN
+  );
+  const visibleColStart = Math.max(0, Math.floor(viewport.scrollLeft / MATRIX_COL_WIDTH) - MATRIX_OVERSCAN);
+  const visibleColEnd = Math.min(
+    cols - 1,
+    Math.floor((viewport.scrollLeft + viewport.width) / MATRIX_COL_WIDTH) + MATRIX_OVERSCAN
+  );
+
+  const visibleRows = [];
+  for (let row = visibleRowStart; row <= visibleRowEnd; row += 1) {
+    visibleRows.push(row);
+  }
+
+  const visibleCols = [];
+  for (let col = visibleColStart; col <= visibleColEnd; col += 1) {
+    visibleCols.push(col);
+  }
+
+  const getCellValue = (row, col) => {
+    const rowBase = Math.floor(row / blockRows) * blockRows;
+    const colBase = Math.floor(col / blockCols) * blockCols;
+    const rowLimit = Math.min(blockRows, rows - rowBase);
+    const colLimit = Math.min(blockCols, cols - colBase);
+    const block = getBlock?.(rowBase, colBase, rowLimit, colLimit);
+    if (!block || !Array.isArray(block.data)) return null;
+    const localRow = row - block.row_offset;
+    const localCol = col - block.col_offset;
+    return block.data?.[localRow]?.[localCol] ?? null;
+  };
+
+  const totalWidth = MATRIX_INDEX_WIDTH + cols * MATRIX_COL_WIDTH;
+  const totalHeight = MATRIX_HEADER_HEIGHT + rows * MATRIX_ROW_HEIGHT;
+
+  return (
+    <div className="matrix-table-shell">
+      <div className="matrix-table" ref={containerRef}>
+        <div
+          className="matrix-spacer"
+          style={{ width: totalWidth, height: totalHeight }}
+        />
+        <div className="matrix-header" style={{ width: totalWidth, height: MATRIX_HEADER_HEIGHT }}>
+          <div className="matrix-header-corner" style={{ width: MATRIX_INDEX_WIDTH }} />
+          <div className="matrix-header-cells" style={{ width: cols * MATRIX_COL_WIDTH }}>
+            {visibleCols.map((col) => (
+              <div
+                key={`header-${col}`}
+                className="matrix-cell matrix-cell-header"
+                style={{
+                  left: col * MATRIX_COL_WIDTH,
+                  width: MATRIX_COL_WIDTH,
+                  height: MATRIX_HEADER_HEIGHT
+                }}
+              >
+                {col}
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="matrix-index" style={{ height: rows * MATRIX_ROW_HEIGHT, width: MATRIX_INDEX_WIDTH }}>
+          {visibleRows.map((row) => (
+            <div
+              key={`row-${row}`}
+              className="matrix-cell matrix-cell-index"
+              style={{
+                top: row * MATRIX_ROW_HEIGHT,
+                width: MATRIX_INDEX_WIDTH,
+                height: MATRIX_ROW_HEIGHT
+              }}
+            >
+              {row}
+            </div>
+          ))}
+        </div>
+        <div className="matrix-cells" style={{ width: cols * MATRIX_COL_WIDTH, height: rows * MATRIX_ROW_HEIGHT }}>
+          {visibleRows.map((row) => (
+            visibleCols.map((col) => {
+              const value = getCellValue(row, col);
+              return (
+                <div
+                  key={`cell-${row}-${col}-${cacheVersion}`}
+                  className="matrix-cell"
+                  style={{
+                    top: row * MATRIX_ROW_HEIGHT,
+                    left: col * MATRIX_COL_WIDTH,
+                    width: MATRIX_COL_WIDTH,
+                    height: MATRIX_ROW_HEIGHT
+                  }}
+                >
+                  {value === null ? '--' : formatCell(value, notation)}
+                </div>
+              );
+            })
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LineChart({ series, notation, gridEnabled, aspectMode, onViewChange }) {
   const containerRef = useRef(null);
   const svgRef = useRef(null);
   const dragRef = useRef(null);
@@ -139,6 +328,7 @@ function LineChart({ series, notation, gridEnabled, aspectMode }) {
   const [isPanning, setIsPanning] = useState(false);
   const [hover, setHover] = useState(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const viewChangeRef = useRef(null);
 
   const points = useMemo(() => buildLinePoints(series), [series]);
   const hasPoints = points.length > 0;
@@ -365,6 +555,29 @@ function LineChart({ series, notation, gridEnabled, aspectMode }) {
     return maxY - ratio * spanY;
   };
 
+  useEffect(() => {
+    if (!onViewChange || zoom <= 1) return;
+    const start = getAxisValueX(padding);
+    const end = getAxisValueX(padding + chartW);
+    if (!Number.isFinite(start) || !Number.isFinite(end)) return;
+    const range = {
+      start: Math.min(start, end),
+      end: Math.max(start, end)
+    };
+    if (viewChangeRef.current) {
+      clearTimeout(viewChangeRef.current);
+    }
+    viewChangeRef.current = setTimeout(() => {
+      onViewChange(range);
+    }, 200);
+  }, [zoom, pan.x, pan.y, minX, maxX, onViewChange]);
+
+  useEffect(() => () => {
+    if (viewChangeRef.current) {
+      clearTimeout(viewChangeRef.current);
+    }
+  }, []);
+
   return (
     <div className={`line-chart-shell ${isFullscreen ? 'is-fullscreen' : ''}`} ref={containerRef}>
       <div className="line-chart-toolbar">
@@ -573,50 +786,69 @@ const renderTable = (preview, notation) => {
   );
 };
 
-const renderHeatmap = (preview, heatmapColormap, heatmapGrid) => {
-    if (!preview || preview.ndim < 2) {
-      return (
-        <div className="panel-state">
-          <div className="state-text">Heatmap requires 2D or higher dimensional data.</div>
-        </div>
-      );
-    }
-
-    // Get heatmap data based on preview structure
-    let heatmapData = null;
-    
-    if (preview.table?.kind === '2d' && preview.table?.data) {
-      // For 2D table data
-      heatmapData = preview.table.data;
-    } else if (preview.plot?.type === 'heatmap' && preview.plot?.data) {
-      // For explicit heatmap plot data
-      heatmapData = preview.plot.data;
-    } else if (Array.isArray(preview.data)) {
-      // For direct data array
-      heatmapData = preview.data;
-    }
-    
-    if (!heatmapData || !Array.isArray(heatmapData)) {
-      return (
-        <div className="panel-state">
-          <div className="state-text">No valid 2D data available for heatmap visualization.</div>
-        </div>
-      );
-    }
-
+const renderHeatmap = (preview, heatmapPayload, heatmapColormap, heatmapGrid, onHeatmapZoom) => {
+  const source = heatmapPayload?.data ? heatmapPayload : null;
+  if (!preview && !source) {
     return (
-      <div className="preview-heatmap">
-        <HeatmapChart 
-          data={heatmapData} 
-          shape={preview.shape}
-          colormap={heatmapColormap}
-          showGrid={heatmapGrid}
-        />
+      <div className="panel-state">
+        <div className="state-text">Heatmap data not available.</div>
       </div>
     );
-  };
+  }
 
-function HeatmapChart({ data, shape, colormap = 'viridis', showGrid = true }) {
+  const ndim = source?.source_ndim ?? preview?.ndim ?? 0;
+  if (ndim < 2) {
+    return (
+      <div className="panel-state">
+        <div className="state-text">Heatmap requires 2D or higher dimensional data.</div>
+      </div>
+    );
+  }
+
+  let heatmapData = null;
+  let shape = source?.shape || preview?.shape;
+  let stats = source?.stats || null;
+
+  if (source?.data) {
+    heatmapData = source.data;
+  } else if (preview?.plot?.type === 'heatmap' && preview.plot?.data) {
+    heatmapData = preview.plot.data;
+  } else if (preview?.table?.kind === '2d' && preview.table?.data) {
+    heatmapData = preview.table.data;
+  } else if (Array.isArray(preview?.data)) {
+    heatmapData = preview.data;
+  }
+
+  if (!stats && preview?.stats?.supported) {
+    stats = {
+      min: preview.stats.min,
+      max: preview.stats.max
+    };
+  }
+
+  if (!heatmapData || !Array.isArray(heatmapData)) {
+    return (
+      <div className="panel-state">
+        <div className="state-text">No valid 2D data available for heatmap visualization.</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="preview-heatmap">
+      <HeatmapChart
+        data={heatmapData}
+        shape={shape}
+        stats={stats}
+        colormap={heatmapColormap}
+        showGrid={heatmapGrid}
+        onZoom={onHeatmapZoom}
+      />
+    </div>
+  );
+};
+
+function HeatmapChart({ data, shape, stats: statsOverride, colormap = 'viridis', showGrid = true, onZoom }) {
   const containerRef = useRef(null);
   const svgRef = useRef(null);
   const dragRef = useRef(null);
@@ -629,6 +861,7 @@ function HeatmapChart({ data, shape, colormap = 'viridis', showGrid = true }) {
   const [hover, setHover] = useState(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [colorRange, setColorRange] = useState({ min: 0, max: 1 });
+  const zoomChangeRef = useRef(null);
 
   // Colormap definitions
   const colormaps = {
@@ -675,19 +908,42 @@ function HeatmapChart({ data, shape, colormap = 'viridis', showGrid = true }) {
     const rows = data.length;
     const cols = data[0]?.length || 0;
     if (rows === 0 || cols === 0) return { min: 0, max: 1, rows: 0, cols: 0 };
-    
-    const flat = data.flat().filter(v => Number.isFinite(Number(v)));
-    if (flat.length === 0) return { min: 0, max: 1, rows, cols };
-    
-    const numbers = flat.map(Number);
-    const min = Math.min(...numbers);
-    const max = Math.max(...numbers);
-    return { min, max: max === min ? min + 1 : max, rows, cols };
-  }, [data]);
+
+    let min = Number(statsOverride?.min);
+    let max = Number(statsOverride?.max);
+    const hasOverride = Number.isFinite(min) && Number.isFinite(max);
+
+    if (!hasOverride) {
+      const flat = data.flat().filter((value) => Number.isFinite(Number(value)));
+      if (flat.length === 0) return { min: 0, max: 1, rows, cols };
+      const numbers = flat.map(Number);
+      min = Math.min(...numbers);
+      max = Math.max(...numbers);
+    }
+
+    const resolvedMax = max === min ? min + 1 : max;
+    return { min, max: resolvedMax, rows, cols };
+  }, [data, statsOverride]);
 
   useEffect(() => {
     setColorRange(stats);
   }, [stats]);
+
+  useEffect(() => {
+    if (!onZoom || zoom <= 1) return;
+    if (zoomChangeRef.current) {
+      clearTimeout(zoomChangeRef.current);
+    }
+    zoomChangeRef.current = setTimeout(() => {
+      onZoom(zoom);
+    }, 200);
+  }, [zoom, onZoom]);
+
+  useEffect(() => () => {
+    if (zoomChangeRef.current) {
+      clearTimeout(zoomChangeRef.current);
+    }
+  }, []);
 
   // Get color from colormap
   const getColor = useCallback((value) => {
@@ -1119,7 +1375,26 @@ function ViewerPanel({
   lineGrid,
   lineAspect,
   heatmapGrid,
-  heatmapColormap
+  heatmapColormap,
+  matrixEnabled,
+  matrixLoading,
+  matrixError,
+  matrixVersion,
+  matrixShape,
+  matrixBlockSize,
+  getMatrixBlock,
+  onRequestMatrixBlock,
+  onEnableMatrix,
+  heatmapLoading,
+  heatmapError,
+  heatmapData,
+  onEnableHeatmap,
+  onHeatmapZoom,
+  lineLoading,
+  lineError,
+  lineData,
+  onEnableLine,
+  onLineViewChange
 }) {
   const isInspect = viewMode === 'inspect';
   const isDisplay = viewMode === 'display';
@@ -1127,7 +1402,7 @@ function ViewerPanel({
   const isGroup = meta?.kind === 'group';
   const hasSelection = selectedPath && selectedPath !== '/';
   const canShowHeatmap = preview?.ndim >= 2;
-  const lineSeries = getLineSeries(preview);
+  const lineSeries = getLineSeries(preview, lineData);
   const isLineTab = activeTab === 'line';
 
   const resolvedDisplayDims = Array.isArray(stagedDisplayDims) && stagedDisplayDims.length === 2
@@ -1319,16 +1594,74 @@ function ViewerPanel({
               )}
 
               <div className="preview-content">
-                {activeTab === 'table' && renderTable(preview, notation)}
-                {activeTab === 'line' && (
-                  <LineChart
-                    series={lineSeries}
-                    notation={notation}
-                    gridEnabled={lineGrid}
-                    aspectMode={lineAspect}
-                  />
+                {activeTab === 'table' && (
+                  <div className="data-section">
+                    <div className="data-actions">
+                      <button
+                        type="button"
+                        className="data-btn"
+                        onClick={onEnableMatrix}
+                        disabled={!matrixShape || matrixLoading}
+                      >
+                        Load full view
+                      </button>
+                      {matrixLoading && <span className="data-status">Loading blocks...</span>}
+                      {matrixError && <span className="data-status error">{matrixError}</span>}
+                    </div>
+                    {matrixEnabled && matrixShape ? (
+                      <VirtualMatrixTable
+                        rows={matrixShape.rows}
+                        cols={matrixShape.cols}
+                        blockRows={matrixBlockSize?.rows || 200}
+                        blockCols={matrixBlockSize?.cols || 50}
+                        getBlock={getMatrixBlock}
+                        onRequestBlock={onRequestMatrixBlock}
+                        notation={notation}
+                        cacheVersion={matrixVersion}
+                      />
+                    ) : renderTable(preview, notation)}
+                  </div>
                 )}
-                {activeTab === 'heatmap' && canShowHeatmap && renderHeatmap(preview, heatmapColormap, heatmapGrid)}
+                {activeTab === 'line' && (
+                  <div className="data-section">
+                    <div className="data-actions">
+                      <button
+                        type="button"
+                        className="data-btn"
+                        onClick={onEnableLine}
+                        disabled={lineLoading}
+                      >
+                        Load full line
+                      </button>
+                      {lineLoading && <span className="data-status">Loading line...</span>}
+                      {lineError && <span className="data-status error">{lineError}</span>}
+                    </div>
+                    <LineChart
+                      series={lineSeries}
+                      notation={notation}
+                      gridEnabled={lineGrid}
+                      aspectMode={lineAspect}
+                      onViewChange={onLineViewChange}
+                    />
+                  </div>
+                )}
+                {activeTab === 'heatmap' && canShowHeatmap && (
+                  <div className="data-section">
+                    <div className="data-actions">
+                      <button
+                        type="button"
+                        className="data-btn"
+                        onClick={onEnableHeatmap}
+                        disabled={heatmapLoading}
+                      >
+                        Load high-res
+                      </button>
+                      {heatmapLoading && <span className="data-status">Loading heatmap...</span>}
+                      {heatmapError && <span className="data-status error">{heatmapError}</span>}
+                    </div>
+                    {renderHeatmap(preview, heatmapData, heatmapColormap, heatmapGrid, onHeatmapZoom)}
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -1533,8 +1866,10 @@ function ViewerPanel({
 HeatmapChart.propTypes = {
   data: PropTypes.array.isRequired,
   shape: PropTypes.array,
+  stats: PropTypes.object,
   colormap: PropTypes.string,
-  showGrid: PropTypes.bool
+  showGrid: PropTypes.bool,
+  onZoom: PropTypes.func
 };
 
 ViewerPanel.propTypes = {
@@ -1559,7 +1894,26 @@ ViewerPanel.propTypes = {
   lineGrid: PropTypes.bool,
   lineAspect: PropTypes.string,
   heatmapGrid: PropTypes.bool,
-  heatmapColormap: PropTypes.string
+  heatmapColormap: PropTypes.string,
+  matrixEnabled: PropTypes.bool,
+  matrixLoading: PropTypes.bool,
+  matrixError: PropTypes.string,
+  matrixVersion: PropTypes.number,
+  matrixShape: PropTypes.object,
+  matrixBlockSize: PropTypes.object,
+  getMatrixBlock: PropTypes.func,
+  onRequestMatrixBlock: PropTypes.func,
+  onEnableMatrix: PropTypes.func,
+  heatmapLoading: PropTypes.bool,
+  heatmapError: PropTypes.string,
+  heatmapData: PropTypes.object,
+  onEnableHeatmap: PropTypes.func,
+  onHeatmapZoom: PropTypes.func,
+  lineLoading: PropTypes.bool,
+  lineError: PropTypes.string,
+  lineData: PropTypes.object,
+  onEnableLine: PropTypes.func,
+  onLineViewChange: PropTypes.func
 };
 
 export default ViewerPanel;
