@@ -36,6 +36,26 @@ const buildFixedIndicesParam = (indices) => {
   return entries.map(([key, value]) => `${key}=${value}`).join(',');
 };
 
+const buildNextFixedIndices = (currentIndices, nextDims, shape) => {
+  const next = { ...(currentIndices || {}) };
+  nextDims.forEach((dim) => {
+    delete next[dim];
+  });
+
+  (shape || []).forEach((size, dim) => {
+    if (nextDims.includes(dim)) return;
+    const max = Math.max(0, size - 1);
+    const fallback = Math.floor(size / 2);
+    if (!Number.isFinite(next[dim])) {
+      next[dim] = fallback;
+    } else {
+      next[dim] = Math.max(0, Math.min(max, next[dim]));
+    }
+  });
+
+  return next;
+};
+
 function ViewerPage({ fileKey, onBack }) {
   const [selectedPath, setSelectedPath] = useState('/');
   const [viewMode, setViewMode] = useState('display');
@@ -136,7 +156,7 @@ function ViewerPage({ fileKey, onBack }) {
     setHeatmapGrid(true);
     setHeatmapColormap('viridis');
     resetDataState();
-  }, [fileKey, selectedPath]);
+  }, [fileKey, selectedPath, resetDataState]);
 
   useEffect(() => {
     if (preview && displayTab === 'heatmap' && preview.ndim < 2) {
@@ -423,27 +443,15 @@ function ViewerPage({ fileKey, onBack }) {
   const handleStagedDisplayDimsChange = (nextDims, shape) => {
     if (!Array.isArray(nextDims) || nextDims.length !== 2) return;
     logPreview('staged_display_dims_change', nextDims);
+    const nextFixed = buildNextFixedIndices(stagedFixedIndices, nextDims, shape);
     setStagedDisplayDims(nextDims);
-    
-    // Clear staged fixed indices for dimensions that are now display dimensions
-    setStagedFixedIndices((current) => {
-      const next = { ...current };
-      nextDims.forEach((dim) => {
-        delete next[dim];
-      });
-      // Add default values for non-display dimensions
-      shape?.forEach((size, dim) => {
-        if (nextDims.includes(dim)) return;
-        const max = Math.max(0, size - 1);
-        const fallback = Math.floor(size / 2);
-        if (!Number.isFinite(next[dim])) {
-          next[dim] = fallback;
-        } else {
-          next[dim] = Math.max(0, Math.min(max, next[dim]));
-        }
-      });
-      return next;
-    });
+    setStagedFixedIndices(nextFixed);
+
+    // 2D controls are direct toggles, so apply immediately.
+    if (preview?.ndim === 2) {
+      setDisplayDims(nextDims);
+      setFixedIndices(nextFixed);
+    }
   };
 
   const handleStagedFixedIndexChange = (dim, value, size) => {
@@ -477,38 +485,6 @@ function ViewerPage({ fileKey, onBack }) {
       setStagedDisplayDims(defaultDisplayDims);
       setStagedFixedIndices(defaultFixedIndices);
     }
-  };
-
-  const handleDisplayDimsChange = (nextDims, shape) => {
-    if (!Array.isArray(nextDims) || nextDims.length !== 2) return;
-    logPreview('display_dims_change', nextDims);
-    setDisplayDims(nextDims);
-    setFixedIndices((current) => {
-      const next = { ...current };
-      nextDims.forEach((dim) => {
-        delete next[dim];
-      });
-      shape.forEach((size, dim) => {
-        if (nextDims.includes(dim)) return;
-        const max = Math.max(0, size - 1);
-        const fallback = Math.floor(size / 2);
-        const value = Number.isFinite(next[dim]) ? next[dim] : fallback;
-        next[dim] = Math.max(0, Math.min(value, max));
-      });
-      return next;
-    });
-  };
-
-  const handleFixedIndexChange = (dim, value, size) => {
-    if (!Number.isFinite(dim) || !Number.isFinite(value)) return;
-    if (Array.isArray(displayDims) && displayDims.includes(dim)) return;
-    const max = Math.max(0, (size || 1) - 1);
-    const clamped = Math.max(0, Math.min(value, max));
-    logPreview('fixed_index_change', { dim, value: clamped });
-    setFixedIndices((current) => ({
-      ...current,
-      [dim]: clamped
-    }));
   };
 
   return (

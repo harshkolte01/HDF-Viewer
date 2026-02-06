@@ -168,6 +168,12 @@
     color: var(--text-primary);
 }
 
+.dim-pending {
+    color: var(--warning);
+    font-size: 0.72rem;
+    font-weight: 600;
+}
+
 .axis-toggle {
     display: grid;
     gap: var(--spacing-sm);
@@ -378,6 +384,10 @@
 
 .data-status.error {
     color: var(--error);
+}
+
+.data-status.info {
+    color: var(--info);
 }
 
 .matrix-table-shell {

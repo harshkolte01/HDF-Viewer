@@ -112,6 +112,62 @@ def _parse_line_dim(param, ndim):
     return dim
 
 
+def _is_not_found_error(error):
+    message = str(error).lower()
+    return 'not found' in message
+
+
+def _normalize_selection(shape, display_dims_param, fixed_indices_param):
+    ndim = len(shape)
+    display_dims = _parse_display_dims(display_dims_param, ndim)
+    fixed_indices = _parse_fixed_indices(fixed_indices_param, ndim)
+
+    if display_dims:
+        for dim in list(fixed_indices.keys()):
+            if dim in display_dims:
+                del fixed_indices[dim]
+
+    for dim, idx in list(fixed_indices.items()):
+        size = shape[dim]
+        if size <= 0:
+            fixed_indices[dim] = 0
+            continue
+        normalized = idx if idx >= 0 else size + idx
+        if normalized < 0 or normalized >= size:
+            raise ValueError(f"fixed_indices index out of range for dim {dim}")
+        fixed_indices[dim] = normalized
+
+    fixed_indices = _fill_fixed_indices(fixed_indices, shape, display_dims)
+    return display_dims, fixed_indices
+
+
+def _compute_safe_heatmap_size(rows, cols, requested_size):
+    if requested_size <= 0:
+        return 1
+
+    cap = min(MAX_JSON_ELEMENTS, MAX_ELEMENTS)
+
+    def projected_cells(size):
+        return min(rows, size) * min(cols, size)
+
+    if projected_cells(requested_size) <= cap:
+        return requested_size
+
+    low = 1
+    high = requested_size
+    best = 1
+
+    while low <= high:
+        mid = (low + high) // 2
+        if projected_cells(mid) <= cap:
+            best = mid
+            low = mid + 1
+        else:
+            high = mid - 1
+
+    return best
+
+
 def _enforce_element_limits(count):
     if count > MAX_JSON_ELEMENTS:
         raise ValueError(
@@ -275,9 +331,9 @@ def get_preview(key):
         preview_type = '1d' if ndim == 1 else '2d' if ndim == 2 else 'nd'
 
         display_dims = None
-        fixed_indices = None
+        fixed_indices = {}
         if ndim > 1:
-            display_dims, fixed_indices = reader.normalize_preview_axes(
+            display_dims, fixed_indices = _normalize_selection(
                 shape,
                 display_dims_param,
                 fixed_indices_param
@@ -328,10 +384,11 @@ def get_preview(key):
 
     except ValueError as e:
         logger.error(f"Error getting HDF5 preview for '{key}' at '{hdf_path}': {e}")
+        status_code = 404 if _is_not_found_error(e) else 400
         return jsonify({
             'success': False,
             'error': str(e)
-        }), 404
+        }), status_code
     except TypeError as e:
         logger.error(f"Error getting HDF5 preview for '{key}' at '{hdf_path}': {e}")
         return jsonify({
@@ -375,9 +432,11 @@ def get_data(key):
         shape = dataset_info['shape']
         ndim = dataset_info['ndim']
 
-        display_dims = _parse_display_dims(request.args.get('display_dims'), ndim)
-        fixed_indices = _parse_fixed_indices(request.args.get('fixed_indices'), ndim)
-        fixed_indices = _fill_fixed_indices(fixed_indices, shape, display_dims)
+        display_dims, fixed_indices = _normalize_selection(
+            shape,
+            request.args.get('display_dims'),
+            request.args.get('fixed_indices')
+        )
 
         if mode in ('matrix', 'heatmap') and (display_dims is None or ndim < 2):
             return jsonify({
@@ -440,15 +499,16 @@ def get_data(key):
             }), 200
 
         elif mode == 'heatmap':
-            max_size = _parse_int_param('max_size', DEFAULT_MAX_SIZE, 1)
-            if max_size > MAX_HEATMAP_SIZE:
+            requested_max_size = _parse_int_param('max_size', DEFAULT_MAX_SIZE, 1)
+            if requested_max_size > MAX_HEATMAP_SIZE:
                 raise ValueError(f"max_size exceeds {MAX_HEATMAP_SIZE}")
 
             row_dim, col_dim = display_dims
             rows = shape[row_dim]
             cols = shape[col_dim]
-            target_rows = min(rows, max_size)
-            target_cols = min(cols, max_size)
+            effective_max_size = _compute_safe_heatmap_size(rows, cols, requested_max_size)
+            target_rows = min(rows, effective_max_size)
+            target_cols = min(cols, effective_max_size)
             element_count = target_rows * target_cols
             _enforce_element_limits(element_count)
 
@@ -457,7 +517,7 @@ def get_data(key):
                 hdf_path,
                 display_dims,
                 fixed_indices,
-                max_size
+                effective_max_size
             )
 
             return jsonify({
@@ -476,7 +536,10 @@ def get_data(key):
                 'row_offset': heatmap['row_offset'],
                 'col_offset': heatmap['col_offset'],
                 'downsample_info': heatmap['downsample_info'],
-                'sampled': heatmap['sampled']
+                'sampled': heatmap['sampled'],
+                'requested_max_size': requested_max_size,
+                'effective_max_size': effective_max_size,
+                'max_size_clamped': effective_max_size != requested_max_size
             }), 200
 
         elif mode == 'line':
@@ -526,14 +589,13 @@ def get_data(key):
             else:
                 line_limit = min(line_limit, max(0, line_length - line_offset))
 
-            if line_limit > MAX_ELEMENTS:
-                raise ValueError(
-                    f"Selection exceeds max_elements ({line_limit} > {MAX_ELEMENTS} elements)"
-                )
-
             line_step = 1
+            output_points = 0
             if line_limit > 0:
                 line_step = max(1, int(math.ceil(line_limit / MAX_LINE_POINTS)))
+                output_points = int(math.ceil(line_limit / line_step))
+
+            _enforce_element_limits(output_points)
 
             line = reader.get_line(
                 key,
@@ -562,6 +624,7 @@ def get_data(key):
                 'axis': line['axis'],
                 'index': line['index'],
                 'line_offset': line_offset,
+                'line_limit': line_limit,
                 'downsample_info': line['downsample_info']
             }), 200
 
@@ -571,6 +634,12 @@ def get_data(key):
         }), 501
 
     except ValueError as e:
+        status_code = 404 if _is_not_found_error(e) else 400
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), status_code
+    except TypeError as e:
         return jsonify({
             'success': False,
             'error': str(e)

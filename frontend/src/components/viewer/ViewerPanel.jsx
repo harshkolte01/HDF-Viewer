@@ -102,6 +102,29 @@ const normalizeNumber = (value) => {
 };
 
 const clampValue = (value, min, max) => Math.min(max, Math.max(min, value));
+const getArrayEdge = (array, index, fallback = 'na') => {
+  if (!Array.isArray(array) || array.length === 0) return fallback;
+  const value = array[index < 0 ? array.length + index : index];
+  return Number.isFinite(Number(value)) ? Number(value) : fallback;
+};
+
+const buildLineChartResetKey = (selectedPath, series, lineData) => {
+  const x = Array.isArray(series?.x) ? series.x : [];
+  const y = Array.isArray(series?.y) ? series.y : [];
+  const step = Number(lineData?.downsample_info?.step);
+  const offset = Number(lineData?.line_offset);
+  return [
+    selectedPath || 'no-path',
+    y.length,
+    x.length,
+    getArrayEdge(x, 0),
+    getArrayEdge(x, -1),
+    getArrayEdge(y, 0),
+    getArrayEdge(y, -1),
+    Number.isFinite(step) ? step : 'na',
+    Number.isFinite(offset) ? offset : 'na'
+  ].join('|');
+};
 
 const getLineSeries = (preview, lineData) => {
   if (lineData?.data && Array.isArray(lineData.data)) {
@@ -141,6 +164,43 @@ const MATRIX_COL_WIDTH = 96;
 const MATRIX_HEADER_HEIGHT = 28;
 const MATRIX_INDEX_WIDTH = 60;
 const MATRIX_OVERSCAN = 4;
+const HEATMAP_COLORMAPS = {
+  viridis: [
+    [0.267, 0.004, 0.329], [0.282, 0.140, 0.457], [0.253, 0.265, 0.529],
+    [0.206, 0.371, 0.553], [0.163, 0.471, 0.558], [0.127, 0.566, 0.550],
+    [0.134, 0.658, 0.517], [0.266, 0.748, 0.441], [0.477, 0.821, 0.318],
+    [0.741, 0.873, 0.149], [0.993, 0.906, 0.143]
+  ],
+  plasma: [
+    [0.050, 0.030, 0.529], [0.258, 0.013, 0.615], [0.417, 0.006, 0.659],
+    [0.550, 0.044, 0.667], [0.663, 0.108, 0.643], [0.763, 0.178, 0.593],
+    [0.848, 0.255, 0.530], [0.916, 0.340, 0.449], [0.966, 0.435, 0.354],
+    [0.992, 0.549, 0.235], [0.987, 0.680, 0.079]
+  ],
+  inferno: [
+    [0.001, 0.000, 0.014], [0.116, 0.023, 0.109], [0.258, 0.013, 0.208],
+    [0.408, 0.038, 0.267], [0.550, 0.089, 0.282], [0.683, 0.163, 0.264],
+    [0.798, 0.255, 0.224], [0.888, 0.368, 0.162], [0.951, 0.498, 0.074],
+    [0.988, 0.645, 0.039], [0.988, 0.807, 0.144]
+  ],
+  magma: [
+    [0.001, 0.000, 0.014], [0.116, 0.021, 0.111], [0.258, 0.017, 0.210],
+    [0.408, 0.044, 0.269], [0.550, 0.096, 0.285], [0.683, 0.170, 0.267],
+    [0.798, 0.263, 0.227], [0.888, 0.375, 0.167], [0.951, 0.506, 0.079],
+    [0.988, 0.652, 0.042], [0.987, 0.991, 0.749]
+  ],
+  cool: [
+    [0.000, 1.000, 1.000], [0.125, 0.875, 1.000], [0.250, 0.750, 1.000],
+    [0.375, 0.625, 1.000], [0.500, 0.500, 1.000], [0.625, 0.375, 1.000],
+    [0.750, 0.250, 1.000], [0.875, 0.125, 1.000], [1.000, 0.000, 1.000]
+  ],
+  hot: [
+    [0.000, 0.000, 0.000], [0.333, 0.000, 0.000], [0.667, 0.000, 0.000],
+    [1.000, 0.000, 0.000], [1.000, 0.333, 0.000], [1.000, 0.667, 0.000],
+    [1.000, 1.000, 0.000], [1.000, 1.000, 0.333], [1.000, 1.000, 0.667],
+    [1.000, 1.000, 1.000]
+  ]
+};
 
 function VirtualMatrixTable({
   rows,
@@ -334,12 +394,6 @@ function LineChart({ series, notation, gridEnabled, aspectMode, onViewChange }) 
   const hasPoints = points.length > 0;
 
   useEffect(() => {
-    setPan({ x: 0, y: 0 });
-    setZoom(1);
-    setHover(null);
-  }, [series]);
-
-  useEffect(() => {
     const handleChange = () => {
       setIsFullscreen(Boolean(document.fullscreenElement));
     };
@@ -347,18 +401,10 @@ function LineChart({ series, notation, gridEnabled, aspectMode, onViewChange }) 
     return () => document.removeEventListener('fullscreenchange', handleChange);
   }, []);
 
-  if (!hasPoints) {
-    return (
-      <div className="panel-state">
-        <div className="state-text">Line preview not available.</div>
-      </div>
-    );
-  }
-
-  const minX = points[0].x;
-  const maxX = points[points.length - 1].x;
-  const minY = Math.min(...points.map((point) => point.y));
-  const maxY = Math.max(...points.map((point) => point.y));
+  const minX = hasPoints ? points[0].x : 0;
+  const maxX = hasPoints ? points[points.length - 1].x : 1;
+  const minY = hasPoints ? Math.min(...points.map((point) => point.y)) : 0;
+  const maxY = hasPoints ? Math.max(...points.map((point) => point.y)) : 1;
   const spanX = maxX - minX || 1;
   const spanY = maxY - minY || 1;
 
@@ -370,7 +416,7 @@ function LineChart({ series, notation, gridEnabled, aspectMode, onViewChange }) 
   const chartW = width - padding * 2;
   const chartH = height - padding * 2;
 
-  const getPanBounds = (scale) => {
+  const getPanBounds = useCallback((scale) => {
     const leftBound = padding - padding * scale;
     const rightBound = (padding + chartW) - (padding + chartW) * scale;
     const topBound = padding - padding * scale;
@@ -391,15 +437,15 @@ function LineChart({ series, notation, gridEnabled, aspectMode, onViewChange }) 
       minY: topBound,
       maxY: bottomBound
     };
-  };
+  }, [chartH, chartW, padding]);
 
-  const clampPan = (nextPan, scale) => {
+  const clampPan = useCallback((nextPan, scale) => {
     const bounds = getPanBounds(scale);
     return {
       x: clampValue(nextPan.x, bounds.minX, bounds.maxX),
       y: clampValue(nextPan.y, bounds.minY, bounds.maxY)
     };
-  };
+  }, [getPanBounds]);
 
   const toChartPoint = (point) => ({
     x: padding + ((point.x - minX) / spanX) * chartW,
@@ -427,7 +473,7 @@ function LineChart({ series, notation, gridEnabled, aspectMode, onViewChange }) 
   const shouldShowLine = resolvedAspect === 'line' || resolvedAspect === 'both';
   const shouldShowPoints = resolvedAspect === 'point' || resolvedAspect === 'both';
 
-  const applyZoom = (nextZoom, center) => {
+  const applyZoom = useCallback((nextZoom, center) => {
     const clamped = clampValue(nextZoom, minZoom, maxZoom);
     if (clamped === zoom) return;
     const scale = clamped / zoom;
@@ -441,15 +487,15 @@ function LineChart({ series, notation, gridEnabled, aspectMode, onViewChange }) 
       return clampPan(nextPan, clamped);
     });
     setZoom(clamped);
-  };
+  }, [clampPan, maxZoom, minZoom, zoom]);
 
-  const getViewPoint = (event) => {
+  const getViewPoint = useCallback((event) => {
     if (!svgRef.current) return null;
     const rect = svgRef.current.getBoundingClientRect();
     const x = ((event.clientX - rect.left) / rect.width) * width;
     const y = ((event.clientY - rect.top) / rect.height) * height;
     return { x, y };
-  };
+  }, [height, width]);
 
   const handleWheel = useCallback((event) => {
     if (!svgRef.current) return;
@@ -458,7 +504,7 @@ function LineChart({ series, notation, gridEnabled, aspectMode, onViewChange }) 
     const point = getViewPoint(event);
     const delta = event.deltaY > 0 ? 0.9 : 1.1;
     applyZoom(zoom * delta, point || { x: width / 2, y: height / 2 });
-  }, [zoom]);
+  }, [applyZoom, getViewPoint, height, width, zoom]);
 
   useEffect(() => {
     const svg = svgRef.current;
@@ -543,17 +589,17 @@ function LineChart({ series, notation, gridEnabled, aspectMode, onViewChange }) 
     }
   };
 
-  const getAxisValueX = (screenX) => {
+  const getAxisValueX = useCallback((screenX) => {
     const baseX = (screenX - pan.x) / zoom;
     const ratio = (baseX - padding) / chartW;
     return minX + ratio * spanX;
-  };
+  }, [chartW, minX, padding, pan.x, spanX, zoom]);
 
-  const getAxisValueY = (screenY) => {
+  const getAxisValueY = useCallback((screenY) => {
     const baseY = (screenY - pan.y) / zoom;
     const ratio = (baseY - padding) / chartH;
     return maxY - ratio * spanY;
-  };
+  }, [chartH, maxY, padding, pan.y, spanY, zoom]);
 
   useEffect(() => {
     if (!onViewChange || zoom <= 1) return;
@@ -570,13 +616,21 @@ function LineChart({ series, notation, gridEnabled, aspectMode, onViewChange }) 
     viewChangeRef.current = setTimeout(() => {
       onViewChange(range);
     }, 200);
-  }, [zoom, pan.x, pan.y, minX, maxX, onViewChange]);
+  }, [chartW, getAxisValueX, onViewChange, padding, zoom]);
 
   useEffect(() => () => {
     if (viewChangeRef.current) {
       clearTimeout(viewChangeRef.current);
     }
   }, []);
+
+  if (!hasPoints) {
+    return (
+      <div className="panel-state">
+        <div className="state-text">Line preview not available.</div>
+      </div>
+    );
+  }
 
   return (
     <div className={`line-chart-shell ${isFullscreen ? 'is-fullscreen' : ''}`} ref={containerRef}>
@@ -806,7 +860,6 @@ const renderHeatmap = (preview, heatmapPayload, heatmapColormap, heatmapGrid, on
   }
 
   let heatmapData = null;
-  let shape = source?.shape || preview?.shape;
   let stats = source?.stats || null;
 
   if (source?.data) {
@@ -834,11 +887,23 @@ const renderHeatmap = (preview, heatmapPayload, heatmapColormap, heatmapGrid, on
     );
   }
 
+  const rows = heatmapData.length;
+  const cols = Array.isArray(heatmapData[0]) ? heatmapData[0].length : 0;
+  const heatmapResetKey = [
+    source?.source_path || preview?.path || preview?.name || 'heatmap',
+    rows,
+    cols,
+    stats?.min ?? 'na',
+    stats?.max ?? 'na',
+    getArrayEdge(heatmapData[0], 0),
+    getArrayEdge(heatmapData[rows - 1], cols - 1)
+  ].join('|');
+
   return (
     <div className="preview-heatmap">
       <HeatmapChart
+        key={heatmapResetKey}
         data={heatmapData}
-        shape={shape}
         stats={stats}
         colormap={heatmapColormap}
         showGrid={heatmapGrid}
@@ -848,7 +913,7 @@ const renderHeatmap = (preview, heatmapPayload, heatmapColormap, heatmapGrid, on
   );
 };
 
-function HeatmapChart({ data, shape, stats: statsOverride, colormap = 'viridis', showGrid = true, onZoom }) {
+function HeatmapChart({ data, stats: statsOverride, colormap = 'viridis', showGrid = true, onZoom }) {
   const containerRef = useRef(null);
   const svgRef = useRef(null);
   const dragRef = useRef(null);
@@ -860,47 +925,7 @@ function HeatmapChart({ data, shape, stats: statsOverride, colormap = 'viridis',
   const [isPanning, setIsPanning] = useState(false);
   const [hover, setHover] = useState(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [colorRange, setColorRange] = useState({ min: 0, max: 1 });
   const zoomChangeRef = useRef(null);
-
-  // Colormap definitions
-  const colormaps = {
-    viridis: [
-      [0.267, 0.004, 0.329], [0.282, 0.140, 0.457], [0.253, 0.265, 0.529],
-      [0.206, 0.371, 0.553], [0.163, 0.471, 0.558], [0.127, 0.566, 0.550],
-      [0.134, 0.658, 0.517], [0.266, 0.748, 0.441], [0.477, 0.821, 0.318],
-      [0.741, 0.873, 0.149], [0.993, 0.906, 0.143]
-    ],
-    plasma: [
-      [0.050, 0.030, 0.529], [0.258, 0.013, 0.615], [0.417, 0.006, 0.659],
-      [0.550, 0.044, 0.667], [0.663, 0.108, 0.643], [0.763, 0.178, 0.593],
-      [0.848, 0.255, 0.530], [0.916, 0.340, 0.449], [0.966, 0.435, 0.354],
-      [0.992, 0.549, 0.235], [0.987, 0.680, 0.079]
-    ],
-    inferno: [
-      [0.001, 0.000, 0.014], [0.116, 0.023, 0.109], [0.258, 0.013, 0.208],
-      [0.408, 0.038, 0.267], [0.550, 0.089, 0.282], [0.683, 0.163, 0.264],
-      [0.798, 0.255, 0.224], [0.888, 0.368, 0.162], [0.951, 0.498, 0.074],
-      [0.988, 0.645, 0.039], [0.988, 0.807, 0.144]
-    ],
-    magma: [
-      [0.001, 0.000, 0.014], [0.116, 0.021, 0.111], [0.258, 0.017, 0.210],
-      [0.408, 0.044, 0.269], [0.550, 0.096, 0.285], [0.683, 0.170, 0.267],
-      [0.798, 0.263, 0.227], [0.888, 0.375, 0.167], [0.951, 0.506, 0.079],
-      [0.988, 0.652, 0.042], [0.987, 0.991, 0.749]
-    ],
-    cool: [
-      [0.000, 1.000, 1.000], [0.125, 0.875, 1.000], [0.250, 0.750, 1.000],
-      [0.375, 0.625, 1.000], [0.500, 0.500, 1.000], [0.625, 0.375, 1.000],
-      [0.750, 0.250, 1.000], [0.875, 0.125, 1.000], [1.000, 0.000, 1.000]
-    ],
-    hot: [
-      [0.000, 0.000, 0.000], [0.333, 0.000, 0.000], [0.667, 0.000, 0.000],
-      [1.000, 0.000, 0.000], [1.000, 0.333, 0.000], [1.000, 0.667, 0.000],
-      [1.000, 1.000, 0.000], [1.000, 1.000, 0.333], [1.000, 1.000, 0.667],
-      [1.000, 1.000, 1.000]
-    ]
-  };
 
   // Calculate data statistics and setup
   const stats = useMemo(() => {
@@ -926,10 +951,6 @@ function HeatmapChart({ data, shape, stats: statsOverride, colormap = 'viridis',
   }, [data, statsOverride]);
 
   useEffect(() => {
-    setColorRange(stats);
-  }, [stats]);
-
-  useEffect(() => {
     if (!onZoom || zoom <= 1) return;
     if (zoomChangeRef.current) {
       clearTimeout(zoomChangeRef.current);
@@ -953,7 +974,7 @@ function HeatmapChart({ data, shape, stats: statsOverride, colormap = 'viridis',
     
     const normalized = stats.max === stats.min ? 0 : (value - stats.min) / (stats.max - stats.min);
     const clamped = Math.max(0, Math.min(1, normalized));
-    const colors = colormaps[colormap] || colormaps.viridis;
+    const colors = HEATMAP_COLORMAPS[colormap] || HEATMAP_COLORMAPS.viridis;
     const index = clamped * (colors.length - 1);
     const lower = Math.floor(index);
     const upper = Math.ceil(index);
@@ -970,26 +991,12 @@ function HeatmapChart({ data, shape, stats: statsOverride, colormap = 'viridis',
   }, [colormap, stats]);
 
   useEffect(() => {
-    setPan({ x: 0, y: 0 });
-    setZoom(1);
-    setHover(null);
-  }, [data]);
-
-  useEffect(() => {
     const handleChange = () => {
       setIsFullscreen(Boolean(document.fullscreenElement));
     };
     document.addEventListener('fullscreenchange', handleChange);
     return () => document.removeEventListener('fullscreenchange', handleChange);
   }, []);
-
-  if (!data || stats.rows === 0 || stats.cols === 0) {
-    return (
-      <div className="panel-state">
-        <div className="state-text">No valid heatmap data available.</div>
-      </div>
-    );
-  }
 
   const width = 760;
   const height = 420;
@@ -1003,7 +1010,7 @@ function HeatmapChart({ data, shape, stats: statsOverride, colormap = 'viridis',
 
   const clampValue = (value, min, max) => Math.max(min, Math.min(max, value));
 
-  const getPanBounds = (scale) => {
+  const getPanBounds = useCallback((scale) => {
     // Calculate the scaled chart dimensions
     const scaledW = chartW * scale;
     const scaledH = chartH * scale;
@@ -1018,17 +1025,17 @@ function HeatmapChart({ data, shape, stats: statsOverride, colormap = 'viridis',
       minY: -maxPanY,
       maxY: 0
     };
-  };
+  }, [chartH, chartW]);
 
-  const clampPan = (targetPan, scale) => {
+  const clampPan = useCallback((targetPan, scale) => {
     const bounds = getPanBounds(scale);
     return {
       x: clampValue(targetPan.x, bounds.minX, bounds.maxX),
       y: clampValue(targetPan.y, bounds.minY, bounds.maxY)
     };
-  };
+  }, [getPanBounds]);
 
-  const applyZoom = (targetZoom, anchor = null) => {
+  const applyZoom = useCallback((targetZoom, anchor = null) => {
     const clamped = clampValue(targetZoom, minZoom, maxZoom);
     if (Math.abs(clamped - zoom) < 0.01) return;
     
@@ -1057,15 +1064,15 @@ function HeatmapChart({ data, shape, stats: statsOverride, colormap = 'viridis',
       return clampPan(nextPan, clamped);
     });
     setZoom(clamped);
-  };
+  }, [chartH, chartW, clampPan, maxZoom, minZoom, padding, zoom]);
 
-  const getViewPoint = (event) => {
+  const getViewPoint = useCallback((event) => {
     if (!svgRef.current) return null;
     const rect = svgRef.current.getBoundingClientRect();
     const x = ((event.clientX - rect.left) / rect.width) * width;
     const y = ((event.clientY - rect.top) / rect.height) * height;
     return { x, y };
-  };
+  }, [height, width]);
 
   const handleWheel = useCallback((event) => {
     if (!svgRef.current) return;
@@ -1074,7 +1081,7 @@ function HeatmapChart({ data, shape, stats: statsOverride, colormap = 'viridis',
     const point = getViewPoint(event);
     const delta = event.deltaY > 0 ? 0.9 : 1.1;
     applyZoom(zoom * delta, point || { x: width / 2, y: height / 2 });
-  }, [zoom]);
+  }, [applyZoom, getViewPoint, height, width, zoom]);
 
   useEffect(() => {
     const svg = svgRef.current;
@@ -1162,6 +1169,14 @@ function HeatmapChart({ data, shape, stats: statsOverride, colormap = 'viridis',
     return value.toFixed(Math.abs(value) >= 10 ? 1 : 2);
   };
 
+  if (!data || stats.rows === 0 || stats.cols === 0) {
+    return (
+      <div className="panel-state">
+        <div className="state-text">No valid heatmap data available.</div>
+      </div>
+    );
+  }
+
   return (
     <div className={`line-chart-shell ${isFullscreen ? 'is-fullscreen' : ''}`} ref={containerRef}>
       <div className="line-chart-toolbar">
@@ -1206,10 +1221,10 @@ function HeatmapChart({ data, shape, stats: statsOverride, colormap = 'viridis',
             </clipPath>
             {/* Color gradient definition */}
             <linearGradient id={`colorscale-${clipId}`} x1="0%" y1="100%" x2="0%" y2="0%">
-              {colormaps[colormap]?.map(([r, g, b], index) => (
+              {HEATMAP_COLORMAPS[colormap]?.map(([r, g, b], index) => (
                 <stop
                   key={index}
-                  offset={`${(index / (colormaps[colormap].length - 1)) * 100}%`}
+                  offset={`${(index / (HEATMAP_COLORMAPS[colormap].length - 1)) * 100}%`}
                   stopColor={`rgb(${Math.round(r * 255)}, ${Math.round(g * 255)}, ${Math.round(b * 255)})`}
                 />
               ))}
@@ -1364,7 +1379,6 @@ function ViewerPanel({
   previewError,
   activeTab,
   displayDims,
-  fixedIndices,
   stagedDisplayDims,
   stagedFixedIndices,
   onDisplayDimsChange,
@@ -1403,18 +1417,29 @@ function ViewerPanel({
   const hasSelection = selectedPath && selectedPath !== '/';
   const canShowHeatmap = preview?.ndim >= 2;
   const lineSeries = getLineSeries(preview, lineData);
+  const lineChartResetKey = useMemo(
+    () => buildLineChartResetKey(selectedPath, lineSeries, lineData),
+    [selectedPath, lineSeries, lineData]
+  );
   const isLineTab = activeTab === 'line';
 
+  const appliedDisplayDims = Array.isArray(displayDims) && displayDims.length === 2
+    ? displayDims
+    : (Array.isArray(preview?.display_dims) ? preview.display_dims : [0, 1]);
   const resolvedDisplayDims = Array.isArray(stagedDisplayDims) && stagedDisplayDims.length === 2
     ? stagedDisplayDims
-    : (Array.isArray(preview?.display_dims) ? preview.display_dims : [0, 1]);
+    : appliedDisplayDims;
   const yDim = resolvedDisplayDims[0];
   const xDim = resolvedDisplayDims[1];
   const dimOptions = preview?.shape ? preview.shape.map((_, idx) => idx) : [];
 
-  const displayDimsLabel = resolvedDisplayDims.length === 2
-    ? `D${resolvedDisplayDims[0]} x D${resolvedDisplayDims[1]}`
+  const displayDimsLabel = appliedDisplayDims.length === 2
+    ? `D${appliedDisplayDims[0]} x D${appliedDisplayDims[1]}`
     : 'Auto';
+  const hasPendingDims = appliedDisplayDims.length === 2
+    && resolvedDisplayDims.length === 2
+    && (appliedDisplayDims[0] !== resolvedDisplayDims[0]
+      || appliedDisplayDims[1] !== resolvedDisplayDims[1]);
 
   const handleDisplayDimChange = (index, value) => {
     if (!preview?.shape || !onDisplayDimsChange) return;
@@ -1472,6 +1497,11 @@ function ViewerPanel({
                   <div className="dimension-summary">
                     <span className="dim-label">Display dims</span>
                     <span className="dim-value">{displayDimsLabel}</span>
+                    {hasPendingDims && preview.ndim > 2 && (
+                      <span className="dim-pending">
+                        Pending: D{resolvedDisplayDims[0]} x D{resolvedDisplayDims[1]} (click Set)
+                      </span>
+                    )}
                   </div>
 
                   {preview.ndim === 2 && (
@@ -1637,6 +1667,7 @@ function ViewerPanel({
                       {lineError && <span className="data-status error">{lineError}</span>}
                     </div>
                     <LineChart
+                      key={lineChartResetKey}
                       series={lineSeries}
                       notation={notation}
                       gridEnabled={lineGrid}
@@ -1658,6 +1689,11 @@ function ViewerPanel({
                       </button>
                       {heatmapLoading && <span className="data-status">Loading heatmap...</span>}
                       {heatmapError && <span className="data-status error">{heatmapError}</span>}
+                      {heatmapData?.max_size_clamped && (
+                        <span className="data-status info">
+                          Clamped to {heatmapData.effective_max_size} for response limits.
+                        </span>
+                      )}
                     </div>
                     {renderHeatmap(preview, heatmapData, heatmapColormap, heatmapGrid, onHeatmapZoom)}
                   </div>
@@ -1865,7 +1901,6 @@ function ViewerPanel({
 
 HeatmapChart.propTypes = {
   data: PropTypes.array.isRequired,
-  shape: PropTypes.array,
   stats: PropTypes.object,
   colormap: PropTypes.string,
   showGrid: PropTypes.bool,
@@ -1883,7 +1918,6 @@ ViewerPanel.propTypes = {
   previewError: PropTypes.string,
   activeTab: PropTypes.string,
   displayDims: PropTypes.array,
-  fixedIndices: PropTypes.object,
   stagedDisplayDims: PropTypes.array,
   stagedFixedIndices: PropTypes.object,
   onDisplayDimsChange: PropTypes.func,
