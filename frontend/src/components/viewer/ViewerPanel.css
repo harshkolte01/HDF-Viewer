@@ -48,6 +48,9 @@
 /* Simple Metadata Layout */
 .metadata-simple {
     max-width: 800px;
+    max-height: min(72vh, 920px);
+    overflow: auto;
+    padding-right: var(--spacing-sm);
 }
 
 /* Info Rows */
@@ -108,7 +111,8 @@
     font-family: 'Monaco', 'Courier New', monospace;
     font-size: 0.8125rem;
     line-height: 1.6;
-    overflow-x: auto;
+    max-height: 360px;
+    overflow: auto;
     margin: var(--spacing-md) 0;
     border: 1px solid var(--border);
 }
@@ -402,6 +406,8 @@
     height: 520px;
     overflow: auto;
     background: var(--surface);
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable both-edges;
 }
 
 .matrix-spacer {
@@ -422,8 +428,12 @@
 }
 
 .matrix-header-corner {
+    position: sticky;
+    left: 0;
+    z-index: 7;
     background: var(--surface-alt);
     border-right: 1px solid var(--border);
+    box-shadow: 1px 0 0 0 var(--border);
 }
 
 .matrix-header-cells {
@@ -431,12 +441,14 @@
 }
 
 .matrix-index {
-    position: absolute;
+    position: sticky;
     top: 28px;
     left: 0;
     z-index: 4;
     background: var(--surface-alt);
     border-right: 1px solid var(--border);
+    will-change: transform;
+    box-shadow: 1px 0 0 0 var(--border);
 }
 
 .matrix-cells {
@@ -547,6 +559,10 @@
     height: calc(100vh - 160px);
 }
 
+.line-chart-shell.is-fullscreen .heatmap-chart-canvas {
+    height: calc(100vh - 170px);
+}
+
 .line-chart-toolbar {
     display: flex;
     justify-content: space-between;
@@ -604,6 +620,15 @@
     border: 1px solid var(--border);
     overflow: hidden;
     touch-action: none;
+}
+
+.heatmap-chart-shell {
+    min-height: 460px;
+}
+
+.heatmap-chart-canvas {
+    height: 420px;
+    cursor: crosshair;
 }
 
 .line-chart-canvas.is-pan {
@@ -717,6 +742,9 @@
 
     .metadata-simple {
         max-width: 100%;
+        max-height: none;
+        overflow: visible;
+        padding-right: 0;
     }
 
     .preview-layout {

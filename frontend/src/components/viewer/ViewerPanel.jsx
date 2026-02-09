@@ -107,6 +107,19 @@ const getArrayEdge = (array, index, fallback = 'na') => {
   const value = array[index < 0 ? array.length + index : index];
   return Number.isFinite(Number(value)) ? Number(value) : fallback;
 };
+const buildAxisTicks = (size, maxTicks = 9) => {
+  const length = Number(size) || 0;
+  if (length <= 0) return [];
+  if (length === 1) return [0];
+
+  const target = Math.max(2, Math.min(maxTicks, length));
+  const ticks = new Set([0, length - 1]);
+  for (let i = 1; i < target - 1; i += 1) {
+    const value = Math.round((i / (target - 1)) * (length - 1));
+    ticks.add(value);
+  }
+  return Array.from(ticks).sort((a, b) => a - b);
+};
 
 const buildLineChartResetKey = (selectedPath, series, lineData) => {
   const x = Array.isArray(series?.x) ? series.x : [];
@@ -213,6 +226,7 @@ function VirtualMatrixTable({
   cacheVersion
 }) {
   const containerRef = useRef(null);
+  const frameRef = useRef(null);
   const [viewport, setViewport] = useState({
     width: 0,
     height: 0,
@@ -220,44 +234,70 @@ function VirtualMatrixTable({
     scrollLeft: 0
   });
 
+  const updateViewport = useCallback(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const next = {
+      width: container.clientWidth,
+      height: container.clientHeight,
+      scrollTop: container.scrollTop,
+      scrollLeft: container.scrollLeft
+    };
+    setViewport((current) => (
+      current.width === next.width
+      && current.height === next.height
+      && current.scrollTop === next.scrollTop
+      && current.scrollLeft === next.scrollLeft
+        ? current
+        : next
+    ));
+  }, []);
+
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return undefined;
 
-    const updateViewport = () => {
-      setViewport({
-        width: container.clientWidth,
-        height: container.clientHeight,
-        scrollTop: container.scrollTop,
-        scrollLeft: container.scrollLeft
+    const queueViewportUpdate = () => {
+      if (frameRef.current !== null) return;
+      frameRef.current = requestAnimationFrame(() => {
+        frameRef.current = null;
+        updateViewport();
       });
     };
 
     updateViewport();
 
-    const handleScroll = () => updateViewport();
-    container.addEventListener('scroll', handleScroll, { passive: true });
+    container.addEventListener('scroll', queueViewportUpdate, { passive: true });
 
-    const resizeObserver = new ResizeObserver(updateViewport);
+    const resizeObserver = new ResizeObserver(queueViewportUpdate);
     resizeObserver.observe(container);
 
     return () => {
-      container.removeEventListener('scroll', handleScroll);
+      container.removeEventListener('scroll', queueViewportUpdate);
       resizeObserver.disconnect();
+      if (frameRef.current !== null) {
+        cancelAnimationFrame(frameRef.current);
+        frameRef.current = null;
+      }
     };
-  }, []);
+  }, [updateViewport]);
 
   useEffect(() => {
     if (rows <= 0 || cols <= 0) return;
-    const visibleRowStart = Math.max(0, Math.floor(viewport.scrollTop / MATRIX_ROW_HEIGHT) - MATRIX_OVERSCAN);
+    const contentScrollTop = Math.max(0, viewport.scrollTop - MATRIX_HEADER_HEIGHT);
+    const contentScrollLeft = Math.max(0, viewport.scrollLeft - MATRIX_INDEX_WIDTH);
+    const contentHeight = Math.max(0, viewport.height - MATRIX_HEADER_HEIGHT);
+    const contentWidth = Math.max(0, viewport.width - MATRIX_INDEX_WIDTH);
+
+    const visibleRowStart = Math.max(0, Math.floor(contentScrollTop / MATRIX_ROW_HEIGHT) - MATRIX_OVERSCAN);
     const visibleRowEnd = Math.min(
       rows - 1,
-      Math.floor((viewport.scrollTop + viewport.height) / MATRIX_ROW_HEIGHT) + MATRIX_OVERSCAN
+      Math.floor((contentScrollTop + contentHeight) / MATRIX_ROW_HEIGHT) + MATRIX_OVERSCAN
     );
-    const visibleColStart = Math.max(0, Math.floor(viewport.scrollLeft / MATRIX_COL_WIDTH) - MATRIX_OVERSCAN);
+    const visibleColStart = Math.max(0, Math.floor(contentScrollLeft / MATRIX_COL_WIDTH) - MATRIX_OVERSCAN);
     const visibleColEnd = Math.min(
       cols - 1,
-      Math.floor((viewport.scrollLeft + viewport.width) / MATRIX_COL_WIDTH) + MATRIX_OVERSCAN
+      Math.floor((contentScrollLeft + contentWidth) / MATRIX_COL_WIDTH) + MATRIX_OVERSCAN
     );
 
     const blockRowStart = Math.floor(visibleRowStart / blockRows) * blockRows;
@@ -274,15 +314,20 @@ function VirtualMatrixTable({
     }
   }, [rows, cols, blockRows, blockCols, viewport, onRequestBlock]);
 
-  const visibleRowStart = Math.max(0, Math.floor(viewport.scrollTop / MATRIX_ROW_HEIGHT) - MATRIX_OVERSCAN);
+  const contentScrollTop = Math.max(0, viewport.scrollTop - MATRIX_HEADER_HEIGHT);
+  const contentScrollLeft = Math.max(0, viewport.scrollLeft - MATRIX_INDEX_WIDTH);
+  const contentHeight = Math.max(0, viewport.height - MATRIX_HEADER_HEIGHT);
+  const contentWidth = Math.max(0, viewport.width - MATRIX_INDEX_WIDTH);
+
+  const visibleRowStart = Math.max(0, Math.floor(contentScrollTop / MATRIX_ROW_HEIGHT) - MATRIX_OVERSCAN);
   const visibleRowEnd = Math.min(
     rows - 1,
-    Math.floor((viewport.scrollTop + viewport.height) / MATRIX_ROW_HEIGHT) + MATRIX_OVERSCAN
+    Math.floor((contentScrollTop + contentHeight) / MATRIX_ROW_HEIGHT) + MATRIX_OVERSCAN
   );
-  const visibleColStart = Math.max(0, Math.floor(viewport.scrollLeft / MATRIX_COL_WIDTH) - MATRIX_OVERSCAN);
+  const visibleColStart = Math.max(0, Math.floor(contentScrollLeft / MATRIX_COL_WIDTH) - MATRIX_OVERSCAN);
   const visibleColEnd = Math.min(
     cols - 1,
-    Math.floor((viewport.scrollLeft + viewport.width) / MATRIX_COL_WIDTH) + MATRIX_OVERSCAN
+    Math.floor((contentScrollLeft + contentWidth) / MATRIX_COL_WIDTH) + MATRIX_OVERSCAN
   );
 
   const visibleRows = [];
@@ -335,7 +380,14 @@ function VirtualMatrixTable({
             ))}
           </div>
         </div>
-        <div className="matrix-index" style={{ height: rows * MATRIX_ROW_HEIGHT, width: MATRIX_INDEX_WIDTH }}>
+        <div
+          className="matrix-index"
+          style={{
+            height: rows * MATRIX_ROW_HEIGHT,
+            width: MATRIX_INDEX_WIDTH,
+            transform: `translateY(${-viewport.scrollTop}px)`
+          }}
+        >
           {visibleRows.map((row) => (
             <div
               key={`row-${row}`}
@@ -401,10 +453,18 @@ function LineChart({ series, notation, gridEnabled, aspectMode, onViewChange }) 
     return () => document.removeEventListener('fullscreenchange', handleChange);
   }, []);
 
-  const minX = hasPoints ? points[0].x : 0;
-  const maxX = hasPoints ? points[points.length - 1].x : 1;
-  const minY = hasPoints ? Math.min(...points.map((point) => point.y)) : 0;
-  const maxY = hasPoints ? Math.max(...points.map((point) => point.y)) : 1;
+  const rawMinX = hasPoints ? Math.min(...points.map((point) => point.x)) : 0;
+  const rawMaxX = hasPoints ? Math.max(...points.map((point) => point.x)) : 1;
+  const rawMinY = hasPoints ? Math.min(...points.map((point) => point.y)) : 0;
+  const rawMaxY = hasPoints ? Math.max(...points.map((point) => point.y)) : 1;
+  const rawSpanX = rawMaxX - rawMinX;
+  const rawSpanY = rawMaxY - rawMinY;
+  const domainPadX = rawSpanX === 0 ? 1 : rawSpanX * 0.02;
+  const domainPadY = rawSpanY === 0 ? Math.max(Math.abs(rawMinY) * 0.1, 1) : rawSpanY * 0.08;
+  const minX = rawMinX - domainPadX;
+  const maxX = rawMaxX + domainPadX;
+  const minY = rawMinY - domainPadY;
+  const maxY = rawMaxY + domainPadY;
   const spanX = maxX - minX || 1;
   const spanY = maxY - minY || 1;
 
@@ -550,8 +610,10 @@ function LineChart({ series, notation, gridEnabled, aspectMode, onViewChange }) 
     }
 
     const baseX = (point.x - pan.x) / zoom;
+    const baseY = (point.y - pan.y) / zoom;
     const ratioX = (baseX - padding) / chartW;
-    if (ratioX < 0 || ratioX > 1) {
+    const ratioY = (baseY - padding) / chartH;
+    if (ratioX < 0 || ratioX > 1 || ratioY < 0 || ratioY > 1) {
       setHover(null);
       return;
     }
@@ -765,8 +827,8 @@ function LineChart({ series, notation, gridEnabled, aspectMode, onViewChange }) 
         )}
       </div>
       <div className="line-stats">
-        <span>Min: {formatNumber(minY, notation)}</span>
-        <span>Max: {formatNumber(maxY, notation)}</span>
+        <span>Min: {formatNumber(rawMinY, notation)}</span>
+        <span>Max: {formatNumber(rawMaxY, notation)}</span>
       </div>
     </div>
   );
@@ -841,7 +903,10 @@ const renderTable = (preview, notation) => {
 };
 
 const renderHeatmap = (preview, heatmapPayload, heatmapColormap, heatmapGrid, onHeatmapZoom) => {
-  const source = heatmapPayload?.data ? heatmapPayload : null;
+  const source = (
+    Array.isArray(heatmapPayload?.data)
+    || Array.isArray(heatmapPayload?.values)
+  ) ? heatmapPayload : null;
   if (!preview && !source) {
     return (
       <div className="panel-state">
@@ -862,8 +927,10 @@ const renderHeatmap = (preview, heatmapPayload, heatmapColormap, heatmapGrid, on
   let heatmapData = null;
   let stats = source?.stats || null;
 
-  if (source?.data) {
+  if (Array.isArray(source?.data)) {
     heatmapData = source.data;
+  } else if (Array.isArray(source?.values)) {
+    heatmapData = source.values;
   } else if (preview?.plot?.type === 'heatmap' && preview.plot?.data) {
     heatmapData = preview.plot.data;
   } else if (preview?.table?.kind === '2d' && preview.table?.data) {
@@ -878,8 +945,14 @@ const renderHeatmap = (preview, heatmapPayload, heatmapColormap, heatmapGrid, on
       max: preview.stats.max
     };
   }
+  if (!stats && Number.isFinite(Number(source?.vmin)) && Number.isFinite(Number(source?.vmax))) {
+    stats = {
+      min: Number(source.vmin),
+      max: Number(source.vmax)
+    };
+  }
 
-  if (!heatmapData || !Array.isArray(heatmapData)) {
+  if (!heatmapData || !Array.isArray(heatmapData) || !Array.isArray(heatmapData[0])) {
     return (
       <div className="panel-state">
         <div className="state-text">No valid 2D data available for heatmap visualization.</div>
@@ -949,6 +1022,12 @@ function HeatmapChart({ data, stats: statsOverride, colormap = 'viridis', showGr
     const resolvedMax = max === min ? min + 1 : max;
     return { min, max: resolvedMax, rows, cols };
   }, [data, statsOverride]);
+  const colorStops = useMemo(
+    () => HEATMAP_COLORMAPS[colormap] || HEATMAP_COLORMAPS.viridis,
+    [colormap]
+  );
+  const xTicks = useMemo(() => buildAxisTicks(stats.cols), [stats.cols]);
+  const yTicks = useMemo(() => buildAxisTicks(stats.rows), [stats.rows]);
 
   useEffect(() => {
     if (!onZoom || zoom <= 1) return;
@@ -968,27 +1047,27 @@ function HeatmapChart({ data, stats: statsOverride, colormap = 'viridis', showGr
 
   // Get color from colormap
   const getColor = useCallback((value) => {
-    if (value === null || value === undefined || !Number.isFinite(value)) {
-      return '#888888'; // Gray for invalid values
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) {
+      return '#CBD5E1';
     }
     
-    const normalized = stats.max === stats.min ? 0 : (value - stats.min) / (stats.max - stats.min);
+    const normalized = stats.max === stats.min ? 0 : (numeric - stats.min) / (stats.max - stats.min);
     const clamped = Math.max(0, Math.min(1, normalized));
-    const colors = HEATMAP_COLORMAPS[colormap] || HEATMAP_COLORMAPS.viridis;
-    const index = clamped * (colors.length - 1);
+    const index = clamped * (colorStops.length - 1);
     const lower = Math.floor(index);
     const upper = Math.ceil(index);
     const fraction = index - lower;
     
     if (lower === upper) {
-      const [r, g, b] = colors[lower];
+      const [r, g, b] = colorStops[lower];
       return `rgb(${Math.round(r * 255)}, ${Math.round(g * 255)}, ${Math.round(b * 255)})`;
     }
     
-    const [r1, g1, b1] = colors[lower];
-    const [r2, g2, b2] = colors[upper];
+    const [r1, g1, b1] = colorStops[lower];
+    const [r2, g2, b2] = colorStops[upper];
     return `rgb(${Math.round((r1 + (r2 - r1) * fraction) * 255)}, ${Math.round((g1 + (g2 - g1) * fraction) * 255)}, ${Math.round((b1 + (b2 - b1) * fraction) * 255)})`;
-  }, [colormap, stats]);
+  }, [colorStops, stats]);
 
   useEffect(() => {
     const handleChange = () => {
@@ -1005,8 +1084,10 @@ function HeatmapChart({ data, stats: statsOverride, colormap = 'viridis', showGr
   const padding = 50;
   const chartW = width - padding * 2 - 80; // Extra space for color bar
   const chartH = height - padding * 2;
-  const cellWidth = chartW / stats.cols;
-  const cellHeight = chartH / stats.rows;
+  const safeCols = Math.max(1, stats.cols);
+  const safeRows = Math.max(1, stats.rows);
+  const cellWidth = chartW / safeCols;
+  const cellHeight = chartH / safeRows;
 
   const clampValue = (value, min, max) => Math.max(min, Math.min(max, value));
 
@@ -1137,15 +1218,11 @@ function HeatmapChart({ data, stats: statsOverride, colormap = 'viridis', showGr
       return;
     }
 
-    const col = Math.floor(ratioX * stats.cols);
-    const row = Math.floor((1 - ratioY) * stats.rows); // Flip Y for bottom-up indexing
+    const col = clampValue(Math.floor(ratioX * stats.cols), 0, stats.cols - 1);
+    const row = clampValue(Math.floor(ratioY * stats.rows), 0, stats.rows - 1);
     
-    if (col >= 0 && col < stats.cols && row >= 0 && row < stats.rows) {
-      const value = data[row] && data[row][col] !== undefined ? Number(data[row][col]) : null;
-      setHover({ row, col, value });
-    } else {
-      setHover(null);
-    }
+    const value = data[row] && data[row][col] !== undefined ? Number(data[row][col]) : null;
+    setHover({ row, col, value });
   };
 
   const resetView = () => {
@@ -1178,8 +1255,8 @@ function HeatmapChart({ data, stats: statsOverride, colormap = 'viridis', showGr
   }
 
   return (
-    <div className={`line-chart-shell ${isFullscreen ? 'is-fullscreen' : ''}`} ref={containerRef}>
-      <div className="line-chart-toolbar">
+    <div className={`line-chart-shell heatmap-chart-shell ${isFullscreen ? 'is-fullscreen' : ''}`} ref={containerRef}>
+      <div className="line-chart-toolbar heatmap-chart-toolbar">
         <div className="line-tool-group">
           <button
             type="button"
@@ -1208,8 +1285,10 @@ function HeatmapChart({ data, stats: statsOverride, colormap = 'viridis', showGr
       <div className="line-chart-stage">
         <svg
           ref={svgRef}
-          className={`line-chart-canvas ${panEnabled ? 'is-pan' : ''} ${isPanning ? 'is-grabbing' : ''}`}
+          className={`line-chart-canvas heatmap-chart-canvas ${panEnabled ? 'is-pan' : ''} ${isPanning ? 'is-grabbing' : ''}`}
           viewBox={`0 0 ${width} ${height}`}
+          overflow="hidden"
+          role="img"
           onMouseDown={handleMouseDown}
           onMouseUp={handleMouseUp}
           onMouseMove={handleMouseMove}
@@ -1221,10 +1300,10 @@ function HeatmapChart({ data, stats: statsOverride, colormap = 'viridis', showGr
             </clipPath>
             {/* Color gradient definition */}
             <linearGradient id={`colorscale-${clipId}`} x1="0%" y1="100%" x2="0%" y2="0%">
-              {HEATMAP_COLORMAPS[colormap]?.map(([r, g, b], index) => (
+              {colorStops.map(([r, g, b], index) => (
                 <stop
                   key={index}
-                  offset={`${(index / (HEATMAP_COLORMAPS[colormap].length - 1)) * 100}%`}
+                  offset={`${(index / (colorStops.length - 1)) * 100}%`}
                   stopColor={`rgb(${Math.round(r * 255)}, ${Math.round(g * 255)}, ${Math.round(b * 255)})`}
                 />
               ))}
@@ -1251,13 +1330,13 @@ function HeatmapChart({ data, stats: statsOverride, colormap = 'viridis', showGr
                   <rect
                     key={`${rowIdx}-${colIdx}`}
                     x={colIdx * cellWidth}
-                    y={(stats.rows - 1 - rowIdx) * cellHeight} // Flip Y
+                    y={rowIdx * cellHeight}
                     width={cellWidth}
                     height={cellHeight}
                     fill={getColor(value)}
-                    stroke={showGrid ? '#ffffff' : 'none'}
-                    strokeWidth={showGrid ? 0.5 / zoom : 0} // Scale stroke with zoom
-                    strokeOpacity={0.5}
+                    stroke={showGrid || (hover?.row === rowIdx && hover?.col === colIdx) ? '#ffffff' : 'none'}
+                    strokeWidth={(showGrid ? 0.5 : 0) + (hover?.row === rowIdx && hover?.col === colIdx ? (1.2 / zoom) : 0)}
+                    strokeOpacity={hover?.row === rowIdx && hover?.col === colIdx ? 0.95 : 0.5}
                   />
                 ))
               )}
@@ -1265,50 +1344,44 @@ function HeatmapChart({ data, stats: statsOverride, colormap = 'viridis', showGr
           </g>
 
           {/* Fixed axes (not affected by zoom/pan) */}
-          <g fill="#0F172A" fontSize="11" fontFamily="Inter">
+          <g fill="#0F172A" fontSize="11">
             {/* X-axis labels */}
-            {Array.from({ length: Math.min(stats.cols, 10) }, (_, i) => {
-              const col = Math.round((i / 9) * (stats.cols - 1));
-              return (
-                <text
-                  key={`x-${col}`}
-                  x={padding + (col + 0.5) * cellWidth}
-                  y={padding + chartH + 16}
-                  textAnchor="middle"
-                  fill="#0F172A"
-                >
-                  {col}
-                </text>
-              );
-            })}
+            {xTicks.map((col) => (
+              <text
+                key={`x-${col}`}
+                x={padding + (col + 0.5) * cellWidth}
+                y={padding + chartH + 16}
+                textAnchor="middle"
+                fill="#0F172A"
+              >
+                {col}
+              </text>
+            ))}
             
             {/* Y-axis labels */}
-            {Array.from({ length: Math.min(stats.rows, 10) }, (_, i) => {
-              const row = Math.round((i / 9) * (stats.rows - 1));
-              return (
-                <text
-                  key={`y-${row}`}
-                  x={padding - 10}
-                  y={padding + (stats.rows - 1 - row + 0.5) * cellHeight + 4}
-                  textAnchor="end"
-                  fill="#0F172A"
-                >
-                  {row}
-                </text>
-              );
-            })}
+            {yTicks.map((row) => (
+              <text
+                key={`y-${row}`}
+                x={padding - 10}
+                y={padding + (row + 0.5) * cellHeight + 4}
+                textAnchor="end"
+                fill="#0F172A"
+              >
+                {row}
+              </text>
+            ))}
 
             {/* Axis titles */}
-            <text x={width / 2} y={height - 10} textAnchor="middle" fontSize="13" fontWeight="500">
+            <text x={padding + (chartW / 2)} y={height - 10} textAnchor="middle" fontSize="13" fontWeight="500">
               Column Index
             </text>
             <text
               x={20}
-              y={height / 2}
+              y={padding + (chartH / 2)}
               textAnchor="middle"
               fontSize="13"
               fontWeight="500"
-              transform={`rotate(-90, 20, ${height / 2})`}
+              transform={`rotate(-90, 20, ${padding + (chartH / 2)})`}
             >
               Row Index
             </text>
@@ -1327,7 +1400,7 @@ function HeatmapChart({ data, stats: statsOverride, colormap = 'viridis', showGr
             />
             
             {/* Color scale labels */}
-            <g fill="#0F172A" fontSize="10" fontFamily="Inter">
+            <g fill="#0F172A" fontSize="10">
               <text x={width - 45} y={padding + 5} textAnchor="start">
                 {formatScaleValue(stats.max)}
               </text>
