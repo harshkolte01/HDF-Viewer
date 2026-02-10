@@ -27,9 +27,16 @@ export const state = {
   lineAspect: "line",
   heatmapGrid: true,
   heatmapColormap: "viridis",
+  matrixFullEnabled: false,
+  matrixBlockSize: {
+    rows: 200,
+    cols: 50,
+  },
   displayConfig: {
-    displayDims: [0, 1],
+    displayDims: null,
     fixedIndices: {},
+    stagedDisplayDims: null,
+    stagedFixedIndices: {},
   },
   cacheResponses: {
     files: [],
