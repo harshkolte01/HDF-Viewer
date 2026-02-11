@@ -1,5 +1,5 @@
 import { subscribe, getState } from "./state/store.js";
-import { actions } from "./state/reducers.js";
+import { actions } from "./state/reducers.js?v=20260211-1";
 import { renderTopBar, bindTopBarEvents } from "./components/topBar.js";
 import {
   initHomeViewTemplate,
@@ -10,7 +10,7 @@ import {
   initViewerViewTemplate,
   renderViewerView,
   bindViewerViewEvents,
-} from "./views/viewerView.js?v=20260211-7";
+} from "./views/viewerView.js?v=20260211-8";
 
 const root = document.getElementById("app-root");
 

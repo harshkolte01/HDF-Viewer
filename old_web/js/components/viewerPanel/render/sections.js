@@ -1,0 +1,393 @@
+import { escapeHtml } from "../../../utils/format.js";
+import {
+  MATRIX_ROW_HEIGHT,
+  MATRIX_COL_WIDTH,
+  MATRIX_HEADER_HEIGHT,
+  MATRIX_INDEX_WIDTH,
+  LINE_SVG_WIDTH,
+  LINE_SVG_HEIGHT,
+  LINE_DEFAULT_QUALITY,
+  LINE_DEFAULT_OVERVIEW_MAX_POINTS,
+  LINE_EXACT_MAX_POINTS,
+  LINE_WINDOW_OPTIONS,
+  formatValue,
+  formatTypeDescription,
+} from "../shared.js";
+import { renderTablePreview, renderLinePreview, renderHeatmapPreview } from "./previews.js";
+import {
+  resolveLineRuntimeConfig,
+  buildLineSelectionKey,
+  resolveMatrixRuntimeConfig,
+  buildMatrixSelectionKey,
+} from "./config.js";
+import { renderDimensionControls } from "./dimensionControls.js";
+function renderVirtualLineShell(state, config) {
+  const windowOptions = LINE_WINDOW_OPTIONS.filter((size) => size <= config.totalPoints);
+  if (!windowOptions.includes(config.totalPoints)) {
+    windowOptions.push(config.totalPoints);
+  }
+
+  return `
+    <div
+      class="line-chart-shell line-chart-shell-full"
+      data-line-shell="true"
+      data-line-file-key="${escapeHtml(state.selectedFile || "")}"
+      data-line-path="${escapeHtml(state.selectedPath || "/")}"
+      data-line-display-dims="${escapeHtml(config.displayDimsParam || "")}"
+      data-line-fixed-indices="${escapeHtml(config.fixedIndicesParam || "")}"
+      data-line-selection-key="${escapeHtml(config.selectionKey || "")}"
+      data-line-total-points="${config.totalPoints}"
+      data-line-index="${config.lineIndex ?? ""}"
+      data-line-notation="${escapeHtml(state.notation || "auto")}"
+      data-line-grid="${state.lineGrid ? "1" : "0"}"
+      data-line-aspect="${escapeHtml(state.lineAspect || "line")}"
+      data-line-quality="${LINE_DEFAULT_QUALITY}"
+      data-line-overview-max-points="${LINE_DEFAULT_OVERVIEW_MAX_POINTS}"
+      data-line-exact-max-points="${LINE_EXACT_MAX_POINTS}"
+    >
+      <div class="line-chart-toolbar">
+        <div class="line-tool-group">
+          <button type="button" class="line-tool-btn" data-line-pan-toggle="true">Hand</button>
+          <button type="button" class="line-tool-btn" data-line-zoom-in="true">Zoom +</button>
+          <button type="button" class="line-tool-btn" data-line-zoom-out="true">Zoom -</button>
+          <button type="button" class="line-tool-btn" data-line-reset-view="true">Reset</button>
+        </div>
+        <div class="line-tool-group">
+          <button type="button" class="line-tool-btn" data-line-jump-start="true">Start</button>
+          <button type="button" class="line-tool-btn" data-line-step-prev="true">Prev</button>
+          <button type="button" class="line-tool-btn" data-line-step-next="true">Next</button>
+          <button type="button" class="line-tool-btn" data-line-jump-end="true">End</button>
+        </div>
+        <div class="line-tool-group line-tool-group-controls line-tool-group-fullscreen-only">
+          <span class="line-tool-label">Quality</span>
+          <select class="line-tool-select" data-line-quality-select="true">
+            <option value="auto">Auto</option>
+            <option value="overview">Overview</option>
+            <option value="exact">Exact Window</option>
+          </select>
+          <span class="line-tool-label">Window</span>
+          <select class="line-tool-select" data-line-window-select="true">
+            ${windowOptions
+              .map((size) => `<option value="${size}">${size.toLocaleString()}</option>`)
+              .join("")}
+          </select>
+          <span class="line-tool-label">Index</span>
+          <input
+            type="number"
+            class="line-tool-input"
+            data-line-jump-input="true"
+            min="0"
+            max="${Math.max(0, config.totalPoints - 1)}"
+            step="1"
+            value="0"
+          />
+          <button type="button" class="line-tool-btn" data-line-jump-to-index="true">Go</button>
+        </div>
+        <div class="line-tool-group">
+          <span class="line-zoom-label" data-line-zoom-label="true">100%</span>
+          <button type="button" class="line-tool-btn" data-line-fullscreen-toggle="true">Fullscreen</button>
+          <span class="line-zoom-label" data-line-range-label="true">Range: --</span>
+        </div>
+      </div>
+      <div class="line-chart-stage">
+        <div class="line-chart-canvas" data-line-canvas="true" tabindex="0" role="application" aria-label="Line chart">
+          <svg
+            viewBox="0 0 ${LINE_SVG_WIDTH} ${LINE_SVG_HEIGHT}"
+            width="100%"
+            height="100%"
+            role="img"
+            aria-label="Full line view"
+            data-line-svg="true"
+          ></svg>
+          <div class="line-hover" data-line-hover="true" hidden></div>
+        </div>
+      </div>
+      <div class="line-stats">
+        <span data-line-stat-min="true">min: --</span>
+        <span data-line-stat-max="true">max: --</span>
+        <span data-line-stat-span="true">span: --</span>
+      </div>
+    </div>
+  `;
+}
+
+function renderLineSection(state, preview) {
+  const config = resolveLineRuntimeConfig(state, preview);
+  const canLoadFull = config.supported && config.totalPoints > 0;
+  const isEnabled = state.lineFullEnabled === true && canLoadFull;
+
+  const statusText = !config.supported
+    ? config.rowCount === 0
+      ? "Line full view requires at least 1 row in the selected Y dimension."
+      : "Line full view is unavailable for this dataset."
+    : config.totalPoints <= 0
+    ? "No values available for line rendering."
+    : isEnabled
+    ? "Wheel to zoom. Use Hand to pan."
+    : "Preview mode. Click Load full line.";
+  const statusTone = !config.supported || config.totalPoints <= 0 ? "error" : "info";
+  const statusClass = `data-status ${statusTone === "error" ? "error" : "info"}`;
+
+  const content = isEnabled
+    ? renderVirtualLineShell(state, config)
+    : renderLinePreview(preview, {
+        lineGrid: state.lineGrid,
+        lineAspect: state.lineAspect,
+      });
+
+  return `
+    <div class="data-section">
+      <div class="data-actions">
+        <button
+          type="button"
+          class="data-btn"
+          data-line-enable="true"
+          ${!canLoadFull || isEnabled ? "disabled" : ""}
+        >
+          Load full line
+        </button>
+        <span class="${statusClass}" data-line-status="true">${escapeHtml(statusText)}</span>
+      </div>
+      ${content}
+    </div>
+  `;
+}
+
+function renderVirtualMatrixShell(state, config) {
+  const totalWidth = MATRIX_INDEX_WIDTH + config.cols * MATRIX_COL_WIDTH;
+  const totalHeight = MATRIX_HEADER_HEIGHT + config.rows * MATRIX_ROW_HEIGHT;
+
+  return `
+    <div
+      class="matrix-table-shell"
+      data-matrix-shell="true"
+      data-matrix-rows="${config.rows}"
+      data-matrix-cols="${config.cols}"
+      data-matrix-block-rows="${config.blockRows}"
+      data-matrix-block-cols="${config.blockCols}"
+      data-matrix-file-key="${escapeHtml(state.selectedFile || "")}"
+      data-matrix-path="${escapeHtml(state.selectedPath || "/")}"
+      data-matrix-display-dims="${escapeHtml(config.displayDimsParam || "")}"
+      data-matrix-fixed-indices="${escapeHtml(config.fixedIndicesParam || "")}"
+      data-matrix-selection-key="${escapeHtml(config.selectionKey || "")}"
+      data-matrix-notation="${escapeHtml(state.notation || "auto")}"
+    >
+      <div class="matrix-table" data-matrix-table="true">
+        <div class="matrix-spacer" style="width:${totalWidth}px;height:${totalHeight}px;"></div>
+        <div class="matrix-header" style="width:${totalWidth}px;height:${MATRIX_HEADER_HEIGHT}px;">
+          <div class="matrix-header-corner" style="width:${MATRIX_INDEX_WIDTH}px;"></div>
+          <div
+            class="matrix-header-cells"
+            data-matrix-header-cells="true"
+            style="width:${config.cols * MATRIX_COL_WIDTH}px;height:${MATRIX_HEADER_HEIGHT}px;"
+          ></div>
+        </div>
+        <div
+          class="matrix-index"
+          data-matrix-index="true"
+          style="width:${MATRIX_INDEX_WIDTH}px;height:${config.rows * MATRIX_ROW_HEIGHT}px;"
+        ></div>
+        <div
+          class="matrix-cells"
+          data-matrix-cells="true"
+          style="width:${config.cols * MATRIX_COL_WIDTH}px;height:${config.rows * MATRIX_ROW_HEIGHT}px;"
+        ></div>
+      </div>
+    </div>
+  `;
+}
+
+function renderMatrixSection(state, preview) {
+  const config = resolveMatrixRuntimeConfig(state, preview);
+  const canLoadFull = config.supported && config.rows > 0 && config.cols > 0;
+  const isEnabled = state.matrixFullEnabled === true && canLoadFull;
+
+  const statusText = !config.supported
+    ? "Full matrix view requires at least 2 dimensions."
+    : config.rows <= 0 || config.cols <= 0
+    ? "No values available for the selected display dims."
+    : isEnabled
+    ? "Streaming blocks as you scroll."
+    : "Preview mode. Click Load full view.";
+  const statusTone = !config.supported || config.rows <= 0 || config.cols <= 0 ? "error" : "info";
+  const statusClass = `data-status ${statusTone === "error" ? "error" : "info"}`;
+
+  const content = isEnabled
+    ? renderVirtualMatrixShell(state, config)
+    : renderTablePreview(preview, state.notation || "auto");
+
+  return `
+    <div class="data-section">
+      <div class="data-actions">
+        <button
+          type="button"
+          class="data-btn"
+          data-matrix-enable="true"
+          ${!canLoadFull || isEnabled ? "disabled" : ""}
+        >
+          Load full view
+        </button>
+        <span class="${statusClass}" data-matrix-status="true">${escapeHtml(statusText)}</span>
+      </div>
+      ${content}
+    </div>
+  `;
+}
+
+function renderDisplayContent(state) {
+  const hasSelection = state.selectedNodeType === "dataset" && state.selectedPath !== "/";
+  const activeTab = state.displayTab || "table";
+  const preview = state.preview;
+
+  if (!hasSelection) {
+    return `
+      <div class="panel-state">
+        <div class="state-text">Select a dataset from the tree to view a preview.</div>
+      </div>
+    `;
+  }
+
+  if (state.previewLoading) {
+    return `
+      <div class="panel-state">
+        <div class="loading-spinner"></div>
+        <div class="state-text">Loading preview...</div>
+      </div>
+    `;
+  }
+
+  if (state.previewError) {
+    return `
+      <div class="panel-state error">
+        <div class="state-text error-text">${escapeHtml(state.previewError)}</div>
+      </div>
+    `;
+  }
+
+  if (!preview) {
+    return `
+      <div class="panel-state">
+        <div class="state-text">No preview available yet.</div>
+      </div>
+    `;
+  }
+
+  let dataSection = renderMatrixSection(state, preview);
+  if (activeTab === "line") {
+    dataSection = renderLineSection(state, preview);
+  } else if (activeTab === "heatmap" && Number(preview.ndim || 0) >= 2) {
+    dataSection = `<div class="data-section">${renderHeatmapPreview(preview)}</div>`;
+  }
+
+  const isLineFixedLayout = activeTab === "line" && state.lineFullEnabled === true;
+
+  return `
+    <div class="preview-shell ${isLineFixedLayout ? "preview-shell-line-fixed" : ""}">
+      <div class="preview-layout ${activeTab === "line" ? "is-line" : ""}">
+        ${renderDimensionControls(state, preview)}
+        <div class="preview-content">
+          ${dataSection}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderInspectContent(state) {
+  const hasSelection = state.selectedPath !== "/";
+
+  if (!hasSelection) {
+    return `
+      <div class="panel-state">
+        <div class="state-text">Select an item from the tree to view its metadata.</div>
+      </div>
+    `;
+  }
+
+  if (state.metadataLoading) {
+    return `
+      <div class="panel-state">
+        <div class="loading-spinner"></div>
+        <div class="state-text">Loading metadata...</div>
+      </div>
+    `;
+  }
+
+  if (state.metadataError) {
+    return `
+      <div class="panel-state error">
+        <div class="state-text error-text">${escapeHtml(state.metadataError)}</div>
+      </div>
+    `;
+  }
+
+  const meta = state.metadata;
+  if (!meta) {
+    return `
+      <div class="panel-state">
+        <div class="state-text">No metadata available.</div>
+      </div>
+    `;
+  }
+
+  const infoRows = [
+    ["Name", meta.name || "(root)", false],
+    ["Path", meta.path || state.selectedPath, true],
+    ["Kind", meta.kind || state.selectedNodeType || "--", false],
+  ];
+
+  if (meta.num_children !== undefined) {
+    infoRows.push(["Children", meta.num_children, false]);
+  }
+
+  if (meta.type) {
+    infoRows.push(["Type", formatTypeDescription(meta.type), false]);
+  }
+
+  if (meta.shape) {
+    infoRows.push(["Shape", `[${formatValue(meta.shape)}]`, true]);
+  }
+
+  if (meta.ndim !== undefined) {
+    infoRows.push(["Dimensions", `${meta.ndim}D`, false]);
+  }
+
+  if (meta.size !== undefined) {
+    infoRows.push(["Total Elements", Number(meta.size).toLocaleString(), false]);
+  }
+
+  if (meta.dtype) {
+    infoRows.push(["DType", meta.dtype, true]);
+  }
+
+  if (meta.chunks) {
+    infoRows.push(["Chunks", `[${formatValue(meta.chunks)}]`, true]);
+  }
+
+  if (meta.compression) {
+    infoRows.push([
+      "Compression",
+      `${meta.compression}${meta.compression_opts ? ` (level ${meta.compression_opts})` : ""}`,
+      false,
+    ]);
+  }
+
+  return `
+    <div class="metadata-simple">
+      ${infoRows
+        .map(
+          ([label, value, mono]) => `
+            <div class="info-row">
+              <span class="info-label">${escapeHtml(String(label))}</span>
+              <span class="info-value ${mono ? "mono" : ""}">${escapeHtml(String(value))}</span>
+            </div>
+          `
+        )
+        .join("")}
+      <div class="info-section-title">Raw JSON</div>
+      <pre class="json-view">${escapeHtml(JSON.stringify(meta, null, 2))}</pre>
+    </div>
+  `;
+}
+
+export { renderDisplayContent, renderInspectContent };
