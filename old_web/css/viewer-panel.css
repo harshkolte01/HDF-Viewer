@@ -577,6 +577,8 @@
     justify-content: space-between;
     gap: var(--spacing-md);
     flex-wrap: wrap;
+    position: relative;
+    z-index: 2;
 }
 
 .line-tool-group {
@@ -638,6 +640,8 @@
     font-weight: 600;
     padding: 0.3rem 0.4rem;
     min-height: 28px;
+    position: relative;
+    z-index: 3;
 }
 
 .line-tool-input {

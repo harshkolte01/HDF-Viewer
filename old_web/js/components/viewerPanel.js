@@ -1845,6 +1845,9 @@ function initializeLineRuntime(shell) {
     if (!qualitySelect) {
       return;
     }
+    if (document.activeElement === qualitySelect) {
+      return;
+    }
     qualitySelect.value = runtime.qualityRequested;
   }
 
@@ -1854,29 +1857,20 @@ function initializeLineRuntime(shell) {
     }
 
     const exactMode = runtime.qualityRequested === "exact";
-    Array.from(windowSelect.options)
-      .filter((option) => option.dataset.dynamic === "true")
-      .forEach((option) => option.remove());
-
     Array.from(windowSelect.options).forEach((option) => {
       const value = Math.max(1, toSafeInteger(option.value, 1));
       option.disabled = exactMode && value > runtime.exactMaxPoints;
     });
 
-    const selected = String(runtime.viewSpan);
-    const hasExact = Array.from(windowSelect.options).some((option) => option.value === selected);
-    if (!hasExact) {
-      const dynamicOption = document.createElement("option");
-      dynamicOption.value = selected;
-      dynamicOption.textContent = Number(selected).toLocaleString();
-      dynamicOption.dataset.dynamic = "true";
-      dynamicOption.disabled = exactMode && runtime.viewSpan > runtime.exactMaxPoints;
-      windowSelect.appendChild(dynamicOption);
-      windowSelect.value = selected;
+    if (document.activeElement === windowSelect) {
       return;
     }
 
-    windowSelect.value = selected;
+    const selected = String(runtime.viewSpan);
+    const hasExact = Array.from(windowSelect.options).some((option) => option.value === selected);
+    if (hasExact) {
+      windowSelect.value = selected;
+    }
   }
 
   function syncJumpInput() {
@@ -1885,8 +1879,19 @@ function initializeLineRuntime(shell) {
     }
     jumpInput.min = "0";
     jumpInput.max = String(Math.max(0, runtime.totalPoints - 1));
-    const current = toSafeInteger(jumpInput.value, runtime.viewStart);
-    jumpInput.value = String(clamp(current, 0, Math.max(0, runtime.totalPoints - 1)));
+    if (document.activeElement === jumpInput) {
+      return;
+    }
+
+    const current = toSafeInteger(jumpInput.value, null);
+    if (current === null) {
+      return;
+    }
+
+    const clamped = clamp(current, 0, Math.max(0, runtime.totalPoints - 1));
+    if (clamped !== current) {
+      jumpInput.value = String(clamped);
+    }
   }
 
   function hideHover() {
@@ -2389,11 +2394,13 @@ function initializeLineRuntime(shell) {
     if (!jumpInput) {
       return;
     }
-    const target = clamp(
-      toSafeInteger(jumpInput.value, runtime.viewStart),
-      0,
-      Math.max(0, runtime.totalPoints - 1)
-    );
+    const parsed = toSafeInteger(jumpInput.value, null);
+    if (parsed === null) {
+      return;
+    }
+
+    const target = clamp(parsed, 0, Math.max(0, runtime.totalPoints - 1));
+    jumpInput.value = String(target);
     const nextStart = target - Math.floor(runtime.viewSpan / 2);
     updateViewport(nextStart, runtime.viewSpan, true);
   }
