@@ -17,6 +17,8 @@ MAX_JSON_ELEMENTS = 500_000
 MAX_MATRIX_ROWS = 2000
 MAX_MATRIX_COLS = 2000
 MAX_LINE_POINTS = 5000
+MAX_LINE_EXACT_POINTS = 20000
+DEFAULT_LINE_QUALITY = 'auto'
 MAX_HEATMAP_SIZE = 1024
 DEFAULT_ROW_LIMIT = 100
 DEFAULT_COL_LIMIT = 100
@@ -110,6 +112,15 @@ def _parse_line_dim(param, ndim):
     if dim < 0 or dim >= ndim:
         raise ValueError("line_dim out of range")
     return dim
+
+
+def _parse_line_quality(param):
+    if not param:
+        return DEFAULT_LINE_QUALITY
+    quality = str(param).strip().lower()
+    if quality not in ('auto', 'overview', 'exact'):
+        raise ValueError("Invalid quality parameter")
+    return quality
 
 
 def _is_not_found_error(error):
@@ -545,10 +556,14 @@ def get_data(key):
         elif mode == 'line':
             line_dim_param = request.args.get('line_dim')
             line_dim = _parse_line_dim(line_dim_param, ndim) if line_dim_param else None
+            line_quality = _parse_line_quality(request.args.get('quality'))
             line_index = _parse_int_param('line_index', None, 0)
             line_offset = _parse_int_param('line_offset', 0, 0)
             line_limit_param = request.args.get('line_limit')
             line_limit = _parse_int_param('line_limit', None, 1) if line_limit_param else None
+            max_points_param = request.args.get('max_points')
+            max_points = _parse_int_param('max_points', MAX_LINE_POINTS, 1) if max_points_param else MAX_LINE_POINTS
+            max_points = min(max_points, MAX_LINE_POINTS)
 
             if isinstance(line_dim, int):
                 for dim in range(ndim):
@@ -589,11 +604,24 @@ def get_data(key):
             else:
                 line_limit = min(line_limit, max(0, line_length - line_offset))
 
+            requested_points = line_limit
+            if line_quality == 'exact':
+                if requested_points > MAX_LINE_EXACT_POINTS:
+                    raise ValueError(
+                        f"Exact line window exceeds {MAX_LINE_EXACT_POINTS} points. "
+                        "Reduce line_limit/zoom window or use quality=overview."
+                    )
+                quality_applied = 'exact'
+            elif line_quality == 'overview':
+                quality_applied = 'overview'
+            else:
+                quality_applied = 'exact' if requested_points <= MAX_LINE_EXACT_POINTS else 'overview'
+
             line_step = 1
-            output_points = 0
-            if line_limit > 0:
-                line_step = max(1, int(math.ceil(line_limit / MAX_LINE_POINTS)))
-                output_points = int(math.ceil(line_limit / line_step))
+            if quality_applied == 'overview' and requested_points > 0:
+                line_step = max(1, int(math.ceil(requested_points / max_points)))
+
+            output_points = int(math.ceil(requested_points / line_step)) if requested_points > 0 else 0
 
             _enforce_element_limits(output_points)
 
@@ -623,8 +651,13 @@ def get_data(key):
                 'fixed_indices': {str(k): v for k, v in fixed_indices.items()},
                 'axis': line['axis'],
                 'index': line['index'],
+                'quality_requested': line_quality,
+                'quality_applied': quality_applied,
                 'line_offset': line_offset,
                 'line_limit': line_limit,
+                'requested_points': requested_points,
+                'returned_points': len(line['data']) if isinstance(line.get('data'), list) else output_points,
+                'line_step': line_step,
                 'downsample_info': line['downsample_info']
             }), 200
 

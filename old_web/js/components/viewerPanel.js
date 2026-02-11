@@ -9,6 +9,16 @@ const MATRIX_INDEX_WIDTH = 60;
 const MATRIX_OVERSCAN = 4;
 const MATRIX_BLOCK_CACHE = new LruCache(1600);
 const MATRIX_PENDING = new Set();
+const LINE_VIEW_CACHE = new LruCache(240);
+const LINE_FETCH_DEBOUNCE_MS = 220;
+const LINE_MIN_VIEW_SPAN = 64;
+const LINE_SVG_WIDTH = 980;
+const LINE_SVG_HEIGHT = 340;
+const LINE_DEFAULT_QUALITY = "auto";
+const LINE_DEFAULT_OVERVIEW_MAX_POINTS = 5000;
+const LINE_EXACT_MAX_POINTS = 20000;
+const LINE_WINDOW_OPTIONS = [256, 512, 1000, 2000, 5000, 10000, 20000];
+const LINE_KEYBOARD_PAN_RATIO = 0.25;
 
 function toSafeInteger(value, fallback = null) {
   const parsed = Number(value);
@@ -20,6 +30,14 @@ function toSafeInteger(value, fallback = null) {
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
+}
+
+function normalizeLineQuality(value) {
+  const normalized = String(value || "").toLowerCase();
+  if (normalized === "overview" || normalized === "exact" || normalized === "auto") {
+    return normalized;
+  }
+  return LINE_DEFAULT_QUALITY;
 }
 
 function normalizeShape(shape) {
@@ -384,8 +402,12 @@ function getLinePoints(preview) {
     .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y));
 }
 
-function renderLinePreview(preview) {
+function renderLinePreview(preview, options = {}) {
   const points = getLinePoints(preview);
+  const lineGrid = options.lineGrid !== false;
+  const lineAspect = ["line", "point", "both"].includes(options.lineAspect)
+    ? options.lineAspect
+    : "line";
 
   if (points.length < 2) {
     return '<div class="panel-state"><div class="state-text">No numeric line preview is available for this selection.</div></div>';
@@ -450,7 +472,7 @@ function renderLinePreview(preview) {
         <div class="line-chart-canvas">
           <svg viewBox="0 0 ${width} ${height}" width="100%" height="100%" role="img" aria-label="Line preview">
             <rect x="0" y="0" width="${width}" height="${height}" class="line-chart-bg"></rect>
-            <g class="line-grid">${gridLines.map((line) => line.vertical + line.horizontal).join("")}</g>
+            <g class="line-grid">${lineGrid ? gridLines.map((line) => line.vertical + line.horizontal).join("") : ""}</g>
             <g class="line-axis">
               <line x1="${padding}" y1="${padding + chartHeight}" x2="${padding + chartWidth}" y2="${padding + chartHeight}"></line>
               <line x1="${padding}" y1="${padding}" x2="${padding}" y2="${padding + chartHeight}"></line>
@@ -461,8 +483,8 @@ function renderLinePreview(preview) {
               <text x="4" y="${padding + 10}">${escapeHtml(formatCell(maxY))}</text>
               <text x="4" y="${padding + chartHeight}">${escapeHtml(formatCell(minY))}</text>
             </g>
-            <path class="line-path" d="${path}"></path>
-            <g class="line-points">${markers}</g>
+            ${lineAspect === "point" ? "" : `<path class="line-path" d="${path}"></path>`}
+            ${lineAspect === "line" ? "" : `<g class="line-points">${markers}</g>`}
           </svg>
         </div>
       </div>
@@ -743,6 +765,225 @@ function renderDimensionControls(state, preview) {
   `;
 }
 
+function buildLineSelectionKey(fileKey, path, displayDimsParam, fixedIndicesParam, lineIndex) {
+  return [
+    fileKey || "no-file",
+    path || "/",
+    displayDimsParam || "none",
+    fixedIndicesParam || "none",
+    lineIndex ?? "auto",
+  ].join("|");
+}
+
+function resolveLineRuntimeConfig(state, preview) {
+  const controls = resolveDisplayControls(state, preview);
+  const shape = controls.shape;
+  const dims = controls.appliedDisplayDims;
+  const fixedIndices = controls.appliedFixedIndices || {};
+
+  if (!shape.length) {
+    return {
+      supported: false,
+      totalPoints: 0,
+      rowCount: 0,
+      displayDimsParam: "",
+      fixedIndicesParam: "",
+      lineIndex: null,
+      selectionKey: "",
+    };
+  }
+
+  if (shape.length === 1) {
+    const totalPoints = Math.max(0, toSafeInteger(shape[0], 0));
+    const selectionKey = buildLineSelectionKey(
+      state.selectedFile,
+      state.selectedPath,
+      "",
+      "",
+      null
+    );
+
+    return {
+      supported: totalPoints > 0,
+      totalPoints,
+      rowCount: 1,
+      displayDimsParam: "",
+      fixedIndicesParam: "",
+      lineIndex: null,
+      selectionKey,
+    };
+  }
+
+  if (!Array.isArray(dims) || dims.length !== 2) {
+    return {
+      supported: false,
+      totalPoints: 0,
+      rowCount: 0,
+      displayDimsParam: "",
+      fixedIndicesParam: "",
+      lineIndex: null,
+      selectionKey: "",
+    };
+  }
+
+  const rowDim = dims[0];
+  const colDim = dims[1];
+  const rowCount = Math.max(0, toSafeInteger(shape[rowDim], 0));
+  const totalPoints = Math.max(0, toSafeInteger(shape[colDim], 0));
+  const lineIndex = rowCount > 0 ? Math.floor(rowCount / 2) : null;
+  const displayDimsParam = buildDisplayDimsParam(dims);
+  const fixedIndicesParam = buildFixedIndicesParam(fixedIndices);
+  const selectionKey = buildLineSelectionKey(
+    state.selectedFile,
+    state.selectedPath,
+    displayDimsParam,
+    fixedIndicesParam,
+    lineIndex
+  );
+
+  return {
+    supported: rowCount > 0 && totalPoints > 0,
+    totalPoints,
+    rowCount,
+    displayDimsParam,
+    fixedIndicesParam,
+    lineIndex,
+    selectionKey,
+  };
+}
+
+function renderVirtualLineShell(state, config) {
+  const windowOptions = LINE_WINDOW_OPTIONS.filter((size) => size <= config.totalPoints);
+  if (!windowOptions.includes(config.totalPoints)) {
+    windowOptions.push(config.totalPoints);
+  }
+
+  return `
+    <div
+      class="line-chart-shell line-chart-shell-full"
+      data-line-shell="true"
+      data-line-file-key="${escapeHtml(state.selectedFile || "")}"
+      data-line-path="${escapeHtml(state.selectedPath || "/")}"
+      data-line-display-dims="${escapeHtml(config.displayDimsParam || "")}"
+      data-line-fixed-indices="${escapeHtml(config.fixedIndicesParam || "")}"
+      data-line-selection-key="${escapeHtml(config.selectionKey || "")}"
+      data-line-total-points="${config.totalPoints}"
+      data-line-index="${config.lineIndex ?? ""}"
+      data-line-notation="${escapeHtml(state.notation || "auto")}"
+      data-line-grid="${state.lineGrid ? "1" : "0"}"
+      data-line-aspect="${escapeHtml(state.lineAspect || "line")}"
+      data-line-quality="${LINE_DEFAULT_QUALITY}"
+      data-line-overview-max-points="${LINE_DEFAULT_OVERVIEW_MAX_POINTS}"
+      data-line-exact-max-points="${LINE_EXACT_MAX_POINTS}"
+    >
+      <div class="line-chart-toolbar">
+        <div class="line-tool-group">
+          <button type="button" class="line-tool-btn" data-line-pan-toggle="true">Hand</button>
+          <button type="button" class="line-tool-btn" data-line-zoom-in="true">Zoom +</button>
+          <button type="button" class="line-tool-btn" data-line-zoom-out="true">Zoom -</button>
+          <button type="button" class="line-tool-btn" data-line-reset-view="true">Reset</button>
+        </div>
+        <div class="line-tool-group">
+          <button type="button" class="line-tool-btn" data-line-jump-start="true">Start</button>
+          <button type="button" class="line-tool-btn" data-line-step-prev="true">Prev</button>
+          <button type="button" class="line-tool-btn" data-line-step-next="true">Next</button>
+          <button type="button" class="line-tool-btn" data-line-jump-end="true">End</button>
+        </div>
+        <div class="line-tool-group line-tool-group-controls">
+          <span class="line-tool-label">Quality</span>
+          <select class="line-tool-select" data-line-quality-select="true">
+            <option value="auto">Auto</option>
+            <option value="overview">Overview</option>
+            <option value="exact">Exact Window</option>
+          </select>
+          <span class="line-tool-label">Window</span>
+          <select class="line-tool-select" data-line-window-select="true">
+            ${windowOptions
+              .map((size) => `<option value="${size}">${size.toLocaleString()}</option>`)
+              .join("")}
+          </select>
+          <span class="line-tool-label">Index</span>
+          <input
+            type="number"
+            class="line-tool-input"
+            data-line-jump-input="true"
+            min="0"
+            max="${Math.max(0, config.totalPoints - 1)}"
+            step="1"
+            value="0"
+          />
+          <button type="button" class="line-tool-btn" data-line-jump-to-index="true">Go</button>
+        </div>
+        <div class="line-tool-group">
+          <span class="line-zoom-label" data-line-zoom-label="true">100%</span>
+          <button type="button" class="line-tool-btn" data-line-fullscreen-toggle="true">Fullscreen</button>
+          <span class="line-zoom-label" data-line-range-label="true">Range: --</span>
+        </div>
+      </div>
+      <div class="line-chart-stage">
+        <div class="line-chart-canvas" data-line-canvas="true" tabindex="0" role="application" aria-label="Line chart">
+          <svg
+            viewBox="0 0 ${LINE_SVG_WIDTH} ${LINE_SVG_HEIGHT}"
+            width="100%"
+            height="100%"
+            role="img"
+            aria-label="Full line view"
+            data-line-svg="true"
+          ></svg>
+          <div class="line-hover" data-line-hover="true" hidden></div>
+        </div>
+      </div>
+      <div class="line-stats">
+        <span data-line-stat-min="true">min: --</span>
+        <span data-line-stat-max="true">max: --</span>
+        <span data-line-stat-span="true">span: --</span>
+      </div>
+    </div>
+  `;
+}
+
+function renderLineSection(state, preview) {
+  const config = resolveLineRuntimeConfig(state, preview);
+  const canLoadFull = config.supported && config.totalPoints > 0;
+  const isEnabled = state.lineFullEnabled === true && canLoadFull;
+
+  const statusText = !config.supported
+    ? config.rowCount === 0
+      ? "Line full view requires at least 1 row in the selected Y dimension."
+      : "Line full view is unavailable for this dataset."
+    : config.totalPoints <= 0
+    ? "No values available for line rendering."
+    : isEnabled
+    ? "Wheel to zoom. Use Hand to pan."
+    : "Preview mode. Click Load full line.";
+  const statusTone = !config.supported || config.totalPoints <= 0 ? "error" : "info";
+  const statusClass = `data-status ${statusTone === "error" ? "error" : "info"}`;
+
+  const content = isEnabled
+    ? renderVirtualLineShell(state, config)
+    : renderLinePreview(preview, {
+        lineGrid: state.lineGrid,
+        lineAspect: state.lineAspect,
+      });
+
+  return `
+    <div class="data-section">
+      <div class="data-actions">
+        <button
+          type="button"
+          class="data-btn"
+          data-line-enable="true"
+          ${!canLoadFull || isEnabled ? "disabled" : ""}
+        >
+          Load full line
+        </button>
+        <span class="${statusClass}" data-line-status="true">${escapeHtml(statusText)}</span>
+      </div>
+      ${content}
+    </div>
+  `;
+}
+
 function buildMatrixSelectionKey(fileKey, path, displayDimsParam, fixedIndicesParam) {
   return [
     fileKey || "no-file",
@@ -923,7 +1164,7 @@ function renderDisplayContent(state) {
 
   let dataSection = renderMatrixSection(state, preview);
   if (activeTab === "line") {
-    dataSection = `<div class="data-section">${renderLinePreview(preview)}</div>`;
+    dataSection = renderLineSection(state, preview);
   } else if (activeTab === "heatmap" && Number(preview.ndim || 0) >= 2) {
     dataSection = `<div class="data-section">${renderHeatmapPreview(preview)}</div>`;
   }
@@ -1050,8 +1291,9 @@ export function renderViewerPanel(state) {
 }
 
 const MATRIX_RUNTIME_CLEANUPS = new Set();
+const LINE_RUNTIME_CLEANUPS = new Set();
 
-function clearMatrixRuntimeBindings() {
+function clearViewerRuntimeBindings() {
   MATRIX_RUNTIME_CLEANUPS.forEach((cleanup) => {
     try {
       cleanup();
@@ -1060,6 +1302,15 @@ function clearMatrixRuntimeBindings() {
     }
   });
   MATRIX_RUNTIME_CLEANUPS.clear();
+
+  LINE_RUNTIME_CLEANUPS.forEach((cleanup) => {
+    try {
+      cleanup();
+    } catch (_error) {
+      // ignore cleanup errors for detached nodes
+    }
+  });
+  LINE_RUNTIME_CLEANUPS.clear();
 }
 
 function ensureNodePool(container, pool, count, className) {
@@ -1424,8 +1675,924 @@ function initializeMatrixRuntime(shell) {
   MATRIX_RUNTIME_CLEANUPS.add(cleanup);
 }
 
+function initializeLineRuntime(shell) {
+  if (!shell || shell.dataset.lineBound === "true") {
+    return;
+  }
+
+  const canvas = shell.querySelector("[data-line-canvas]");
+  const svg = shell.querySelector("[data-line-svg]");
+  const rangeLabel = shell.querySelector("[data-line-range-label]");
+  const zoomLabel = shell.querySelector("[data-line-zoom-label]");
+  const hoverElement = shell.querySelector("[data-line-hover]");
+  const minStat = shell.querySelector("[data-line-stat-min]");
+  const maxStat = shell.querySelector("[data-line-stat-max]");
+  const spanStat = shell.querySelector("[data-line-stat-span]");
+  const panToggleButton = shell.querySelector("[data-line-pan-toggle]");
+  const zoomInButton = shell.querySelector("[data-line-zoom-in]");
+  const zoomOutButton = shell.querySelector("[data-line-zoom-out]");
+  const resetButton = shell.querySelector("[data-line-reset-view]");
+  const jumpStartButton = shell.querySelector("[data-line-jump-start]");
+  const stepPrevButton = shell.querySelector("[data-line-step-prev]");
+  const stepNextButton = shell.querySelector("[data-line-step-next]");
+  const jumpEndButton = shell.querySelector("[data-line-jump-end]");
+  const qualitySelect = shell.querySelector("[data-line-quality-select]");
+  const windowSelect = shell.querySelector("[data-line-window-select]");
+  const jumpInput = shell.querySelector("[data-line-jump-input]");
+  const jumpToIndexButton = shell.querySelector("[data-line-jump-to-index]");
+  const fullscreenButton = shell.querySelector("[data-line-fullscreen-toggle]");
+  const statusElement =
+    shell.closest(".data-section")?.querySelector("[data-line-status]") || null;
+
+  if (!canvas || !svg) {
+    return;
+  }
+
+  const fileKey = shell.dataset.lineFileKey || "";
+  const path = shell.dataset.linePath || "/";
+  const displayDims = shell.dataset.lineDisplayDims || "";
+  const fixedIndices = shell.dataset.lineFixedIndices || "";
+  const notation = shell.dataset.lineNotation || "auto";
+  const lineGrid = shell.dataset.lineGrid !== "0";
+  const lineAspect = shell.dataset.lineAspect || "line";
+  const initialQuality = normalizeLineQuality(shell.dataset.lineQuality);
+  const overviewMaxPoints = Math.max(
+    1,
+    toSafeInteger(shell.dataset.lineOverviewMaxPoints, LINE_DEFAULT_OVERVIEW_MAX_POINTS)
+  );
+  const exactMaxPoints = Math.max(
+    1,
+    toSafeInteger(shell.dataset.lineExactMaxPoints, LINE_EXACT_MAX_POINTS)
+  );
+  const selectionKey =
+    shell.dataset.lineSelectionKey ||
+    buildLineSelectionKey(fileKey, path, displayDims, fixedIndices, null);
+  const totalPoints = Math.max(0, toSafeInteger(shell.dataset.lineTotalPoints, 0));
+  const parsedLineIndex = toSafeInteger(shell.dataset.lineIndex, null);
+  const lineIndex = Number.isFinite(parsedLineIndex) ? parsedLineIndex : null;
+
+  if (!fileKey || totalPoints <= 0) {
+    setMatrixStatus(statusElement, "No line data available.", "error");
+    return;
+  }
+
+  shell.dataset.lineBound = "true";
+
+  const runtime = {
+    fileKey,
+    path,
+    displayDims,
+    fixedIndices,
+    notation,
+    lineGrid,
+    lineAspect,
+    selectionKey,
+    totalPoints,
+    lineIndex,
+    qualityRequested: initialQuality,
+    qualityApplied: initialQuality,
+    overviewMaxPoints,
+    exactMaxPoints,
+    requestedPoints: 0,
+    returnedPoints: 0,
+    lineStep: 1,
+    minSpan: Math.max(1, Math.min(LINE_MIN_VIEW_SPAN, totalPoints)),
+    viewStart: 0,
+    viewSpan: totalPoints,
+    fetchTimer: null,
+    requestSeq: 0,
+    destroyed: false,
+    panEnabled: false,
+    isPanning: false,
+    panPointerId: null,
+    panStartX: 0,
+    panStartViewStart: 0,
+    points: [],
+    frame: null,
+    hoverDot: null,
+  };
+
+  function getMaxSpanForQuality() {
+    if (runtime.qualityRequested === "exact") {
+      return Math.max(1, Math.min(runtime.totalPoints, runtime.exactMaxPoints));
+    }
+    return runtime.totalPoints;
+  }
+
+  function clampViewport(start, span) {
+    const maxSpan = getMaxSpanForQuality();
+    const minSpan = Math.min(runtime.minSpan, maxSpan);
+    const safeSpan = clamp(toSafeInteger(span, maxSpan), minSpan, maxSpan);
+    const maxStart = Math.max(0, runtime.totalPoints - safeSpan);
+    const safeStart = clamp(toSafeInteger(start, 0), 0, maxStart);
+    return { start: safeStart, span: safeSpan };
+  }
+
+  function persistViewState() {
+    LINE_VIEW_CACHE.set(runtime.selectionKey, {
+      start: runtime.viewStart,
+      span: runtime.viewSpan,
+      panEnabled: runtime.panEnabled === true,
+      qualityRequested: runtime.qualityRequested,
+    });
+  }
+
+  const cachedView = LINE_VIEW_CACHE.get(runtime.selectionKey);
+  if (cachedView && typeof cachedView === "object") {
+    runtime.qualityRequested = normalizeLineQuality(
+      cachedView.qualityRequested || runtime.qualityRequested
+    );
+    const restored = clampViewport(cachedView.start, cachedView.span);
+    runtime.viewStart = restored.start;
+    runtime.viewSpan = restored.span;
+    runtime.panEnabled = cachedView.panEnabled === true;
+  }
+
+  function getZoomPercent() {
+    if (runtime.totalPoints <= 0) {
+      return 100;
+    }
+
+    const ratio = runtime.totalPoints / Math.max(1, runtime.viewSpan);
+    return Math.max(100, Math.round(ratio * 100));
+  }
+
+  function updateZoomLabel() {
+    if (!zoomLabel) {
+      return;
+    }
+
+    zoomLabel.textContent = `${getZoomPercent()}%`;
+  }
+
+  function updateRangeLabel(pointCount = null) {
+    if (!rangeLabel) {
+      return;
+    }
+
+    const rangeEnd = Math.max(runtime.viewStart, runtime.viewStart + runtime.viewSpan - 1);
+    const baseText = `Range: ${runtime.viewStart.toLocaleString()} - ${rangeEnd.toLocaleString()} of ${Math.max(
+      0,
+      runtime.totalPoints - 1
+    ).toLocaleString()}`;
+    rangeLabel.textContent =
+      typeof pointCount === "number" && pointCount >= 0
+        ? `${baseText} | ${pointCount.toLocaleString()} points`
+        : baseText;
+  }
+
+  function syncQualityControl() {
+    if (!qualitySelect) {
+      return;
+    }
+    qualitySelect.value = runtime.qualityRequested;
+  }
+
+  function syncWindowControl() {
+    if (!windowSelect) {
+      return;
+    }
+
+    const exactMode = runtime.qualityRequested === "exact";
+    Array.from(windowSelect.options)
+      .filter((option) => option.dataset.dynamic === "true")
+      .forEach((option) => option.remove());
+
+    Array.from(windowSelect.options).forEach((option) => {
+      const value = Math.max(1, toSafeInteger(option.value, 1));
+      option.disabled = exactMode && value > runtime.exactMaxPoints;
+    });
+
+    const selected = String(runtime.viewSpan);
+    const hasExact = Array.from(windowSelect.options).some((option) => option.value === selected);
+    if (!hasExact) {
+      const dynamicOption = document.createElement("option");
+      dynamicOption.value = selected;
+      dynamicOption.textContent = Number(selected).toLocaleString();
+      dynamicOption.dataset.dynamic = "true";
+      dynamicOption.disabled = exactMode && runtime.viewSpan > runtime.exactMaxPoints;
+      windowSelect.appendChild(dynamicOption);
+      windowSelect.value = selected;
+      return;
+    }
+
+    windowSelect.value = selected;
+  }
+
+  function syncJumpInput() {
+    if (!jumpInput) {
+      return;
+    }
+    jumpInput.min = "0";
+    jumpInput.max = String(Math.max(0, runtime.totalPoints - 1));
+    const current = toSafeInteger(jumpInput.value, runtime.viewStart);
+    jumpInput.value = String(clamp(current, 0, Math.max(0, runtime.totalPoints - 1)));
+  }
+
+  function hideHover() {
+    if (hoverElement) {
+      hoverElement.hidden = true;
+    }
+
+    if (runtime.hoverDot) {
+      runtime.hoverDot.setAttribute("cx", "-9999");
+      runtime.hoverDot.setAttribute("cy", "-9999");
+      runtime.hoverDot.style.display = "none";
+    }
+  }
+
+  function syncPanState() {
+    canvas.classList.toggle("is-pan", runtime.panEnabled);
+    canvas.classList.toggle("is-grabbing", runtime.isPanning);
+
+    if (panToggleButton) {
+      panToggleButton.classList.toggle("active", runtime.panEnabled);
+    }
+  }
+
+  function syncFullscreenState() {
+    const isFullscreen = document.fullscreenElement === shell;
+    shell.classList.toggle("is-fullscreen", isFullscreen);
+    if (fullscreenButton) {
+      fullscreenButton.textContent = isFullscreen ? "Exit Fullscreen" : "Fullscreen";
+    }
+  }
+
+  function updateStats(minValue, maxValue) {
+    if (minStat) {
+      minStat.textContent = `min: ${formatCell(minValue, runtime.notation)}`;
+    }
+    if (maxStat) {
+      maxStat.textContent = `max: ${formatCell(maxValue, runtime.notation)}`;
+    }
+    if (spanStat) {
+      spanStat.textContent = `span: ${formatCell(maxValue - minValue, runtime.notation)}`;
+    }
+  }
+
+  function renderSeries(points) {
+    const width = LINE_SVG_WIDTH;
+    const height = LINE_SVG_HEIGHT;
+    const padding = { top: 20, right: 18, bottom: 34, left: 48 };
+    const chartWidth = width - padding.left - padding.right;
+    const chartHeight = height - padding.top - padding.bottom;
+
+    runtime.points = points;
+    runtime.frame = null;
+    runtime.hoverDot = null;
+
+    if (!Array.isArray(points) || points.length < 2) {
+      if (minStat) minStat.textContent = "min: --";
+      if (maxStat) maxStat.textContent = "max: --";
+      if (spanStat) spanStat.textContent = "span: --";
+      svg.innerHTML = `
+        <rect x="0" y="0" width="${width}" height="${height}" class="line-chart-bg"></rect>
+        <g class="line-axis">
+          <line x1="${padding.left}" y1="${padding.top + chartHeight}" x2="${padding.left + chartWidth}" y2="${padding.top + chartHeight}"></line>
+          <line x1="${padding.left}" y1="${padding.top}" x2="${padding.left}" y2="${padding.top + chartHeight}"></line>
+        </g>
+        <text x="${padding.left + 8}" y="${padding.top + 18}" class="line-empty-msg">No numeric points in this range.</text>
+      `;
+      hideHover();
+      return;
+    }
+
+    const xValues = points.map((point) => point.x);
+    const yValues = points.map((point) => point.y);
+    const rawMinX = Math.min(...xValues);
+    const rawMaxX = Math.max(...xValues);
+    const rawMinY = Math.min(...yValues);
+    const rawMaxY = Math.max(...yValues);
+    const rawSpanX = rawMaxX - rawMinX;
+    const rawSpanY = rawMaxY - rawMinY;
+    const domainPadX = rawSpanX === 0 ? 1 : rawSpanX * 0.02;
+    const domainPadY = rawSpanY === 0 ? Math.max(Math.abs(rawMinY) * 0.1, 1) : rawSpanY * 0.08;
+    const minX = rawMinX - domainPadX;
+    const maxX = rawMaxX + domainPadX;
+    const minY = rawMinY - domainPadY;
+    const maxY = rawMaxY + domainPadY;
+    const spanX = maxX - minX || 1;
+    const spanY = maxY - minY || 1;
+
+    runtime.frame = {
+      width,
+      height,
+      padding,
+      chartWidth,
+      chartHeight,
+      minX,
+      maxX,
+      minY,
+      maxY,
+      spanX,
+      spanY,
+    };
+
+    updateStats(rawMinY, rawMaxY);
+
+    const toX = (value) => padding.left + ((value - minX) / spanX) * chartWidth;
+    const toY = (value) => padding.top + chartHeight - ((value - minY) / spanY) * chartHeight;
+
+    const path = points
+      .map((point, index) => `${index === 0 ? "M" : "L"}${toX(point.x).toFixed(2)},${toY(point.y).toFixed(2)}`)
+      .join(" ");
+
+    const sampleEvery = Math.max(1, Math.ceil(points.length / 450));
+    const markers = points
+      .filter((_, index) => index % sampleEvery === 0)
+      .map((point) => `<circle cx="${toX(point.x).toFixed(2)}" cy="${toY(point.y).toFixed(2)}" r="1.8"></circle>`)
+      .join("");
+
+    const tickCount = 6;
+    const ticks = Array.from({ length: tickCount }, (_, idx) => {
+      const ratio = idx / Math.max(1, tickCount - 1);
+      const x = padding.left + ratio * chartWidth;
+      const y = padding.top + ratio * chartHeight;
+      return {
+        ratio,
+        x,
+        y,
+        xValue: minX + ratio * spanX,
+        yValue: maxY - ratio * spanY,
+      };
+    });
+
+    const gridLines = ticks
+      .map(
+        (tick) => `
+          <line x1="${tick.x}" y1="${padding.top}" x2="${tick.x}" y2="${padding.top + chartHeight}"></line>
+          <line x1="${padding.left}" y1="${tick.y}" x2="${padding.left + chartWidth}" y2="${tick.y}"></line>
+        `
+      )
+      .join("");
+
+    const xTickLabels = ticks
+      .map(
+        (tick) =>
+          `<text x="${tick.x}" y="${padding.top + chartHeight + 18}" text-anchor="middle">${escapeHtml(
+            formatCell(tick.xValue, runtime.notation)
+          )}</text>`
+      )
+      .join("");
+    const yTickLabels = ticks
+      .map(
+        (tick) =>
+          `<text x="${padding.left - 8}" y="${tick.y + 4}" text-anchor="end">${escapeHtml(
+            formatCell(tick.yValue, runtime.notation)
+          )}</text>`
+      )
+      .join("");
+
+    const showLine = runtime.lineAspect !== "point";
+    const showPoints = runtime.lineAspect !== "line";
+
+    svg.innerHTML = `
+      <rect x="0" y="0" width="${width}" height="${height}" class="line-chart-bg"></rect>
+      <g class="line-grid">${runtime.lineGrid ? gridLines : ""}</g>
+      <g class="line-axis">
+        <line x1="${padding.left}" y1="${padding.top + chartHeight}" x2="${padding.left + chartWidth}" y2="${padding.top + chartHeight}"></line>
+        <line x1="${padding.left}" y1="${padding.top}" x2="${padding.left}" y2="${padding.top + chartHeight}"></line>
+      </g>
+      <g class="line-axis-labels">
+        ${xTickLabels}
+        ${yTickLabels}
+      </g>
+      <g class="line-axis-titles">
+        <text class="line-axis-title line-axis-title-x" x="${padding.left + chartWidth / 2}" y="${height - 6}" text-anchor="middle">Index</text>
+        <text class="line-axis-title line-axis-title-y" x="14" y="${padding.top + chartHeight / 2}" text-anchor="middle" transform="rotate(-90, 14, ${
+          padding.top + chartHeight / 2
+        })">Value</text>
+      </g>
+      ${showLine ? `<path class="line-path" d="${path}"></path>` : ""}
+      ${showPoints ? `<g class="line-points">${markers}</g>` : ""}
+      <circle class="line-hover-dot" data-line-hover-dot="true" cx="-9999" cy="-9999" r="4"></circle>
+    `;
+    runtime.hoverDot = svg.querySelector("[data-line-hover-dot]");
+    hideHover();
+  }
+
+  function scheduleFetch() {
+    if (runtime.destroyed) {
+      return;
+    }
+
+    if (runtime.fetchTimer !== null) {
+      clearTimeout(runtime.fetchTimer);
+    }
+
+    runtime.fetchTimer = setTimeout(() => {
+      runtime.fetchTimer = null;
+      void fetchLineRange();
+    }, LINE_FETCH_DEBOUNCE_MS);
+  }
+
+  async function fetchLineRange() {
+    if (runtime.destroyed) {
+      return;
+    }
+
+    const requestId = ++runtime.requestSeq;
+    const offset = runtime.viewStart;
+    const limit = runtime.viewSpan;
+
+    setMatrixStatus(statusElement, "Loading line range...", "info");
+
+    const params = {
+      mode: "line",
+      quality: runtime.qualityRequested,
+      max_points: runtime.overviewMaxPoints,
+      line_offset: offset,
+      line_limit: limit,
+    };
+
+    if (runtime.displayDims) {
+      params.display_dims = runtime.displayDims;
+    }
+
+    if (runtime.fixedIndices) {
+      params.fixed_indices = runtime.fixedIndices;
+    }
+
+    if (runtime.lineIndex !== null) {
+      params.line_dim = "row";
+      params.line_index = runtime.lineIndex;
+    }
+
+    try {
+      const response = await getFileData(runtime.fileKey, runtime.path, params, {
+        cancelPrevious: true,
+      });
+
+      if (runtime.destroyed || requestId !== runtime.requestSeq) {
+        return;
+      }
+
+      runtime.qualityApplied = normalizeLineQuality(
+        response?.quality_applied || runtime.qualityRequested
+      );
+      runtime.requestedPoints = Math.max(0, toSafeInteger(response?.requested_points, limit));
+      runtime.returnedPoints = Math.max(
+        0,
+        toSafeInteger(
+          response?.returned_points,
+          Array.isArray(response?.data) ? response.data.length : 0
+        )
+      );
+      const step = Math.max(
+        1,
+        toSafeInteger(response?.line_step, toSafeInteger(response?.downsample_info?.step, 1))
+      );
+      runtime.lineStep = step;
+      const responseOffset = Math.max(0, toSafeInteger(response?.line_offset, offset));
+      const values = Array.isArray(response?.data) ? response.data : [];
+
+      const points = values
+        .map((value, index) => ({
+          x: responseOffset + index * step,
+          y: Number(value),
+        }))
+        .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y));
+
+      updateRangeLabel(points.length);
+      updateZoomLabel();
+      renderSeries(points);
+      setMatrixStatus(
+        statusElement,
+        `${runtime.qualityApplied === "exact" ? "Exact" : "Overview"} loaded ${points.length.toLocaleString()} points (step ${step}).`,
+        "info"
+      );
+    } catch (error) {
+      if (runtime.destroyed) {
+        return;
+      }
+
+      if (error?.isAbort || error?.code === "ABORTED") {
+        return;
+      }
+
+      setMatrixStatus(statusElement, error?.message || "Failed to load line range.", "error");
+    }
+  }
+
+  function updateViewport(start, span, immediate = false) {
+    const next = clampViewport(start, span);
+    const changed = next.start !== runtime.viewStart || next.span !== runtime.viewSpan;
+    runtime.viewStart = next.start;
+    runtime.viewSpan = next.span;
+    updateRangeLabel();
+    updateZoomLabel();
+    syncWindowControl();
+    syncJumpInput();
+    persistViewState();
+
+    if (!changed) {
+      return;
+    }
+
+    if (immediate) {
+      void fetchLineRange();
+      return;
+    }
+
+    scheduleFetch();
+  }
+
+  function zoomBy(factor, anchorRatio = 0.5) {
+    const nextSpan = Math.round(runtime.viewSpan * factor);
+    if (nextSpan === runtime.viewSpan) {
+      return;
+    }
+
+    const maxSpan = getMaxSpanForQuality();
+    const minSpan = Math.min(runtime.minSpan, maxSpan);
+    const clampedSpan = clamp(nextSpan, minSpan, maxSpan);
+    const focus = runtime.viewStart + Math.round(anchorRatio * runtime.viewSpan);
+    const nextStart = focus - Math.round(anchorRatio * clampedSpan);
+    updateViewport(nextStart, clampedSpan, false);
+  }
+
+  function onWheel(event) {
+    if (runtime.totalPoints <= 1) {
+      return;
+    }
+
+    event.preventDefault();
+
+    const rect = canvas.getBoundingClientRect();
+    const ratio = clamp((event.clientX - rect.left) / Math.max(rect.width, 1), 0, 1);
+    const factor = event.deltaY < 0 ? 0.88 : 1.12;
+    zoomBy(factor, ratio);
+  }
+
+  function onPointerDown(event) {
+    if (
+      !runtime.panEnabled ||
+      event.button !== 0 ||
+      runtime.totalPoints <= runtime.viewSpan
+    ) {
+      return;
+    }
+
+    runtime.isPanning = true;
+    runtime.panPointerId = event.pointerId;
+    runtime.panStartX = event.clientX;
+    runtime.panStartViewStart = runtime.viewStart;
+    syncPanState();
+    canvas.setPointerCapture(event.pointerId);
+  }
+
+  function onPointerMove(event) {
+    if (runtime.panEnabled && runtime.isPanning && runtime.panPointerId === event.pointerId) {
+      const rect = canvas.getBoundingClientRect();
+      const deltaPixels = event.clientX - runtime.panStartX;
+      const deltaIndex = Math.round((deltaPixels / Math.max(rect.width, 1)) * runtime.viewSpan);
+      const nextStart = runtime.panStartViewStart - deltaIndex;
+      updateViewport(nextStart, runtime.viewSpan, false);
+      return;
+    }
+
+    if (!runtime.frame || runtime.points.length < 2) {
+      hideHover();
+      return;
+    }
+
+    const rect = canvas.getBoundingClientRect();
+    const frame = runtime.frame;
+    const svgX = ((event.clientX - rect.left) / Math.max(rect.width, 1)) * frame.width;
+    const svgY = ((event.clientY - rect.top) / Math.max(rect.height, 1)) * frame.height;
+    const ratioX = (svgX - frame.padding.left) / frame.chartWidth;
+    const ratioY = (svgY - frame.padding.top) / frame.chartHeight;
+
+    if (ratioX < 0 || ratioX > 1 || ratioY < 0 || ratioY > 1) {
+      hideHover();
+      return;
+    }
+
+    const pointIndex = clamp(
+      Math.round(ratioX * (runtime.points.length - 1)),
+      0,
+      runtime.points.length - 1
+    );
+    const point = runtime.points[pointIndex];
+    const cx = frame.padding.left + ((point.x - frame.minX) / frame.spanX) * frame.chartWidth;
+    const cy = frame.padding.top + frame.chartHeight - ((point.y - frame.minY) / frame.spanY) * frame.chartHeight;
+
+    if (runtime.hoverDot) {
+      runtime.hoverDot.setAttribute("cx", cx.toFixed(2));
+      runtime.hoverDot.setAttribute("cy", cy.toFixed(2));
+      runtime.hoverDot.style.display = "";
+    }
+
+    if (hoverElement) {
+      hoverElement.hidden = false;
+      hoverElement.innerHTML = `
+        <div>Index: ${escapeHtml(formatCell(point.x, "exact"))}</div>
+        <div>Value: ${escapeHtml(formatCell(point.y, runtime.notation))}</div>
+      `;
+    }
+  }
+
+  function endPan(event) {
+    if (!runtime.isPanning) {
+      return;
+    }
+
+    if (event && runtime.panPointerId !== event.pointerId) {
+      return;
+    }
+
+    runtime.isPanning = false;
+    const activePointerId = runtime.panPointerId;
+    runtime.panPointerId = null;
+    syncPanState();
+
+    if (
+      Number.isFinite(activePointerId) &&
+      canvas.hasPointerCapture(activePointerId)
+    ) {
+      canvas.releasePointerCapture(activePointerId);
+    }
+  }
+
+  function onPointerLeave() {
+    hideHover();
+    if (runtime.isPanning) {
+      endPan();
+    }
+  }
+
+  function onTogglePan() {
+    runtime.panEnabled = !runtime.panEnabled;
+    if (!runtime.panEnabled && runtime.isPanning) {
+      endPan();
+    }
+    syncPanState();
+    persistViewState();
+  }
+
+  function onZoomIn() {
+    zoomBy(1 / 1.15, 0.5);
+  }
+
+  function onZoomOut() {
+    zoomBy(1.15, 0.5);
+  }
+
+  function shiftWindow(direction) {
+    if (!Number.isFinite(direction) || direction === 0) {
+      return;
+    }
+    const delta = Math.max(1, Math.round(runtime.viewSpan * direction));
+    updateViewport(runtime.viewStart + delta, runtime.viewSpan, true);
+  }
+
+  function onJumpStart() {
+    updateViewport(0, runtime.viewSpan, true);
+  }
+
+  function onJumpEnd() {
+    updateViewport(runtime.totalPoints - runtime.viewSpan, runtime.viewSpan, true);
+  }
+
+  function onStepPrev() {
+    shiftWindow(-1);
+  }
+
+  function onStepNext() {
+    shiftWindow(1);
+  }
+
+  function setQuality(nextQuality) {
+    runtime.qualityRequested = normalizeLineQuality(nextQuality);
+    runtime.qualityApplied = runtime.qualityRequested;
+    syncQualityControl();
+    const maxSpan = getMaxSpanForQuality();
+    updateViewport(runtime.viewStart, Math.min(runtime.viewSpan, maxSpan), true);
+  }
+
+  function onQualityChange() {
+    if (!qualitySelect) {
+      return;
+    }
+    setQuality(qualitySelect.value);
+  }
+
+  function onWindowChange() {
+    if (!windowSelect) {
+      return;
+    }
+    const requested = Math.max(1, toSafeInteger(windowSelect.value, runtime.viewSpan));
+    updateViewport(runtime.viewStart, requested, true);
+  }
+
+  function onJumpToIndex() {
+    if (!jumpInput) {
+      return;
+    }
+    const target = clamp(
+      toSafeInteger(jumpInput.value, runtime.viewStart),
+      0,
+      Math.max(0, runtime.totalPoints - 1)
+    );
+    const nextStart = target - Math.floor(runtime.viewSpan / 2);
+    updateViewport(nextStart, runtime.viewSpan, true);
+  }
+
+  function onJumpInputKeyDown(event) {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      onJumpToIndex();
+    }
+  }
+
+  function onKeyDown(event) {
+    if (event.defaultPrevented) {
+      return;
+    }
+
+    const key = event.key;
+    if (key === "ArrowLeft") {
+      event.preventDefault();
+      shiftWindow(-LINE_KEYBOARD_PAN_RATIO);
+      return;
+    }
+    if (key === "ArrowRight") {
+      event.preventDefault();
+      shiftWindow(LINE_KEYBOARD_PAN_RATIO);
+      return;
+    }
+    if (key === "Home") {
+      event.preventDefault();
+      onJumpStart();
+      return;
+    }
+    if (key === "End") {
+      event.preventDefault();
+      onJumpEnd();
+      return;
+    }
+    if (key === "+" || key === "=") {
+      event.preventDefault();
+      onZoomIn();
+      return;
+    }
+    if (key === "-" || key === "_") {
+      event.preventDefault();
+      onZoomOut();
+    }
+  }
+
+  const onReset = () => {
+    const maxSpan = getMaxSpanForQuality();
+    updateViewport(0, maxSpan, true);
+  };
+
+  async function onToggleFullscreen() {
+    try {
+      if (document.fullscreenElement === shell) {
+        await document.exitFullscreen();
+      } else if (!document.fullscreenElement && shell.requestFullscreen) {
+        await shell.requestFullscreen();
+      } else if (document.fullscreenElement) {
+        await document.exitFullscreen();
+      }
+    } catch (_error) {
+      // ignore fullscreen errors on restricted contexts
+    }
+  }
+
+  const onFullscreenChange = () => {
+    syncFullscreenState();
+  };
+
+  if (hoverElement) {
+    hoverElement.hidden = true;
+  }
+
+  syncPanState();
+  syncFullscreenState();
+  syncQualityControl();
+  syncWindowControl();
+  syncJumpInput();
+  updateRangeLabel();
+  updateZoomLabel();
+  persistViewState();
+  setMatrixStatus(statusElement, "Loading initial line range...", "info");
+  void fetchLineRange();
+
+  canvas.addEventListener("wheel", onWheel, { passive: false });
+  canvas.addEventListener("pointerdown", onPointerDown);
+  canvas.addEventListener("pointermove", onPointerMove);
+  canvas.addEventListener("pointerup", endPan);
+  canvas.addEventListener("pointercancel", endPan);
+  canvas.addEventListener("pointerleave", onPointerLeave);
+  canvas.addEventListener("keydown", onKeyDown);
+  if (panToggleButton) {
+    panToggleButton.addEventListener("click", onTogglePan);
+  }
+  if (zoomInButton) {
+    zoomInButton.addEventListener("click", onZoomIn);
+  }
+  if (zoomOutButton) {
+    zoomOutButton.addEventListener("click", onZoomOut);
+  }
+  if (resetButton) {
+    resetButton.addEventListener("click", onReset);
+  }
+  if (jumpStartButton) {
+    jumpStartButton.addEventListener("click", onJumpStart);
+  }
+  if (stepPrevButton) {
+    stepPrevButton.addEventListener("click", onStepPrev);
+  }
+  if (stepNextButton) {
+    stepNextButton.addEventListener("click", onStepNext);
+  }
+  if (jumpEndButton) {
+    jumpEndButton.addEventListener("click", onJumpEnd);
+  }
+  if (qualitySelect) {
+    qualitySelect.addEventListener("change", onQualityChange);
+  }
+  if (windowSelect) {
+    windowSelect.addEventListener("change", onWindowChange);
+  }
+  if (jumpToIndexButton) {
+    jumpToIndexButton.addEventListener("click", onJumpToIndex);
+  }
+  if (jumpInput) {
+    jumpInput.addEventListener("keydown", onJumpInputKeyDown);
+  }
+  if (fullscreenButton) {
+    fullscreenButton.addEventListener("click", onToggleFullscreen);
+  }
+  document.addEventListener("fullscreenchange", onFullscreenChange);
+
+  const cleanup = () => {
+    persistViewState();
+    runtime.destroyed = true;
+    hideHover();
+    if (runtime.fetchTimer !== null) {
+      clearTimeout(runtime.fetchTimer);
+      runtime.fetchTimer = null;
+    }
+    if (runtime.isPanning) {
+      endPan();
+    }
+    canvas.removeEventListener("wheel", onWheel);
+    canvas.removeEventListener("pointerdown", onPointerDown);
+    canvas.removeEventListener("pointermove", onPointerMove);
+    canvas.removeEventListener("pointerup", endPan);
+    canvas.removeEventListener("pointercancel", endPan);
+    canvas.removeEventListener("pointerleave", onPointerLeave);
+    canvas.removeEventListener("keydown", onKeyDown);
+    if (panToggleButton) {
+      panToggleButton.removeEventListener("click", onTogglePan);
+    }
+    if (zoomInButton) {
+      zoomInButton.removeEventListener("click", onZoomIn);
+    }
+    if (zoomOutButton) {
+      zoomOutButton.removeEventListener("click", onZoomOut);
+    }
+    if (resetButton) {
+      resetButton.removeEventListener("click", onReset);
+    }
+    if (jumpStartButton) {
+      jumpStartButton.removeEventListener("click", onJumpStart);
+    }
+    if (jumpEndButton) {
+      jumpEndButton.removeEventListener("click", onJumpEnd);
+    }
+    if (stepPrevButton) {
+      stepPrevButton.removeEventListener("click", onStepPrev);
+    }
+    if (stepNextButton) {
+      stepNextButton.removeEventListener("click", onStepNext);
+    }
+    if (qualitySelect) {
+      qualitySelect.removeEventListener("change", onQualityChange);
+    }
+    if (windowSelect) {
+      windowSelect.removeEventListener("change", onWindowChange);
+    }
+    if (jumpToIndexButton) {
+      jumpToIndexButton.removeEventListener("click", onJumpToIndex);
+    }
+    if (jumpInput) {
+      jumpInput.removeEventListener("keydown", onJumpInputKeyDown);
+    }
+    if (fullscreenButton) {
+      fullscreenButton.removeEventListener("click", onToggleFullscreen);
+    }
+    document.removeEventListener("fullscreenchange", onFullscreenChange);
+  };
+
+  LINE_RUNTIME_CLEANUPS.add(cleanup);
+}
+
 export function bindViewerPanelEvents(root, actions) {
-  clearMatrixRuntimeBindings();
+  clearViewerRuntimeBindings();
 
   root.querySelectorAll("[data-axis-change]").forEach((button) => {
     button.addEventListener("click", () => {
@@ -1477,7 +2644,17 @@ export function bindViewerPanelEvents(root, actions) {
     });
   });
 
+  root.querySelectorAll("[data-line-enable]").forEach((button) => {
+    button.addEventListener("click", () => {
+      actions.enableLineFullView();
+    });
+  });
+
   root.querySelectorAll("[data-matrix-shell]").forEach((shell) => {
     initializeMatrixRuntime(shell);
+  });
+
+  root.querySelectorAll("[data-line-shell]").forEach((shell) => {
+    initializeLineRuntime(shell);
   });
 }

@@ -43,11 +43,76 @@ class Hdf5RoutesTestCase(unittest.TestCase):
         payload = response.get_json()
         self.assertTrue(payload['success'])
         self.assertEqual(payload['line_limit'], 5_000_000)
+        self.assertEqual(payload['quality_requested'], 'auto')
+        self.assertEqual(payload['quality_applied'], 'overview')
+        self.assertEqual(payload['requested_points'], 5_000_000)
         self.assertEqual(payload['downsample_info']['step'], 1000)
         reader.get_line.assert_called_once()
         args = reader.get_line.call_args[0]
         self.assertEqual(args[7], 5_000_000)  # line_limit
         self.assertEqual(args[8], 1000)  # line_step
+
+    def test_data_line_exact_mode_small_window(self):
+        reader = Mock()
+        reader.get_dataset_info.return_value = {
+            'shape': [10_000],
+            'ndim': 1,
+            'dtype': 'float32'
+        }
+        reader.get_line.return_value = {
+            'dtype': 'float32',
+            'data': [1.0, 2.0, 3.0, 4.0],
+            'shape': [4],
+            'axis': 'dim',
+            'index': None,
+            'downsample_info': {'step': 1}
+        }
+
+        with patch('src.routes.hdf5.get_hdf5_reader', return_value=reader):
+            response = self.client.get(
+                '/files/sample.h5/data'
+                '?path=/array_1d'
+                '&mode=line'
+                '&quality=exact'
+                '&line_offset=100'
+                '&line_limit=4'
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload['success'])
+        self.assertEqual(payload['quality_requested'], 'exact')
+        self.assertEqual(payload['quality_applied'], 'exact')
+        self.assertEqual(payload['line_step'], 1)
+        self.assertEqual(payload['requested_points'], 4)
+        self.assertEqual(payload['returned_points'], 4)
+
+        reader.get_line.assert_called_once()
+        args = reader.get_line.call_args[0]
+        self.assertEqual(args[7], 4)  # line_limit
+        self.assertEqual(args[8], 1)  # line_step
+
+    def test_data_line_exact_mode_rejects_large_window(self):
+        reader = Mock()
+        reader.get_dataset_info.return_value = {
+            'shape': [2_000_000],
+            'ndim': 1,
+            'dtype': 'float32'
+        }
+
+        with patch('src.routes.hdf5.get_hdf5_reader', return_value=reader):
+            response = self.client.get(
+                '/files/sample.h5/data'
+                '?path=/array_1d'
+                '&mode=line'
+                '&quality=exact'
+                '&line_limit=500000'
+            )
+
+        self.assertEqual(response.status_code, 400)
+        payload = response.get_json()
+        self.assertFalse(payload['success'])
+        self.assertIn('Exact line window exceeds', payload['error'])
 
     def test_data_heatmap_auto_clamps_max_size(self):
         reader = Mock()

@@ -1,8 +1,16 @@
 import { subscribe, getState } from "./state/store.js";
 import { actions } from "./state/reducers.js";
 import { renderTopBar, bindTopBarEvents } from "./components/topBar.js";
-import { renderHomeView, bindHomeViewEvents } from "./views/homeView.js";
-import { renderViewerView, bindViewerViewEvents } from "./views/viewerView.js";
+import {
+  initHomeViewTemplate,
+  renderHomeView,
+  bindHomeViewEvents,
+} from "./views/homeView.js";
+import {
+  initViewerViewTemplate,
+  renderViewerView,
+  bindViewerViewEvents,
+} from "./views/viewerView.js";
 
 const root = document.getElementById("app-root");
 
@@ -34,6 +42,11 @@ function renderApp() {
   }
 }
 
-subscribe(renderApp);
-renderApp();
-actions.loadFiles();
+async function bootstrapApp() {
+  await Promise.allSettled([initHomeViewTemplate(), initViewerViewTemplate()]);
+  subscribe(renderApp);
+  renderApp();
+  void actions.loadFiles();
+}
+
+void bootstrapApp();

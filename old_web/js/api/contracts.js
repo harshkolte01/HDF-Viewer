@@ -180,8 +180,13 @@ function normalizeDataByMode(raw) {
       dtype: asString(raw.dtype),
       axis: asString(raw.axis),
       index: raw.index === null || raw.index === undefined ? null : asNumber(raw.index, 0),
+      quality_requested: asString(raw.quality_requested, "auto"),
+      quality_applied: asString(raw.quality_applied, "auto"),
       line_offset: asNumber(raw.line_offset, 0),
       line_limit: asNumber(raw.line_limit, 0),
+      requested_points: asNumber(raw.requested_points, 0),
+      returned_points: asNumber(raw.returned_points, 0),
+      line_step: asNumber(raw.line_step, 1),
       downsample_info: asObject(raw.downsample_info),
     };
   }

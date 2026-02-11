@@ -312,6 +312,7 @@ export const actions = {
       heatmapGrid: true,
       heatmapColormap: "viridis",
       matrixFullEnabled: false,
+      lineFullEnabled: false,
       displayConfig: getDisplayConfigDefaults(),
     });
 
@@ -352,6 +353,7 @@ export const actions = {
         selectedNodeName: getNodeName(normalizedPath),
         expandedPaths: expanded,
         matrixFullEnabled: false,
+        lineFullEnabled: false,
         displayConfig: getDisplayConfigDefaults(),
         metadata: null,
         metadataLoading: false,
@@ -473,6 +475,7 @@ export const actions = {
         selectedNodeName: nodeName,
         expandedPaths,
         matrixFullEnabled: false,
+        lineFullEnabled: false,
         ...(nodeType === "dataset" ? { displayConfig: getDisplayConfigDefaults() } : {}),
         ...(nodeType === "group"
           ? {
@@ -508,7 +511,7 @@ export const actions = {
     const mode = viewMode === "display" ? "display" : "inspect";
     setState({
       viewMode: mode,
-      ...(mode === "inspect" ? { matrixFullEnabled: false } : {}),
+      ...(mode === "inspect" ? { matrixFullEnabled: false, lineFullEnabled: false } : {}),
     });
 
     const current = getState();
@@ -530,6 +533,7 @@ export const actions = {
     setState({
       displayTab: nextTab,
       ...(nextTab !== "table" ? { matrixFullEnabled: false } : {}),
+      ...(nextTab !== "line" ? { lineFullEnabled: false } : {}),
     });
   },
 
@@ -554,6 +558,37 @@ export const actions = {
     }
 
     setState({ matrixFullEnabled: true });
+  },
+
+  enableLineFullView() {
+    const snapshot = getState();
+    const shape = normalizeShape(snapshot.preview?.shape);
+    const shapeValid = shape.length >= 1 && shape.every((size) => Number.isFinite(size) && size >= 0);
+    const displayDims =
+      normalizeDisplayDimsForShape(snapshot.displayConfig?.displayDims, shape) ||
+      normalizeDisplayDimsForShape(snapshot.preview?.display_dims, shape) ||
+      getDefaultDisplayDims(shape);
+
+    const lineReady =
+      shape.length === 1
+        ? shape[0] > 0
+        : Array.isArray(displayDims) &&
+          displayDims.length === 2 &&
+          shape[displayDims[0]] > 0 &&
+          shape[displayDims[1]] > 0;
+
+    const canEnable =
+      snapshot.route === "viewer" &&
+      snapshot.viewMode === "display" &&
+      snapshot.selectedNodeType === "dataset" &&
+      shapeValid &&
+      lineReady;
+
+    if (!canEnable) {
+      return;
+    }
+
+    setState({ lineFullEnabled: true });
   },
 
   setNotation(notation) {
@@ -635,7 +670,7 @@ export const actions = {
             }
           : {}),
       },
-      ...(applyImmediately ? {} : { matrixFullEnabled: false }),
+      ...(applyImmediately ? {} : { matrixFullEnabled: false, lineFullEnabled: false }),
     }));
 
     if (
@@ -789,6 +824,7 @@ export const actions = {
         stagedFixedIndices: nextFixedIndices,
       },
       matrixFullEnabled: false,
+      lineFullEnabled: false,
     }));
 
     if (
@@ -822,6 +858,7 @@ export const actions = {
         stagedFixedIndices: nextFixedIndices,
       },
       matrixFullEnabled: false,
+      lineFullEnabled: false,
     }));
   },
 
@@ -907,6 +944,7 @@ export const actions = {
       previewLoading: true,
       previewError: null,
       matrixFullEnabled: false,
+      lineFullEnabled: false,
     });
 
     try {

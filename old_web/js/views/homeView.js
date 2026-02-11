@@ -1,5 +1,29 @@
 import { formatBytes, escapeHtml } from "../utils/format.js";
 import { renderFilesTable } from "../components/tableView.js";
+import { loadTemplate, applyTemplate } from "../utils/templateLoader.js";
+
+const HOME_TEMPLATE_FALLBACK = `
+  <div class="page-header">
+    <h1 class="page-title">Files</h1>
+    <p class="page-subtitle">Browse and open your HDF5 files</p>
+  </div>
+  {{HOME_STATS}}
+  {{HOME_CONTROLS}}
+  {{HOME_FILE_LIST}}
+`;
+
+let homeTemplate = HOME_TEMPLATE_FALLBACK;
+
+export async function initHomeViewTemplate() {
+  try {
+    const template = await loadTemplate("home");
+    if (template) {
+      homeTemplate = template;
+    }
+  } catch (error) {
+    console.warn("Using fallback home template.", error);
+  }
+}
 
 function getFilteredFiles(state) {
   const query = state.searchQuery.toLowerCase();
@@ -108,15 +132,11 @@ function renderFileListSection(state, filteredFiles) {
 export function renderHomeView(state) {
   const filteredFiles = getFilteredFiles(state);
 
-  return `
-    <div class="page-header">
-      <h1 class="page-title">Files</h1>
-      <p class="page-subtitle">Browse and open your HDF5 files</p>
-    </div>
-    ${renderStats(state, filteredFiles)}
-    ${renderControls(state)}
-    ${renderFileListSection(state, filteredFiles)}
-  `;
+  return applyTemplate(homeTemplate, {
+    HOME_STATS: renderStats(state, filteredFiles),
+    HOME_CONTROLS: renderControls(state),
+    HOME_FILE_LIST: renderFileListSection(state, filteredFiles),
+  });
 }
 
 export function bindHomeViewEvents(root, actions) {

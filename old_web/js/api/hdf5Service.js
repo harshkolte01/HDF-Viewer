@@ -20,6 +20,8 @@ const frontendCache = {
   metadata: new LruCache(80),
 };
 
+const DEFAULT_LINE_OVERVIEW_MAX_POINTS = 5000;
+
 function toDisplayDimsKey(displayDims) {
   if (!displayDims) {
     return "none";
@@ -86,6 +88,8 @@ function getLineCacheKey(fileKey, path, params = {}) {
     path,
     params.line_dim ?? "row",
     params.line_index ?? "auto",
+    params.quality ?? "auto",
+    params.max_points ?? DEFAULT_LINE_OVERVIEW_MAX_POINTS,
     params.line_offset ?? 0,
     params.line_limit ?? "all",
     toDisplayDimsKey(params.display_dims),

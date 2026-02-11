@@ -1,6 +1,31 @@
 import { escapeHtml } from "../utils/format.js";
 import { renderSidebarTree, bindSidebarTreeEvents } from "../components/sidebarTree.js";
 import { renderViewerPanel, bindViewerPanelEvents } from "../components/viewerPanel.js";
+import { loadTemplate, applyTemplate } from "../utils/templateLoader.js";
+
+const VIEWER_TEMPLATE_FALLBACK = `
+  <div class="viewer-page">
+    {{VIEWER_SIDEBAR}}
+    <section class="viewer-main">
+      {{VIEWER_TOPBAR}}
+      {{VIEWER_SUBBAR}}
+      {{VIEWER_PANEL}}
+    </section>
+  </div>
+`;
+
+let viewerTemplate = VIEWER_TEMPLATE_FALLBACK;
+
+export async function initViewerViewTemplate() {
+  try {
+    const template = await loadTemplate("viewer");
+    if (template) {
+      viewerTemplate = template;
+    }
+  } catch (error) {
+    console.warn("Using fallback viewer template.", error);
+  }
+}
 
 function normalizePath(path) {
   if (!path || path === "/") {
@@ -169,16 +194,12 @@ function renderPreviewToolbar(state) {
 }
 
 export function renderViewerView(state) {
-  return `
-    <div class="viewer-page">
-      ${renderSidebarTree(state)}
-      <section class="viewer-main">
-        ${renderViewerTopBar(state)}
-        ${state.viewMode === "display" ? renderPreviewToolbar(state) : ""}
-        ${renderViewerPanel(state)}
-      </section>
-    </div>
-  `;
+  return applyTemplate(viewerTemplate, {
+    VIEWER_SIDEBAR: renderSidebarTree(state),
+    VIEWER_TOPBAR: renderViewerTopBar(state),
+    VIEWER_SUBBAR: state.viewMode === "display" ? renderPreviewToolbar(state) : "",
+    VIEWER_PANEL: renderViewerPanel(state),
+  });
 }
 
 export function bindViewerViewEvents(root, actions) {
