@@ -1169,8 +1169,10 @@ function renderDisplayContent(state) {
     dataSection = `<div class="data-section">${renderHeatmapPreview(preview)}</div>`;
   }
 
+  const isLineFixedLayout = activeTab === "line" && state.lineFullEnabled === true;
+
   return `
-    <div class="preview-shell">
+    <div class="preview-shell ${isLineFixedLayout ? "preview-shell-line-fixed" : ""}">
       <div class="preview-layout ${activeTab === "line" ? "is-line" : ""}">
         ${renderDimensionControls(state, preview)}
         <div class="preview-content">
@@ -1280,10 +1282,14 @@ function renderInspectContent(state) {
 
 export function renderViewerPanel(state) {
   const isDisplay = state.viewMode === "display";
+  const isLineFixedPage =
+    isDisplay &&
+    (state.displayTab || "table") === "line" &&
+    state.lineFullEnabled === true;
 
   return `
     <div class="viewer-panel ${isDisplay ? "is-display" : "is-inspect"}">
-      <div class="panel-canvas">
+      <div class="panel-canvas ${isLineFixedPage ? "panel-canvas-line-fixed" : ""}">
         ${isDisplay ? renderDisplayContent(state) : renderInspectContent(state)}
       </div>
     </div>

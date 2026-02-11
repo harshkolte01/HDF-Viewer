@@ -13,6 +13,11 @@
     padding: var(--spacing-xl);
 }
 
+.panel-canvas.panel-canvas-line-fixed {
+    overflow-y: hidden;
+    min-height: 0;
+}
+
 /* Panel States */
 .panel-state {
     padding: var(--spacing-xl) 0;
@@ -133,17 +138,60 @@
 }
 
 .preview-layout.is-line {
-    grid-template-columns: minmax(200px, 240px) minmax(0, 1fr);
-    grid-template-rows: auto 1fr;
+    grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+    align-items: stretch;
 }
 
 .preview-layout.is-line .preview-sidebar {
+    grid-column: 1;
     grid-row: 1;
+    min-height: 0;
 }
 
 .preview-layout.is-line .preview-content {
-    grid-column: 1 / -1;
-    grid-row: 2;
+    grid-column: 2;
+    grid-row: 1;
+}
+
+.preview-shell.preview-shell-line-fixed {
+    height: 100%;
+    min-height: 0;
+}
+
+.preview-shell.preview-shell-line-fixed .preview-layout.is-line {
+    height: 100%;
+    min-height: 0;
+}
+
+.preview-shell.preview-shell-line-fixed .preview-sidebar {
+    overflow: hidden;
+}
+
+.preview-shell.preview-shell-line-fixed .preview-content {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+.preview-shell.preview-shell-line-fixed .data-section {
+    flex: 1;
+    min-height: 0;
+}
+
+.preview-shell.preview-shell-line-fixed .line-chart-shell-full {
+    flex: 1;
+    min-height: 0;
+}
+
+.preview-shell.preview-shell-line-fixed .line-chart-stage {
+    flex: 1;
+    min-height: 0;
+}
+
+.preview-shell.preview-shell-line-fixed .line-chart-canvas {
+    height: 100%;
+    min-height: 0;
 }
 
 .preview-sidebar {
@@ -796,6 +844,10 @@
         padding: var(--spacing-md);
     }
 
+    .panel-canvas.panel-canvas-line-fixed {
+        overflow-y: auto;
+    }
+
     .info-row {
         flex-direction: column;
         gap: var(--spacing-xs);
@@ -815,6 +867,26 @@
 
     .preview-layout {
         grid-template-columns: 1fr;
+    }
+
+    .preview-layout.is-line {
+        grid-template-columns: 1fr;
+        grid-template-rows: auto auto;
+        height: auto;
+    }
+
+    .preview-layout.is-line .preview-sidebar {
+        grid-column: 1;
+        grid-row: 1;
+    }
+
+    .preview-layout.is-line .preview-content {
+        grid-column: 1;
+        grid-row: 2;
+    }
+
+    .preview-shell.preview-shell-line-fixed {
+        height: auto;
     }
 
     .preview-sidebar {
