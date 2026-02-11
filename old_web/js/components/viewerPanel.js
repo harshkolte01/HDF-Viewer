@@ -889,7 +889,7 @@ function renderVirtualLineShell(state, config) {
           <button type="button" class="line-tool-btn" data-line-step-next="true">Next</button>
           <button type="button" class="line-tool-btn" data-line-jump-end="true">End</button>
         </div>
-        <div class="line-tool-group line-tool-group-controls">
+        <div class="line-tool-group line-tool-group-controls line-tool-group-fullscreen-only">
           <span class="line-tool-label">Quality</span>
           <select class="line-tool-select" data-line-quality-select="true">
             <option value="auto">Auto</option>
