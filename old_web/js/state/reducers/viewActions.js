@@ -62,7 +62,9 @@ export function createViewActions(deps) {
     const mode = viewMode === "display" ? "display" : "inspect";
     setState({
       viewMode: mode,
-      ...(mode === "inspect" ? { matrixFullEnabled: false, lineFullEnabled: false } : {}),
+      ...(mode === "inspect"
+        ? { matrixFullEnabled: false, lineFullEnabled: false, heatmapFullEnabled: false }
+        : {}),
     });
 
     const current = getState();
@@ -85,6 +87,7 @@ export function createViewActions(deps) {
       displayTab: nextTab,
       ...(nextTab !== "table" ? { matrixFullEnabled: false } : {}),
       ...(nextTab !== "line" ? { lineFullEnabled: false } : {}),
+      ...(nextTab !== "heatmap" ? { heatmapFullEnabled: false } : {}),
     });
   },
 
@@ -140,6 +143,31 @@ export function createViewActions(deps) {
     }
 
     setState({ lineFullEnabled: true });
+  },
+
+  enableHeatmapFullView() {
+    const snapshot = getState();
+    const shape = normalizeShape(snapshot.preview?.shape);
+    const displayDims =
+      normalizeDisplayDimsForShape(snapshot.displayConfig?.displayDims, shape) ||
+      normalizeDisplayDimsForShape(snapshot.preview?.display_dims, shape) ||
+      getDefaultDisplayDims(shape);
+
+    const canEnable =
+      snapshot.route === "viewer" &&
+      snapshot.viewMode === "display" &&
+      snapshot.selectedNodeType === "dataset" &&
+      shape.length >= 2 &&
+      Array.isArray(displayDims) &&
+      displayDims.length === 2 &&
+      shape[displayDims[0]] > 0 &&
+      shape[displayDims[1]] > 0;
+
+    if (!canEnable) {
+      return;
+    }
+
+    setState({ heatmapFullEnabled: true });
   },
 
   setNotation(notation) {

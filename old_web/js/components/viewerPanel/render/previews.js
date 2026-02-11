@@ -314,85 +314,289 @@ function getHeatmapRows(preview) {
   return [];
 }
 
-function getHeatColor(value, min, max) {
-  if (!Number.isFinite(value)) {
-    return "#F2F6FF";
-  }
+const HEATMAP_PREVIEW_COLOR_STOPS = Object.freeze({
+  viridis: [
+    [68, 1, 84],
+    [59, 82, 139],
+    [33, 145, 140],
+    [94, 201, 98],
+    [253, 231, 37],
+  ],
+  plasma: [
+    [13, 8, 135],
+    [126, 3, 167],
+    [203, 71, 119],
+    [248, 149, 64],
+    [240, 249, 33],
+  ],
+  inferno: [
+    [0, 0, 4],
+    [87, 15, 109],
+    [187, 55, 84],
+    [249, 142, 8],
+    [252, 255, 164],
+  ],
+  magma: [
+    [0, 0, 4],
+    [73, 15, 109],
+    [151, 45, 123],
+    [221, 82, 72],
+    [252, 253, 191],
+  ],
+  cool: [
+    [0, 255, 255],
+    [63, 191, 255],
+    [127, 127, 255],
+    [191, 63, 255],
+    [255, 0, 255],
+  ],
+  hot: [
+    [0, 0, 0],
+    [128, 0, 0],
+    [255, 64, 0],
+    [255, 200, 0],
+    [255, 255, 255],
+  ],
+});
 
+function getHeatColorStops(name) {
+  return HEATMAP_PREVIEW_COLOR_STOPS[name] || HEATMAP_PREVIEW_COLOR_STOPS.viridis;
+}
+
+function interpolateHeatColor(stops, ratio) {
+  const clamped = clamp(ratio, 0, 1);
+  const index = clamped * (stops.length - 1);
+  const lower = Math.floor(index);
+  const upper = Math.ceil(index);
+  const fraction = index - lower;
+  if (lower === upper) {
+    return stops[lower];
+  }
+  const [r1, g1, b1] = stops[lower];
+  const [r2, g2, b2] = stops[upper];
+  return [
+    Math.round(r1 + (r2 - r1) * fraction),
+    Math.round(g1 + (g2 - g1) * fraction),
+    Math.round(b1 + (b2 - b1) * fraction),
+  ];
+}
+
+function getHeatColor(value, min, max, stops) {
+  if (!Number.isFinite(value)) {
+    return "#CBD5E1";
+  }
   const ratio = max <= min ? 0.5 : clamp((value - min) / (max - min), 0, 1);
-  const start = [240, 249, 255];
-  const end = [37, 99, 235];
-  const r = Math.round(start[0] + (end[0] - start[0]) * ratio);
-  const g = Math.round(start[1] + (end[1] - start[1]) * ratio);
-  const b = Math.round(start[2] + (end[2] - start[2]) * ratio);
+  const [r, g, b] = interpolateHeatColor(stops, ratio);
   return `rgb(${r}, ${g}, ${b})`;
 }
 
-function renderHeatmapPreview(preview) {
+function buildHeatmapTicks(size, maxTicks = 6) {
+  const length = Math.max(0, Number(size) || 0);
+  if (length <= 0) {
+    return [];
+  }
+  if (length === 1) {
+    return [0];
+  }
+  const target = Math.max(2, Math.min(maxTicks, length));
+  const ticks = new Set([0, length - 1]);
+  for (let index = 1; index < target - 1; index += 1) {
+    ticks.add(Math.round((index / (target - 1)) * (length - 1)));
+  }
+  return Array.from(ticks).sort((a, b) => a - b);
+}
+
+function formatHeatmapScaleValue(value) {
+  if (!Number.isFinite(value)) {
+    return "--";
+  }
+  if (Math.abs(value) >= 1e6 || (Math.abs(value) < 1e-3 && value !== 0)) {
+    return value.toExponential(2);
+  }
+  return value.toLocaleString(undefined, {
+    maximumFractionDigits: Math.abs(value) >= 10 ? 1 : 3,
+  });
+}
+
+function renderHeatmapPreview(preview, options = {}) {
+  const colormap = options.heatmapColormap || "viridis";
+  const showGrid = options.heatmapGrid !== false;
+  const colorStops = getHeatColorStops(colormap);
   const rawRows = getHeatmapRows(preview)
     .filter((row) => Array.isArray(row))
-    .slice(0, 20)
-    .map((row) => row.slice(0, 20));
+    .slice(0, 72)
+    .map((row) => row.slice(0, 72));
 
   if (!rawRows.length) {
     return '<div class="panel-state"><div class="state-text">No matrix preview is available for heatmap rendering.</div></div>';
   }
 
-  const values = rawRows.flat().map((value) => Number(value)).filter((value) => Number.isFinite(value));
+  const colCount = rawRows.reduce(
+    (maxCount, row) => Math.max(maxCount, Array.isArray(row) ? row.length : 0),
+    0
+  );
+  if (!colCount) {
+    return '<div class="panel-state"><div class="state-text">Heatmap preview has no columns.</div></div>';
+  }
+
+  const rowCount = rawRows.length;
+  const normalizedRows = rawRows.map((row) =>
+    Array.from({ length: colCount }, (_, index) => (index < row.length ? row[index] : null))
+  );
+
+  const values = normalizedRows
+    .flat()
+    .map((value) => Number(value))
+    .filter((value) => Number.isFinite(value));
   if (!values.length) {
     return '<div class="panel-state"><div class="state-text">Heatmap preview requires numeric values.</div></div>';
   }
 
   const min = Math.min(...values);
   const max = Math.max(...values);
-  const colCount = rawRows[0]?.length || 0;
+  const width = 760;
+  const height = 420;
+  const paddingLeft = 46;
+  const paddingTop = 24;
+  const paddingBottom = 34;
+  const colorBarWidth = 18;
+  const colorBarGap = 16;
+  const colorBarLabelWidth = 56;
+  const chartWidth = Math.max(
+    120,
+    width - paddingLeft - colorBarWidth - colorBarGap - colorBarLabelWidth - 12
+  );
+  const chartHeight = Math.max(120, height - paddingTop - paddingBottom);
+  const chartX = paddingLeft;
+  const chartY = paddingTop;
+  const colorBarX = chartX + chartWidth + colorBarGap;
+  const colorBarY = chartY;
+  const cellWidth = chartWidth / Math.max(1, colCount);
+  const cellHeight = chartHeight / Math.max(1, rowCount);
 
-  const headerCells = Array.from({ length: colCount }, (_, index) => `<th>${index}</th>`).join("");
-  const bodyRows = rawRows
+  const gradientId = `heatmap-preview-gradient-${rowCount}-${colCount}-${Math.round(
+    min * 1000
+  )}-${Math.round(max * 1000)}`.replace(/[^A-Za-z0-9_-]/g, "");
+  const gradientStops = colorStops
+    .map((color, index) => {
+      const offset = index / Math.max(1, colorStops.length - 1);
+      return `<stop offset="${(offset * 100).toFixed(2)}%" stop-color="rgb(${color[0]}, ${color[1]}, ${color[2]})"></stop>`;
+    })
+    .join("");
+
+  const cellStroke = showGrid && cellWidth >= 4 && cellHeight >= 4 ? "rgba(255,255,255,0.35)" : "none";
+  const cellStrokeWidth = cellStroke === "none" ? 0 : 0.5;
+  const cellRects = normalizedRows
     .map((row, rowIndex) => {
-      const cells = row
-        .map((value) => {
+      const displayRow = Math.max(0, rowCount - 1 - rowIndex);
+      return row
+        .map((value, colIndex) => {
           const numeric = Number(value);
-          const background = getHeatColor(numeric, min, max);
-          const textColor = Number.isFinite(numeric) && numeric > min + (max - min) * 0.55 ? "#FFFFFF" : "#0F172A";
-          return `<td style="background:${background};color:${textColor}" title="${escapeHtml(String(value))}">${escapeHtml(
-            formatCell(value)
-          )}</td>`;
+          const fill = getHeatColor(numeric, min, max, colorStops);
+          const x = chartX + colIndex * cellWidth;
+          const y = chartY + rowIndex * cellHeight;
+          const label = Number.isFinite(numeric) ? formatCell(numeric) : "--";
+          return `
+            <g>
+              <rect
+                x="${x.toFixed(3)}"
+                y="${y.toFixed(3)}"
+                width="${cellWidth.toFixed(3)}"
+                height="${cellHeight.toFixed(3)}"
+                fill="${fill}"
+                stroke="${cellStroke}"
+                stroke-width="${cellStrokeWidth}"
+              ></rect>
+              <title>Y ${displayRow}, X ${colIndex}: ${escapeHtml(label)}</title>
+            </g>
+          `;
         })
         .join("");
+    })
+    .join("");
 
-      return `
-        <tr>
-          <td class="row-index">${rowIndex}</td>
-          ${cells}
-        </tr>
-      `;
+  const xTicks = buildHeatmapTicks(colCount);
+  const yTicks = buildHeatmapTicks(rowCount);
+  const xTickLabels = xTicks
+    .map((col) => {
+      const ratio = colCount <= 1 ? 0.5 : col / (colCount - 1);
+      const x = chartX + ratio * chartWidth;
+      return `<text x="${x.toFixed(2)}" y="${(chartY + chartHeight + 16).toFixed(2)}" text-anchor="middle">${col}</text>`;
+    })
+    .join("");
+  const yTickLabels = yTicks
+    .map((row) => {
+      const ratio = rowCount <= 1 ? 0.5 : row / (rowCount - 1);
+      const y = chartY + ratio * chartHeight + 4;
+      const label = Math.max(0, rowCount - 1 - row);
+      return `<text x="${(chartX - 10).toFixed(2)}" y="${y.toFixed(2)}" text-anchor="end">${label}</text>`;
     })
     .join("");
 
   return `
-    <div class="line-chart-shell heatmap-chart-shell">
-      <div class="line-chart-toolbar">
+    <div class="line-chart-shell heatmap-chart-shell heatmap-preview-chart-shell">
+      <div class="line-chart-toolbar heatmap-chart-toolbar">
         <div class="line-tool-group">
-          <button type="button" class="line-tool-btn active">Preview Grid</button>
+          <span class="line-tool-label">Preview</span>
         </div>
-        <div class="line-zoom-label">min ${escapeHtml(formatCell(min))} / max ${escapeHtml(formatCell(max))}</div>
+        <div class="line-tool-group">
+          <span class="line-zoom-label">Grid: ${rowCount.toLocaleString()} x ${colCount.toLocaleString()}</span>
+        </div>
       </div>
-      <div class="preview-table-wrapper">
-        <table class="preview-table">
-          <thead>
-            <tr>
-              <th>#</th>
-              ${headerCells}
-            </tr>
-          </thead>
-          <tbody>
-            ${bodyRows}
-          </tbody>
-        </table>
+      <div class="line-chart-stage">
+        <svg
+          class="line-chart-canvas heatmap-chart-canvas heatmap-preview-svg"
+          viewBox="0 0 ${width} ${height}"
+          role="img"
+          aria-label="Heatmap preview"
+        >
+          <defs>
+            <linearGradient id="${gradientId}" x1="0%" y1="100%" x2="0%" y2="0%">
+              ${gradientStops}
+            </linearGradient>
+          </defs>
+          <rect x="0" y="0" width="${width}" height="${height}" class="line-chart-bg"></rect>
+          <rect
+            x="${chartX}"
+            y="${chartY}"
+            width="${chartWidth}"
+            height="${chartHeight}"
+            fill="#FFFFFF"
+            stroke="#D9E2F2"
+            stroke-width="1"
+          ></rect>
+          ${cellRects}
+          <g class="line-axis-labels">${xTickLabels}${yTickLabels}</g>
+          <rect
+            x="${colorBarX}"
+            y="${colorBarY}"
+            width="${colorBarWidth}"
+            height="${chartHeight}"
+            fill="url(#${gradientId})"
+            stroke="#D9E2F2"
+            stroke-width="1"
+          ></rect>
+          <g class="line-axis-labels">
+            <text x="${colorBarX + colorBarWidth + 7}" y="${colorBarY + 9}" text-anchor="start">${escapeHtml(
+    formatHeatmapScaleValue(max)
+  )}</text>
+            <text x="${colorBarX + colorBarWidth + 7}" y="${colorBarY + chartHeight / 2 + 3}" text-anchor="start">${escapeHtml(
+    formatHeatmapScaleValue((min + max) / 2)
+  )}</text>
+            <text x="${colorBarX + colorBarWidth + 7}" y="${colorBarY + chartHeight - 2}" text-anchor="start">${escapeHtml(
+    formatHeatmapScaleValue(min)
+  )}</text>
+          </g>
+        </svg>
+      </div>
+      <div class="line-stats">
+        <span>min: ${escapeHtml(formatCell(min))}</span>
+        <span>max: ${escapeHtml(formatCell(max))}</span>
+        <span>size: ${(rowCount * colCount).toLocaleString()} cells</span>
       </div>
     </div>
   `;
 }
 
 export { renderTablePreview, renderLinePreview, renderHeatmapPreview };
+

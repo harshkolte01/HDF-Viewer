@@ -1,6 +1,7 @@
 import { clearViewerRuntimeBindings } from "./common.js";
 import { initializeMatrixRuntime } from "./matrixRuntime.js";
 import { initializeLineRuntime } from "./lineRuntime.js";
+import { initializeHeatmapRuntime } from "./heatmapRuntime.js?v=20260211-2";
 export function bindViewerPanelEvents(root, actions) {
   clearViewerRuntimeBindings();
 
@@ -60,11 +61,21 @@ export function bindViewerPanelEvents(root, actions) {
     });
   });
 
+  root.querySelectorAll("[data-heatmap-enable]").forEach((button) => {
+    button.addEventListener("click", () => {
+      actions.enableHeatmapFullView();
+    });
+  });
+
   root.querySelectorAll("[data-matrix-shell]").forEach((shell) => {
     initializeMatrixRuntime(shell);
   });
 
   root.querySelectorAll("[data-line-shell]").forEach((shell) => {
     initializeLineRuntime(shell);
+  });
+
+  root.querySelectorAll("[data-heatmap-shell]").forEach((shell) => {
+    initializeHeatmapRuntime(shell);
   });
 }

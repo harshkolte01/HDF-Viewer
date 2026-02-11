@@ -13,12 +13,11 @@ import {
   formatValue,
   formatTypeDescription,
 } from "../shared.js";
-import { renderTablePreview, renderLinePreview, renderHeatmapPreview } from "./previews.js";
+import { renderTablePreview, renderLinePreview, renderHeatmapPreview } from "./previews.js?v=20260211-3";
 import {
   resolveLineRuntimeConfig,
-  buildLineSelectionKey,
   resolveMatrixRuntimeConfig,
-  buildMatrixSelectionKey,
+  resolveHeatmapRuntimeConfig,
 } from "./config.js";
 import { renderDimensionControls } from "./dimensionControls.js";
 function renderVirtualLineShell(state, config) {
@@ -234,6 +233,93 @@ function renderMatrixSection(state, preview) {
   `;
 }
 
+function renderVirtualHeatmapShell(state, config) {
+  return `
+    <div
+      class="line-chart-shell heatmap-chart-shell"
+      data-heatmap-shell="true"
+      data-heatmap-file-key="${escapeHtml(state.selectedFile || "")}"
+      data-heatmap-path="${escapeHtml(state.selectedPath || "/")}"
+      data-heatmap-display-dims="${escapeHtml(config.displayDimsParam || "")}"
+      data-heatmap-fixed-indices="${escapeHtml(config.fixedIndicesParam || "")}"
+      data-heatmap-selection-key="${escapeHtml(config.selectionKey || "")}"
+      data-heatmap-colormap="${escapeHtml(state.heatmapColormap || "viridis")}"
+      data-heatmap-grid="${state.heatmapGrid ? "1" : "0"}"
+    >
+      <div class="line-chart-toolbar heatmap-chart-toolbar">
+        <div class="line-tool-group">
+          <button type="button" class="line-tool-btn" data-heatmap-pan-toggle="true">Hand</button>
+          <button type="button" class="line-tool-btn" data-heatmap-zoom-in="true">Zoom +</button>
+          <button type="button" class="line-tool-btn" data-heatmap-zoom-out="true">Zoom -</button>
+          <button type="button" class="line-tool-btn" data-heatmap-reset-view="true">Reset</button>
+        </div>
+        <div class="line-tool-group">
+          <span class="line-zoom-label" data-heatmap-zoom-label="true">100%</span>
+          <button type="button" class="line-tool-btn" data-heatmap-fullscreen-toggle="true">Fullscreen</button>
+          <span class="line-zoom-label" data-heatmap-range-label="true">Grid: --</span>
+        </div>
+      </div>
+      <div class="line-chart-stage">
+        <div
+          class="line-chart-canvas heatmap-chart-canvas"
+          data-heatmap-canvas="true"
+          tabindex="0"
+          role="application"
+          aria-label="Heatmap chart"
+        >
+          <canvas class="heatmap-canvas" data-heatmap-surface="true"></canvas>
+          <div class="line-hover" data-heatmap-hover="true" hidden></div>
+        </div>
+      </div>
+      <div class="line-stats">
+        <span data-heatmap-stat-min="true">min: --</span>
+        <span data-heatmap-stat-max="true">max: --</span>
+        <span data-heatmap-stat-range="true">size: --</span>
+      </div>
+    </div>
+  `;
+}
+
+function renderHeatmapSection(state, preview) {
+  const config = resolveHeatmapRuntimeConfig(state, preview);
+  const canLoadHighRes = config.supported && config.rows > 0 && config.cols > 0;
+  const isEnabled = state.heatmapFullEnabled === true && canLoadHighRes;
+
+  const statusText = !config.supported
+    ? "Heatmap high-res view requires at least 2 dimensions."
+    : config.rows <= 0 || config.cols <= 0
+    ? "No values available for the selected display dims."
+    : isEnabled
+    ? "Wheel to zoom. Use Hand to pan."
+    : "Preview mode. Click Load high-res.";
+  const statusTone = !config.supported || config.rows <= 0 || config.cols <= 0 ? "error" : "info";
+  const statusClass = `data-status ${statusTone === "error" ? "error" : "info"}`;
+
+  const content = isEnabled
+    ? renderVirtualHeatmapShell(state, config)
+    : renderHeatmapPreview(preview, {
+        heatmapColormap: state.heatmapColormap,
+        heatmapGrid: state.heatmapGrid,
+      });
+
+  return `
+    <div class="data-section">
+      <div class="data-actions">
+        <button
+          type="button"
+          class="data-btn"
+          data-heatmap-enable="true"
+          ${!canLoadHighRes || isEnabled ? "disabled" : ""}
+        >
+          Load high-res
+        </button>
+        <span class="${statusClass}" data-heatmap-status="true">${escapeHtml(statusText)}</span>
+      </div>
+      ${content}
+    </div>
+  `;
+}
+
 function renderDisplayContent(state) {
   const hasSelection = state.selectedNodeType === "dataset" && state.selectedPath !== "/";
   const activeTab = state.displayTab || "table";
@@ -275,8 +361,8 @@ function renderDisplayContent(state) {
   let dataSection = renderMatrixSection(state, preview);
   if (activeTab === "line") {
     dataSection = renderLineSection(state, preview);
-  } else if (activeTab === "heatmap" && Number(preview.ndim || 0) >= 2) {
-    dataSection = `<div class="data-section">${renderHeatmapPreview(preview)}</div>`;
+  } else if (activeTab === "heatmap") {
+    dataSection = renderHeatmapSection(state, preview);
   }
 
   const isLineFixedLayout = activeTab === "line" && state.lineFullEnabled === true;

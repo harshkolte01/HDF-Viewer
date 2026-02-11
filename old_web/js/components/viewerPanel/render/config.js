@@ -108,6 +108,55 @@ function buildMatrixBlockKey(selectionKey, rowOffset, colOffset, rowLimit, colLi
   return `${selectionKey}|r${rowOffset}|c${colOffset}|rl${rowLimit}|cl${colLimit}|rs1|cs1`;
 }
 
+function buildHeatmapSelectionKey(fileKey, path, displayDimsParam, fixedIndicesParam) {
+  return [
+    fileKey || "no-file",
+    path || "/",
+    displayDimsParam || "none",
+    fixedIndicesParam || "none",
+  ].join("|");
+}
+
+function resolveHeatmapRuntimeConfig(state, preview) {
+  const controls = resolveDisplayControls(state, preview);
+  const shape = controls.shape;
+  const displayDims = controls.appliedDisplayDims;
+  const fixedIndices = controls.appliedFixedIndices || {};
+
+  if (!Array.isArray(displayDims) || displayDims.length !== 2 || shape.length < 2) {
+    return {
+      supported: false,
+      rows: 0,
+      cols: 0,
+      displayDimsParam: "",
+      fixedIndicesParam: "",
+      selectionKey: "",
+    };
+  }
+
+  const rowDim = displayDims[0];
+  const colDim = displayDims[1];
+  const rows = Math.max(0, toSafeInteger(shape[rowDim], 0));
+  const cols = Math.max(0, toSafeInteger(shape[colDim], 0));
+  const displayDimsParam = buildDisplayDimsParam(displayDims);
+  const fixedIndicesParam = buildFixedIndicesParam(fixedIndices);
+  const selectionKey = buildHeatmapSelectionKey(
+    state.selectedFile,
+    state.selectedPath,
+    displayDimsParam,
+    fixedIndicesParam
+  );
+
+  return {
+    supported: true,
+    rows,
+    cols,
+    displayDimsParam,
+    fixedIndicesParam,
+    selectionKey,
+  };
+}
+
 function resolveMatrixRuntimeConfig(state, preview) {
   const controls = resolveDisplayControls(state, preview);
   const shape = controls.shape;
@@ -159,5 +208,7 @@ export {
   resolveLineRuntimeConfig,
   buildMatrixSelectionKey,
   buildMatrixBlockKey,
+  buildHeatmapSelectionKey,
+  resolveHeatmapRuntimeConfig,
   resolveMatrixRuntimeConfig,
 };

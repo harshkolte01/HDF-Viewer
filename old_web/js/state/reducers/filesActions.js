@@ -128,6 +128,7 @@ export function createFileActions(deps) {
       heatmapColormap: "viridis",
       matrixFullEnabled: false,
       lineFullEnabled: false,
+      heatmapFullEnabled: false,
       displayConfig: getDisplayConfigDefaults(),
     });
 

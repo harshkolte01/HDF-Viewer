@@ -117,7 +117,9 @@ export function createDisplayConfigActions(deps) {
             }
           : {}),
       },
-      ...(applyImmediately ? {} : { matrixFullEnabled: false, lineFullEnabled: false }),
+      ...(applyImmediately
+        ? {}
+        : { matrixFullEnabled: false, lineFullEnabled: false, heatmapFullEnabled: false }),
     }));
 
     if (
@@ -272,6 +274,7 @@ export function createDisplayConfigActions(deps) {
       },
       matrixFullEnabled: false,
       lineFullEnabled: false,
+      heatmapFullEnabled: false,
     }));
 
     if (
@@ -306,6 +309,7 @@ export function createDisplayConfigActions(deps) {
       },
       matrixFullEnabled: false,
       lineFullEnabled: false,
+      heatmapFullEnabled: false,
     }));
   },
 

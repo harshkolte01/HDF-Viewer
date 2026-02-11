@@ -75,6 +75,7 @@ export function createTreeActions(deps) {
         expandedPaths: expanded,
         matrixFullEnabled: false,
         lineFullEnabled: false,
+        heatmapFullEnabled: false,
         displayConfig: getDisplayConfigDefaults(),
         metadata: null,
         metadataLoading: false,
@@ -197,6 +198,7 @@ export function createTreeActions(deps) {
         expandedPaths,
         matrixFullEnabled: false,
         lineFullEnabled: false,
+        heatmapFullEnabled: false,
         ...(nodeType === "dataset" ? { displayConfig: getDisplayConfigDefaults() } : {}),
         ...(nodeType === "group"
           ? {

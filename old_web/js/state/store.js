@@ -29,6 +29,7 @@ export const state = {
   heatmapColormap: "viridis",
   matrixFullEnabled: false,
   lineFullEnabled: false,
+  heatmapFullEnabled: false,
   matrixBlockSize: {
     rows: 200,
     cols: 50,

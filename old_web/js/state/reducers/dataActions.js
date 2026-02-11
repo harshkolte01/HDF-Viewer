@@ -150,6 +150,7 @@ export function createDataActions(deps) {
       previewError: null,
       matrixFullEnabled: false,
       lineFullEnabled: false,
+      heatmapFullEnabled: false,
     });
 
     try {
