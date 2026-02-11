@@ -10,7 +10,7 @@ import {
   initViewerViewTemplate,
   renderViewerView,
   bindViewerViewEvents,
-} from "./views/viewerView.js?v=20260211-4";
+} from "./views/viewerView.js?v=20260211-7";
 
 const root = document.getElementById("app-root");
 

@@ -236,6 +236,32 @@ function formatTypeDescription(typeInfo) {
   return parts.join(", ");
 }
 
+let axisLabelMeasureContext = null;
+
+function measureAxisLabelWidth(text) {
+  const value = String(text ?? "");
+  if (!value) {
+    return 0;
+  }
+
+  if (typeof document === "undefined") {
+    return value.length * 7;
+  }
+
+  if (!axisLabelMeasureContext) {
+    const canvas = document.createElement("canvas");
+    axisLabelMeasureContext = canvas.getContext("2d");
+  }
+
+  if (!axisLabelMeasureContext) {
+    return value.length * 7;
+  }
+
+  axisLabelMeasureContext.font =
+    "600 10px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif";
+  return axisLabelMeasureContext.measureText(value).width;
+}
+
 function resolveDisplayControls(state, preview) {
   const shape = normalizeShape(preview?.shape);
   const config = state.displayConfig || {};
@@ -415,9 +441,6 @@ function renderLinePreview(preview, options = {}) {
 
   const width = 760;
   const height = 320;
-  const padding = 28;
-  const chartWidth = width - padding * 2;
-  const chartHeight = height - padding * 2;
 
   const xValues = points.map((point) => point.x);
   const yValues = points.map((point) => point.y);
@@ -428,9 +451,45 @@ function renderLinePreview(preview, options = {}) {
   const spanX = maxX - minX || 1;
   const spanY = maxY - minY || 1;
 
+  const tickCount = 6;
+  const xTickValues = Array.from({ length: tickCount }, (_, idx) => {
+    const ratio = idx / Math.max(1, tickCount - 1);
+    return minX + ratio * spanX;
+  });
+  const yTickValues = Array.from({ length: tickCount }, (_, idx) => {
+    const ratio = idx / Math.max(1, tickCount - 1);
+    return maxY - ratio * spanY;
+  });
+  const xTickLabelsText = xTickValues.map((value) => formatCell(value));
+  const yTickLabelsText = yTickValues.map((value) => formatCell(value));
+  const maxYLabelWidth = yTickLabelsText.reduce(
+    (maxWidth, label) => Math.max(maxWidth, measureAxisLabelWidth(label)),
+    0
+  );
+  const firstXHalf = xTickLabelsText.length
+    ? measureAxisLabelWidth(xTickLabelsText[0]) / 2
+    : 0;
+  const lastXHalf = xTickLabelsText.length
+    ? measureAxisLabelWidth(xTickLabelsText[xTickLabelsText.length - 1]) / 2
+    : 0;
+
+  const padding = {
+    top: 24,
+    right: clamp(Math.ceil(lastXHalf + 12), 22, Math.floor(width * 0.22)),
+    bottom: 38,
+    left: clamp(
+      Math.ceil(Math.max(maxYLabelWidth + 14, firstXHalf + 8, 58)),
+      58,
+      Math.floor(width * 0.32)
+    ),
+  };
+  const chartWidth = Math.max(120, width - padding.left - padding.right);
+  const chartHeight = Math.max(120, height - padding.top - padding.bottom);
+  const yAxisTitleX = Math.max(12, Math.round(padding.left * 0.28));
+
   const toChartPoint = (point) => {
-    const x = padding + ((point.x - minX) / spanX) * chartWidth;
-    const y = padding + chartHeight - ((point.y - minY) / spanY) * chartHeight;
+    const x = padding.left + ((point.x - minX) / spanX) * chartWidth;
+    const y = padding.top + chartHeight - ((point.y - minY) / spanY) * chartHeight;
     return { x, y };
   };
 
@@ -450,15 +509,38 @@ function renderLinePreview(preview, options = {}) {
     })
     .join("");
 
-  const gridLines = Array.from({ length: 6 }, (_, idx) => {
-    const ratio = idx / 5;
-    const x = padding + ratio * chartWidth;
-    const y = padding + ratio * chartHeight;
+  const gridLines = Array.from({ length: tickCount }, (_, idx) => {
+    const ratio = idx / Math.max(1, tickCount - 1);
+    const x = padding.left + ratio * chartWidth;
+    const y = padding.top + ratio * chartHeight;
     return {
-      vertical: `<line x1="${x}" y1="${padding}" x2="${x}" y2="${padding + chartHeight}"></line>`,
-      horizontal: `<line x1="${padding}" y1="${y}" x2="${padding + chartWidth}" y2="${y}"></line>`,
+      vertical: `<line x1="${x}" y1="${padding.top}" x2="${x}" y2="${
+        padding.top + chartHeight
+      }"></line>`,
+      horizontal: `<line x1="${padding.left}" y1="${y}" x2="${
+        padding.left + chartWidth
+      }" y2="${y}"></line>`,
     };
   });
+
+  const xTickLabels = xTickLabelsText
+    .map((label, idx) => {
+      const ratio = idx / Math.max(1, tickCount - 1);
+      const x = padding.left + ratio * chartWidth;
+      return `<text x="${x}" y="${padding.top + chartHeight + 18}" text-anchor="middle">${escapeHtml(
+        label
+      )}</text>`;
+    })
+    .join("");
+  const yTickLabels = yTickLabelsText
+    .map((label, idx) => {
+      const ratio = idx / Math.max(1, tickCount - 1);
+      const y = padding.top + ratio * chartHeight;
+      return `<text x="${padding.left - 10}" y="${y + 4}" text-anchor="end">${escapeHtml(
+        label
+      )}</text>`;
+    })
+    .join("");
 
   return `
     <div class="line-chart-shell">
@@ -474,14 +556,36 @@ function renderLinePreview(preview, options = {}) {
             <rect x="0" y="0" width="${width}" height="${height}" class="line-chart-bg"></rect>
             <g class="line-grid">${lineGrid ? gridLines.map((line) => line.vertical + line.horizontal).join("") : ""}</g>
             <g class="line-axis">
-              <line x1="${padding}" y1="${padding + chartHeight}" x2="${padding + chartWidth}" y2="${padding + chartHeight}"></line>
-              <line x1="${padding}" y1="${padding}" x2="${padding}" y2="${padding + chartHeight}"></line>
+              <line
+                x1="${padding.left}"
+                y1="${padding.top + chartHeight}"
+                x2="${padding.left + chartWidth}"
+                y2="${padding.top + chartHeight}"
+              ></line>
+              <line
+                x1="${padding.left}"
+                y1="${padding.top}"
+                x2="${padding.left}"
+                y2="${padding.top + chartHeight}"
+              ></line>
             </g>
             <g class="line-axis-labels">
-              <text x="${padding}" y="${height - 8}">${escapeHtml(formatCell(minX))}</text>
-              <text x="${padding + chartWidth - 80}" y="${height - 8}">${escapeHtml(formatCell(maxX))}</text>
-              <text x="4" y="${padding + 10}">${escapeHtml(formatCell(maxY))}</text>
-              <text x="4" y="${padding + chartHeight}">${escapeHtml(formatCell(minY))}</text>
+              ${xTickLabels}
+              ${yTickLabels}
+            </g>
+            <g class="line-axis-titles">
+              <text class="line-axis-title line-axis-title-x" x="${
+                padding.left + chartWidth / 2
+              }" y="${height - 6}" text-anchor="middle">Index</text>
+              <text
+                class="line-axis-title line-axis-title-y"
+                x="${yAxisTitleX}"
+                y="${padding.top + chartHeight / 2}"
+                text-anchor="middle"
+                transform="rotate(-90, ${yAxisTitleX}, ${padding.top + chartHeight / 2})"
+              >
+                Value
+              </text>
             </g>
             ${lineAspect === "point" ? "" : `<path class="line-path" d="${path}"></path>`}
             ${lineAspect === "line" ? "" : `<g class="line-points">${markers}</g>`}
@@ -1944,9 +2048,9 @@ function initializeLineRuntime(shell) {
   function renderSeries(points) {
     const width = LINE_SVG_WIDTH;
     const height = LINE_SVG_HEIGHT;
-    const padding = { top: 20, right: 18, bottom: 34, left: 48 };
-    const chartWidth = width - padding.left - padding.right;
-    const chartHeight = height - padding.top - padding.bottom;
+    const basePadding = { top: 20, right: 18, bottom: 34, left: 48 };
+    const baseChartWidth = width - basePadding.left - basePadding.right;
+    const baseChartHeight = height - basePadding.top - basePadding.bottom;
 
     runtime.points = points;
     runtime.frame = null;
@@ -1959,10 +2063,16 @@ function initializeLineRuntime(shell) {
       svg.innerHTML = `
         <rect x="0" y="0" width="${width}" height="${height}" class="line-chart-bg"></rect>
         <g class="line-axis">
-          <line x1="${padding.left}" y1="${padding.top + chartHeight}" x2="${padding.left + chartWidth}" y2="${padding.top + chartHeight}"></line>
-          <line x1="${padding.left}" y1="${padding.top}" x2="${padding.left}" y2="${padding.top + chartHeight}"></line>
+          <line x1="${basePadding.left}" y1="${basePadding.top + baseChartHeight}" x2="${
+        basePadding.left + baseChartWidth
+      }" y2="${basePadding.top + baseChartHeight}"></line>
+          <line x1="${basePadding.left}" y1="${basePadding.top}" x2="${basePadding.left}" y2="${
+        basePadding.top + baseChartHeight
+      }"></line>
         </g>
-        <text x="${padding.left + 8}" y="${padding.top + 18}" class="line-empty-msg">No numeric points in this range.</text>
+        <text x="${basePadding.left + 8}" y="${
+        basePadding.top + 18
+      }" class="line-empty-msg">No numeric points in this range.</text>
       `;
       hideHover();
       return;
@@ -1984,6 +2094,45 @@ function initializeLineRuntime(shell) {
     const maxY = rawMaxY + domainPadY;
     const spanX = maxX - minX || 1;
     const spanY = maxY - minY || 1;
+
+    const tickCount = 6;
+    const tickValues = Array.from({ length: tickCount }, (_, idx) => {
+      const ratio = idx / Math.max(1, tickCount - 1);
+      return {
+        ratio,
+        xValue: minX + ratio * spanX,
+        yValue: maxY - ratio * spanY,
+      };
+    });
+    const xTickLabelsText = tickValues.map((tick) =>
+      formatCell(tick.xValue, runtime.notation)
+    );
+    const yTickLabelsText = tickValues.map((tick) =>
+      formatCell(tick.yValue, runtime.notation)
+    );
+    const maxYLabelWidth = yTickLabelsText.reduce(
+      (maxWidth, label) => Math.max(maxWidth, measureAxisLabelWidth(label)),
+      0
+    );
+    const firstXHalf = xTickLabelsText.length
+      ? measureAxisLabelWidth(xTickLabelsText[0]) / 2
+      : 0;
+    const lastXHalf = xTickLabelsText.length
+      ? measureAxisLabelWidth(xTickLabelsText[xTickLabelsText.length - 1]) / 2
+      : 0;
+    const padding = {
+      top: 20,
+      right: clamp(Math.ceil(lastXHalf + 12), 20, Math.floor(width * 0.22)),
+      bottom: 34,
+      left: clamp(
+        Math.ceil(Math.max(maxYLabelWidth + 16, firstXHalf + 10, 62)),
+        62,
+        Math.floor(width * 0.34)
+      ),
+    };
+    const chartWidth = Math.max(140, width - padding.left - padding.right);
+    const chartHeight = Math.max(140, height - padding.top - padding.bottom);
+    const yAxisTitleX = Math.max(12, Math.round(padding.left * 0.3));
 
     runtime.frame = {
       width,
@@ -2014,17 +2163,15 @@ function initializeLineRuntime(shell) {
       .map((point) => `<circle cx="${toX(point.x).toFixed(2)}" cy="${toY(point.y).toFixed(2)}" r="1.8"></circle>`)
       .join("");
 
-    const tickCount = 6;
-    const ticks = Array.from({ length: tickCount }, (_, idx) => {
-      const ratio = idx / Math.max(1, tickCount - 1);
-      const x = padding.left + ratio * chartWidth;
-      const y = padding.top + ratio * chartHeight;
+    const ticks = tickValues.map((tick) => {
+      const x = padding.left + tick.ratio * chartWidth;
+      const y = padding.top + tick.ratio * chartHeight;
       return {
-        ratio,
+        ratio: tick.ratio,
         x,
         y,
-        xValue: minX + ratio * spanX,
-        yValue: maxY - ratio * spanY,
+        xValue: tick.xValue,
+        yValue: tick.yValue,
       };
     });
 
@@ -2038,20 +2185,20 @@ function initializeLineRuntime(shell) {
       .join("");
 
     const xTickLabels = ticks
-      .map(
-        (tick) =>
-          `<text x="${tick.x}" y="${padding.top + chartHeight + 18}" text-anchor="middle">${escapeHtml(
-            formatCell(tick.xValue, runtime.notation)
-          )}</text>`
-      )
+      .map((tick, idx) => {
+        const label = xTickLabelsText[idx] || formatCell(tick.xValue, runtime.notation);
+        return `<text x="${tick.x}" y="${padding.top + chartHeight + 18}" text-anchor="middle">${escapeHtml(
+          label
+        )}</text>`;
+      })
       .join("");
     const yTickLabels = ticks
-      .map(
-        (tick) =>
-          `<text x="${padding.left - 8}" y="${tick.y + 4}" text-anchor="end">${escapeHtml(
-            formatCell(tick.yValue, runtime.notation)
-          )}</text>`
-      )
+      .map((tick, idx) => {
+        const label = yTickLabelsText[idx] || formatCell(tick.yValue, runtime.notation);
+        return `<text x="${padding.left - 10}" y="${tick.y + 4}" text-anchor="end">${escapeHtml(
+          label
+        )}</text>`;
+      })
       .join("");
 
     const showLine = runtime.lineAspect !== "point";
@@ -2070,7 +2217,9 @@ function initializeLineRuntime(shell) {
       </g>
       <g class="line-axis-titles">
         <text class="line-axis-title line-axis-title-x" x="${padding.left + chartWidth / 2}" y="${height - 6}" text-anchor="middle">Index</text>
-        <text class="line-axis-title line-axis-title-y" x="14" y="${padding.top + chartHeight / 2}" text-anchor="middle" transform="rotate(-90, 14, ${
+        <text class="line-axis-title line-axis-title-y" x="${yAxisTitleX}" y="${
+      padding.top + chartHeight / 2
+    }" text-anchor="middle" transform="rotate(-90, ${yAxisTitleX}, ${
           padding.top + chartHeight / 2
         })">Value</text>
       </g>
