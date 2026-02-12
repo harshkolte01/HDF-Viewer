@@ -62,6 +62,27 @@ export function createDisplayConfigActions(deps) {
     resolveDisplayDimsFromConfig,
     getNextAvailableDim,
   } = unpackDeps(deps);
+  const PREVIEW_RELOAD_DEBOUNCE_MS = 140;
+  let previewReloadTimer = null;
+
+  function schedulePreviewReload(fallbackPath) {
+    if (previewReloadTimer !== null) {
+      clearTimeout(previewReloadTimer);
+    }
+
+    previewReloadTimer = setTimeout(() => {
+      previewReloadTimer = null;
+      const latest = getState();
+      const shouldLoad =
+        latest.route === "viewer" &&
+        latest.viewMode === "display" &&
+        latest.selectedNodeType === "dataset";
+
+      if (shouldLoad) {
+        void actions.loadPreview(latest.selectedPath || fallbackPath);
+      }
+    }, PREVIEW_RELOAD_DEBOUNCE_MS);
+  }
 
   return {
   setDisplayConfig(displayConfigPatch) {
@@ -128,7 +149,7 @@ export function createDisplayConfigActions(deps) {
       snapshot.viewMode === "display" &&
       snapshot.selectedNodeType === "dataset"
     ) {
-      void actions.loadPreview(snapshot.selectedPath);
+      schedulePreviewReload(snapshot.selectedPath);
     }
   },
 
@@ -282,7 +303,7 @@ export function createDisplayConfigActions(deps) {
       snapshot.viewMode === "display" &&
       snapshot.selectedNodeType === "dataset"
     ) {
-      void actions.loadPreview(snapshot.selectedPath);
+      schedulePreviewReload(snapshot.selectedPath);
     }
   },
 

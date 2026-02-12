@@ -168,8 +168,8 @@ function resolveMatrixRuntimeConfig(state, preview) {
       supported: false,
       rows: 0,
       cols: 0,
-      blockRows: 200,
-      blockCols: 50,
+      blockRows: 160,
+      blockCols: 40,
       displayDimsParam: "",
       fixedIndicesParam: "",
       selectionKey: "",
@@ -180,8 +180,8 @@ function resolveMatrixRuntimeConfig(state, preview) {
   const colDim = displayDims[1];
   const rows = Math.max(0, toSafeInteger(shape[rowDim], 0));
   const cols = Math.max(0, toSafeInteger(shape[colDim], 0));
-  const blockRows = Math.max(1, Math.min(2000, toSafeInteger(state.matrixBlockSize?.rows, 200)));
-  const blockCols = Math.max(1, Math.min(2000, toSafeInteger(state.matrixBlockSize?.cols, 50)));
+  const blockRows = Math.max(1, Math.min(2000, toSafeInteger(state.matrixBlockSize?.rows, 160)));
+  const blockCols = Math.max(1, Math.min(2000, toSafeInteger(state.matrixBlockSize?.cols, 40)));
   const displayDimsParam = buildDisplayDimsParam(displayDims);
   const fixedIndicesParam = buildFixedIndicesParam(fixedIndices);
   const selectionKey = buildMatrixSelectionKey(

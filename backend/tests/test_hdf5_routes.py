@@ -153,8 +153,43 @@ class Hdf5RoutesTestCase(unittest.TestCase):
         self.assertEqual(payload['requested_max_size'], 1024)
         self.assertEqual(payload['effective_max_size'], 707)
         reader.get_heatmap.assert_called_once()
-        args = reader.get_heatmap.call_args[0]
+        args, kwargs = reader.get_heatmap.call_args
         self.assertEqual(args[4], 707)
+        self.assertTrue(kwargs['include_stats'])
+
+    def test_data_heatmap_can_disable_stats(self):
+        reader = Mock()
+        reader.get_dataset_info.return_value = {
+            'shape': [1024, 1024],
+            'ndim': 2,
+            'dtype': 'float32'
+        }
+        reader.get_heatmap.return_value = {
+            'dtype': 'float32',
+            'data': [[1.0]],
+            'shape': [1, 1],
+            'stats': {'min': None, 'max': None},
+            'row_offset': 0,
+            'col_offset': 0,
+            'downsample_info': {'row_step': 2, 'col_step': 2},
+            'sampled': True
+        }
+
+        with patch('src.routes.hdf5.get_hdf5_reader', return_value=reader):
+            response = self.client.get(
+                '/files/sample.h5/data'
+                '?path=/array_2d'
+                '&mode=heatmap'
+                '&max_size=512'
+                '&include_stats=0'
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload['success'])
+        reader.get_heatmap.assert_called_once()
+        _, kwargs = reader.get_heatmap.call_args
+        self.assertFalse(kwargs['include_stats'])
 
     def test_data_normalizes_negative_fixed_indices(self):
         reader = Mock()

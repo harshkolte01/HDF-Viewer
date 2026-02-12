@@ -1,4 +1,5 @@
 import { getFileData } from "../../../api/hdf5Service.js";
+import { cancelPendingRequest } from "../../../api/client.js";
 import {
   MATRIX_ROW_HEIGHT,
   MATRIX_COL_WIDTH,
@@ -16,6 +17,9 @@ import {
   ensureNodePool,
   setMatrixStatus,
 } from "./common.js";
+
+const MATRIX_MAX_PARALLEL_REQUESTS = 4;
+
 function getCachedMatrixBlock(runtime, rowOffset, colOffset, rowLimit, colLimit) {
   const blockKey = buildMatrixBlockKey(
     runtime.selectionKey,
@@ -63,8 +67,8 @@ function initializeMatrixRuntime(shell) {
 
   const rows = Math.max(0, toSafeInteger(shell.dataset.matrixRows, 0));
   const cols = Math.max(0, toSafeInteger(shell.dataset.matrixCols, 0));
-  const blockRows = Math.max(1, toSafeInteger(shell.dataset.matrixBlockRows, 200));
-  const blockCols = Math.max(1, toSafeInteger(shell.dataset.matrixBlockCols, 50));
+  const blockRows = Math.max(1, toSafeInteger(shell.dataset.matrixBlockRows, 160));
+  const blockCols = Math.max(1, toSafeInteger(shell.dataset.matrixBlockCols, 40));
   const fileKey = shell.dataset.matrixFileKey || "";
   const fileEtag = shell.dataset.matrixFileEtag || "";
   const path = shell.dataset.matrixPath || "/";
@@ -95,9 +99,13 @@ function initializeMatrixRuntime(shell) {
     selectionKey,
     notation,
     pendingCount: 0,
+    activeRequestCount: 0,
     loadedBlocks: 0,
     destroyed: false,
     rafToken: null,
+    blockQueue: [],
+    queuedBlockKeys: new Set(),
+    activeCancelKeys: new Set(),
     headerPool: [],
     rowIndexPool: [],
     cellPool: [],
@@ -122,7 +130,7 @@ function initializeMatrixRuntime(shell) {
   }
 
   function updateStatusFromRuntime() {
-    if (runtime.pendingCount > 0) {
+    if (runtime.pendingCount > 0 || runtime.blockQueue.length > 0) {
       setMatrixStatus(statusElement, "Loading blocks...", "info");
       return;
     }
@@ -136,7 +144,7 @@ function initializeMatrixRuntime(shell) {
     );
   }
 
-  async function requestBlock(rowOffset, colOffset, rowLimit, colLimit) {
+  function enqueueBlock(rowOffset, colOffset, rowLimit, colLimit) {
     const safeRowLimit = Math.min(rowLimit, Math.max(0, runtime.rows - rowOffset));
     const safeColLimit = Math.min(colLimit, Math.max(0, runtime.cols - colOffset));
 
@@ -152,13 +160,34 @@ function initializeMatrixRuntime(shell) {
       safeColLimit
     );
 
-    if (MATRIX_BLOCK_CACHE.get(blockKey) || MATRIX_PENDING.has(blockKey)) {
+    if (
+      MATRIX_BLOCK_CACHE.get(blockKey) ||
+      MATRIX_PENDING.has(blockKey) ||
+      runtime.queuedBlockKeys.has(blockKey)
+    ) {
       return;
     }
 
+    runtime.queuedBlockKeys.add(blockKey);
+    runtime.blockQueue.push({
+      blockKey,
+      rowOffset,
+      colOffset,
+      rowLimit: safeRowLimit,
+      colLimit: safeColLimit,
+    });
+  }
+
+  async function requestBlock(task) {
+    const blockKey = task.blockKey;
     MATRIX_PENDING.add(blockKey);
     runtime.pendingCount += 1;
+    runtime.activeRequestCount += 1;
     updateStatusFromRuntime();
+
+    const { rowOffset, colOffset, rowLimit: safeRowLimit, colLimit: safeColLimit } = task;
+    const cancelKey = `matrix:${runtime.selectionKey}:${rowOffset}:${colOffset}:${safeRowLimit}:${safeColLimit}`;
+    runtime.activeCancelKeys.add(cancelKey);
 
     const params = {
       mode: "matrix",
@@ -183,6 +212,7 @@ function initializeMatrixRuntime(shell) {
     try {
       const response = await getFileData(runtime.fileKey, runtime.path, params, {
         cancelPrevious: false,
+        cancelKey,
       });
 
       MATRIX_BLOCK_CACHE.set(blockKey, response);
@@ -192,7 +222,7 @@ function initializeMatrixRuntime(shell) {
         queueRender();
       }
     } catch (error) {
-      if (!runtime.destroyed) {
+      if (!runtime.destroyed && !(error?.isAbort || error?.code === "ABORTED")) {
         setMatrixStatus(
           statusElement,
           error?.message || "Failed to load matrix block.",
@@ -202,13 +232,37 @@ function initializeMatrixRuntime(shell) {
     } finally {
       MATRIX_PENDING.delete(blockKey);
       runtime.pendingCount = Math.max(0, runtime.pendingCount - 1);
+      runtime.activeRequestCount = Math.max(0, runtime.activeRequestCount - 1);
+      runtime.activeCancelKeys.delete(cancelKey);
       if (!runtime.destroyed) {
         updateStatusFromRuntime();
+        pumpBlockQueue();
       }
     }
   }
 
+  function pumpBlockQueue() {
+    if (runtime.destroyed) {
+      return;
+    }
+
+    while (
+      runtime.activeRequestCount < MATRIX_MAX_PARALLEL_REQUESTS &&
+      runtime.blockQueue.length > 0
+    ) {
+      const nextTask = runtime.blockQueue.shift();
+      if (!nextTask) {
+        continue;
+      }
+      runtime.queuedBlockKeys.delete(nextTask.blockKey);
+      void requestBlock(nextTask);
+    }
+  }
+
   function requestVisibleBlocks() {
+    runtime.blockQueue = [];
+    runtime.queuedBlockKeys.clear();
+
     const blockRowStart = Math.floor(visible.rowStart / runtime.blockRows) * runtime.blockRows;
     const blockRowEnd = Math.floor(visible.rowEnd / runtime.blockRows) * runtime.blockRows;
     const blockColStart = Math.floor(visible.colStart / runtime.blockCols) * runtime.blockCols;
@@ -218,9 +272,12 @@ function initializeMatrixRuntime(shell) {
       const rowLimit = Math.min(runtime.blockRows, runtime.rows - row);
       for (let col = blockColStart; col <= blockColEnd; col += runtime.blockCols) {
         const colLimit = Math.min(runtime.blockCols, runtime.cols - col);
-        void requestBlock(row, col, rowLimit, colLimit);
+        enqueueBlock(row, col, rowLimit, colLimit);
       }
     }
+
+    updateStatusFromRuntime();
+    pumpBlockQueue();
   }
 
   function renderViewport() {
@@ -339,6 +396,12 @@ function initializeMatrixRuntime(shell) {
 
   const cleanup = () => {
     runtime.destroyed = true;
+    runtime.blockQueue = [];
+    runtime.queuedBlockKeys.clear();
+    runtime.activeCancelKeys.forEach((cancelKey) => {
+      cancelPendingRequest(cancelKey, "matrix-runtime-disposed");
+    });
+    runtime.activeCancelKeys.clear();
     table.removeEventListener("scroll", onScroll);
     if (resizeObserver) {
       resizeObserver.disconnect();

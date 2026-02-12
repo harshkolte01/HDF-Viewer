@@ -33,8 +33,8 @@ export const state = {
   lineFullEnabled: false,
   heatmapFullEnabled: false,
   matrixBlockSize: {
-    rows: 200,
-    cols: 50,
+    rows: 160,
+    cols: 40,
   },
   displayConfig: {
     displayDims: null,

@@ -399,7 +399,8 @@ class HDF5Reader:
         path: str,
         display_dims: Tuple[int, int],
         fixed_indices: Dict[int, int],
-        max_size: int
+        max_size: int,
+        include_stats: bool = True
     ) -> Dict[str, Any]:
         """Extract a downsampled 2D heatmap plane from a dataset."""
         try:
@@ -448,15 +449,19 @@ class HDF5Reader:
                     data = self._sanitize(raw)
 
                     sampled = step_r > 1 or step_c > 1
-                    numeric = self._is_numeric_dtype(obj.dtype)
-                    stats = {'min': None, 'max': None}
-                    if numeric:
-                        try:
-                            arr = np.asarray(raw).astype(float, copy=False)
-                            stats['min'] = self._safe_number(np.nanmin(arr)) if arr.size else None
-                            stats['max'] = self._safe_number(np.nanmax(arr)) if arr.size else None
-                        except Exception:
-                            stats = {'min': None, 'max': None}
+                    stats = {
+                        'min': None,
+                        'max': None
+                    }
+                    if include_stats:
+                        numeric = self._is_numeric_dtype(obj.dtype)
+                        if numeric:
+                            try:
+                                arr = np.asarray(raw).astype(float, copy=False)
+                                stats['min'] = self._safe_number(np.nanmin(arr)) if arr.size else None
+                                stats['max'] = self._safe_number(np.nanmax(arr)) if arr.size else None
+                            except Exception:
+                                stats = {'min': None, 'max': None}
 
                     return {
                         'data': data,
@@ -998,6 +1003,27 @@ class HDF5Reader:
             return number
         return None
 
+    def _sanitize_numpy_array(self, array: np.ndarray) -> Any:
+        """Fast sanitizer for ndarray payloads used in matrix/line/heatmap responses."""
+        if array.ndim == 0:
+            return self._sanitize(array.item())
+
+        kind = array.dtype.kind
+        if kind in ('i', 'u', 'b', 'U'):
+            return array.tolist()
+
+        if kind == 'f':
+            if array.size == 0:
+                return array.tolist()
+            finite_mask = np.isfinite(array)
+            if bool(finite_mask.all()):
+                return array.tolist()
+            converted = array.astype(object, copy=True)
+            converted[~finite_mask] = None
+            return converted.tolist()
+
+        return [self._sanitize(item) for item in array.tolist()]
+
     def _sanitize(self, data: Any) -> Any:
         if isinstance(data, bytes):
             return data.decode('utf-8', errors='ignore')
@@ -1008,7 +1034,7 @@ class HDF5Reader:
         if isinstance(data, float):
             return self._safe_number(data)
         if isinstance(data, np.ndarray):
-            return [self._sanitize(item) for item in data.tolist()]
+            return self._sanitize_numpy_array(data)
         if isinstance(data, list):
             return [self._sanitize(item) for item in data]
         if isinstance(data, tuple):

@@ -610,6 +610,7 @@ def get_data(key):
 
         elif mode == 'heatmap':
             requested_max_size = _parse_int_param('max_size', DEFAULT_MAX_SIZE, 1)
+            include_stats = _parse_bool_param('include_stats', True)
             if requested_max_size > MAX_HEATMAP_SIZE:
                 raise ValueError(f"max_size exceeds {MAX_HEATMAP_SIZE}")
 
@@ -627,7 +628,8 @@ def get_data(key):
                 hdf_path,
                 display_dims,
                 fixed_indices,
-                effective_max_size
+                effective_max_size,
+                include_stats=include_stats
             )
 
             response_payload = {

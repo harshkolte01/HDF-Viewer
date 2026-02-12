@@ -20,6 +20,7 @@ const frontendCache = {
   metadata: new LruCache(80),
 };
 const previewRefreshInFlight = new Map();
+const dataRequestsInFlight = new Map();
 
 const DEFAULT_LINE_OVERVIEW_MAX_POINTS = 5000;
 
@@ -109,6 +110,7 @@ function getHeatmapCacheKey(fileKey, path, params = {}) {
     path,
     params.etag ?? "no-etag",
     params.max_size ?? 512,
+    params.include_stats ?? "default",
     toDisplayDimsKey(params.display_dims),
     toFixedIndicesKey(params.fixed_indices),
   ].join("|");
@@ -127,6 +129,7 @@ export function clearFrontendCaches() {
   frontendCache.heatmapData.clear();
   frontendCache.metadata.clear();
   previewRefreshInFlight.clear();
+  dataRequestsInFlight.clear();
 }
 
 export async function getFiles(options = {}) {
@@ -286,7 +289,7 @@ export async function getFilePreview(key, path, params = {}, options = {}) {
 }
 
 async function getMatrixData(key, path, params, options) {
-  const { force = false, signal, cancelPrevious = false } = options;
+  const { force = false, signal, cancelPrevious = false, cancelKey } = options;
   const cacheKey = getMatrixBlockCacheKey(key, path, params);
 
   if (!force) {
@@ -298,25 +301,45 @@ async function getMatrixData(key, path, params, options) {
         cache_source: "frontend",
       };
     }
+
+    const pendingRequest = dataRequestsInFlight.get(cacheKey);
+    if (pendingRequest) {
+      return pendingRequest;
+    }
   }
 
-  const payload = await apiClient.get(
-    API_ENDPOINTS.FILE_DATA(key),
-    { path, mode: "matrix", ...params },
-    {
-      signal,
-      cancelKey: `${getCancelChannel("matrix", key, path)}:${params.row_offset ?? 0}:${params.col_offset ?? 0}`,
-      cancelPrevious,
-    }
-  );
+  let requestPromise;
+  requestPromise = apiClient
+    .get(
+      API_ENDPOINTS.FILE_DATA(key),
+      { path, mode: "matrix", ...params },
+      {
+        signal,
+        cancelKey:
+          cancelKey ||
+          `${getCancelChannel("matrix", key, path)}:${params.row_offset ?? 0}:${params.col_offset ?? 0}`,
+        cancelPrevious,
+      }
+    )
+    .then((payload) => {
+      const normalized = assertSuccess(normalizeDataPayload(payload), "getFileData(matrix)");
+      frontendCache.matrixBlocks.set(cacheKey, normalized);
+      return normalized;
+    })
+    .finally(() => {
+      if (dataRequestsInFlight.get(cacheKey) === requestPromise) {
+        dataRequestsInFlight.delete(cacheKey);
+      }
+    });
 
-  const normalized = assertSuccess(normalizeDataPayload(payload), "getFileData(matrix)");
-  frontendCache.matrixBlocks.set(cacheKey, normalized);
-  return normalized;
+  if (!force) {
+    dataRequestsInFlight.set(cacheKey, requestPromise);
+  }
+  return requestPromise;
 }
 
 async function getLineData(key, path, params, options) {
-  const { force = false, signal, cancelPrevious = true } = options;
+  const { force = false, signal, cancelPrevious = true, cancelKey } = options;
   const cacheKey = getLineCacheKey(key, path, params);
 
   if (!force) {
@@ -328,25 +351,43 @@ async function getLineData(key, path, params, options) {
         cache_source: "frontend",
       };
     }
+
+    const pendingRequest = dataRequestsInFlight.get(cacheKey);
+    if (pendingRequest) {
+      return pendingRequest;
+    }
   }
 
-  const payload = await apiClient.get(
-    API_ENDPOINTS.FILE_DATA(key),
-    { path, mode: "line", ...params },
-    {
-      signal,
-      cancelKey: getCancelChannel("line", key, path),
-      cancelPrevious,
-    }
-  );
+  let requestPromise;
+  requestPromise = apiClient
+    .get(
+      API_ENDPOINTS.FILE_DATA(key),
+      { path, mode: "line", ...params },
+      {
+        signal,
+        cancelKey: cancelKey || getCancelChannel("line", key, path),
+        cancelPrevious,
+      }
+    )
+    .then((payload) => {
+      const normalized = assertSuccess(normalizeDataPayload(payload), "getFileData(line)");
+      frontendCache.lineData.set(cacheKey, normalized);
+      return normalized;
+    })
+    .finally(() => {
+      if (dataRequestsInFlight.get(cacheKey) === requestPromise) {
+        dataRequestsInFlight.delete(cacheKey);
+      }
+    });
 
-  const normalized = assertSuccess(normalizeDataPayload(payload), "getFileData(line)");
-  frontendCache.lineData.set(cacheKey, normalized);
-  return normalized;
+  if (!force) {
+    dataRequestsInFlight.set(cacheKey, requestPromise);
+  }
+  return requestPromise;
 }
 
 async function getHeatmapData(key, path, params, options) {
-  const { force = false, signal, cancelPrevious = true } = options;
+  const { force = false, signal, cancelPrevious = true, cancelKey } = options;
   const cacheKey = getHeatmapCacheKey(key, path, params);
 
   if (!force) {
@@ -358,21 +399,39 @@ async function getHeatmapData(key, path, params, options) {
         cache_source: "frontend",
       };
     }
+
+    const pendingRequest = dataRequestsInFlight.get(cacheKey);
+    if (pendingRequest) {
+      return pendingRequest;
+    }
   }
 
-  const payload = await apiClient.get(
-    API_ENDPOINTS.FILE_DATA(key),
-    { path, mode: "heatmap", ...params },
-    {
-      signal,
-      cancelKey: getCancelChannel("heatmap", key, path),
-      cancelPrevious,
-    }
-  );
+  let requestPromise;
+  requestPromise = apiClient
+    .get(
+      API_ENDPOINTS.FILE_DATA(key),
+      { path, mode: "heatmap", ...params },
+      {
+        signal,
+        cancelKey: cancelKey || getCancelChannel("heatmap", key, path),
+        cancelPrevious,
+      }
+    )
+    .then((payload) => {
+      const normalized = assertSuccess(normalizeDataPayload(payload), "getFileData(heatmap)");
+      frontendCache.heatmapData.set(cacheKey, normalized);
+      return normalized;
+    })
+    .finally(() => {
+      if (dataRequestsInFlight.get(cacheKey) === requestPromise) {
+        dataRequestsInFlight.delete(cacheKey);
+      }
+    });
 
-  const normalized = assertSuccess(normalizeDataPayload(payload), "getFileData(heatmap)");
-  frontendCache.heatmapData.set(cacheKey, normalized);
-  return normalized;
+  if (!force) {
+    dataRequestsInFlight.set(cacheKey, requestPromise);
+  }
+  return requestPromise;
 }
 
 export async function getFileData(key, path, params = {}, options = {}) {
