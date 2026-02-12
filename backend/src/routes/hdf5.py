@@ -25,6 +25,7 @@ MAX_MATRIX_COLS = 2000
 MAX_LINE_POINTS = 5000
 MAX_LINE_EXACT_POINTS = 20000
 DEFAULT_LINE_QUALITY = 'auto'
+DEFAULT_PREVIEW_DETAIL = 'full'
 MAX_HEATMAP_SIZE = 1024
 DEFAULT_ROW_LIMIT = 100
 DEFAULT_COL_LIMIT = 100
@@ -127,6 +128,28 @@ def _parse_line_quality(param):
     if quality not in ('auto', 'overview', 'exact'):
         raise ValueError("Invalid quality parameter")
     return quality
+
+
+def _parse_preview_detail(param):
+    if not param:
+        return DEFAULT_PREVIEW_DETAIL
+    detail = str(param).strip().lower()
+    if detail not in ('fast', 'full'):
+        raise ValueError("Invalid detail parameter")
+    return detail
+
+
+def _parse_bool_param(name, default):
+    raw = request.args.get(name)
+    if raw is None:
+        return default
+
+    normalized = str(raw).strip().lower()
+    if normalized in ('1', 'true', 'yes', 'on'):
+        return True
+    if normalized in ('0', 'false', 'no', 'off'):
+        return False
+    raise ValueError(f"Invalid {name} parameter")
 
 
 def _is_not_found_error(error):
@@ -354,7 +377,11 @@ def get_preview(key):
                 'error': 'Missing required parameter: path'
             }), 400
 
-        mode = request.args.get('mode', 'auto')
+        mode = str(request.args.get('mode', 'auto')).strip().lower()
+        if mode not in ('auto', 'line', 'table', 'heatmap'):
+            mode = 'auto'
+        detail = _parse_preview_detail(request.args.get('detail'))
+        include_stats = _parse_bool_param('include_stats', default=(detail == 'full'))
         display_dims_param = request.args.get('display_dims')
         fixed_indices_param = request.args.get('fixed_indices')
         max_size_param = request.args.get('max_size')
@@ -406,7 +433,9 @@ def get_preview(key):
             display_dims_key,
             fixed_indices_key,
             max_size_key,
-            mode
+            mode,
+            detail,
+            'stats' if include_stats else 'no-stats'
         )
 
         cached_data = cache.get(cache_key)
@@ -427,7 +456,9 @@ def get_preview(key):
             display_dims=display_dims,
             fixed_indices=fixed_indices,
             mode=mode,
-            max_size=max_size
+            max_size=max_size,
+            include_stats=include_stats,
+            detail=detail
         )
 
         cache.set(cache_key, preview)

@@ -89,12 +89,28 @@ export function createViewActions(deps) {
 
   setDisplayTab(tab) {
     const nextTab = ["table", "line", "heatmap"].includes(tab) ? tab : "line";
+    const snapshot = getState();
+    const tabChanged = snapshot.displayTab !== nextTab;
     setState({
       displayTab: nextTab,
       ...(nextTab !== "table" ? { matrixFullEnabled: false } : {}),
       ...(nextTab !== "line" ? { lineFullEnabled: false } : {}),
       ...(nextTab !== "heatmap" ? { heatmapFullEnabled: false } : {}),
     });
+
+    if (!tabChanged) {
+      return;
+    }
+
+    const shouldReloadPreview =
+      snapshot.route === "viewer" &&
+      snapshot.viewMode === "display" &&
+      snapshot.selectedNodeType === "dataset" &&
+      snapshot.selectedPath !== "/";
+
+    if (shouldReloadPreview) {
+      void actions.loadPreview(snapshot.selectedPath);
+    }
   },
 
   enableMatrixFullView() {

@@ -68,6 +68,7 @@ export function createDataActions(deps) {
 
   const PREVIEW_MAX_SIZE_FIRST = 160;
   const PREVIEW_MAX_SIZE_STEADY = 256;
+  const PREVIEW_DETAIL = "fast";
   const previewRequestPromises = new Map();
   const warmedPreviewSelections = new Set();
 
@@ -88,7 +89,8 @@ export function createDataActions(deps) {
     displayDimsParam,
     fixedIndicesParam,
     etag,
-    maxSize
+    maxSize,
+    detail
   ) {
     return [
       fileKey || "no-file",
@@ -98,10 +100,11 @@ export function createDataActions(deps) {
       fixedIndicesParam || "none",
       etag || "no-etag",
       maxSize ?? "default",
+      detail || "full",
     ].join("|");
   }
 
-  function buildWarmSelectionKey(fileKey, path, mode, displayDimsParam, fixedIndicesParam, etag) {
+  function buildWarmSelectionKey(fileKey, path, mode, displayDimsParam, fixedIndicesParam, etag, detail) {
     return [
       fileKey || "no-file",
       path || "/",
@@ -109,6 +112,7 @@ export function createDataActions(deps) {
       displayDimsParam || "none",
       fixedIndicesParam || "none",
       etag || "no-etag",
+      detail || "full",
     ].join("|");
   }
 
@@ -249,7 +253,8 @@ export function createDataActions(deps) {
       mode,
       displayDimsParam,
       fixedIndicesParam,
-      selectedFileEtag
+      selectedFileEtag,
+      PREVIEW_DETAIL
     );
     const maxSize = warmedPreviewSelections.has(warmSelectionKey)
       ? PREVIEW_MAX_SIZE_STEADY
@@ -257,6 +262,8 @@ export function createDataActions(deps) {
     const previewParams = {
       mode,
       max_size: maxSize,
+      detail: PREVIEW_DETAIL,
+      include_stats: 0,
     };
 
     if (displayDimsParam) {
@@ -278,7 +285,8 @@ export function createDataActions(deps) {
       displayDimsParam,
       fixedIndicesParam,
       selectedFileEtag,
-      maxSize
+      maxSize,
+      PREVIEW_DETAIL
     );
 
     if (snapshot.preview && snapshot.previewRequestKey === requestKey && !snapshot.previewError) {

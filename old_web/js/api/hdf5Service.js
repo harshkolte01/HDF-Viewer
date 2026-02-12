@@ -66,6 +66,8 @@ function getPreviewCacheKey(fileKey, path, params = {}) {
     toFixedIndicesKey(params.fixed_indices),
     params.max_size ?? "default",
     params.mode ?? "auto",
+    params.detail ?? "full",
+    params.include_stats ?? "default",
   ].join("|");
 }
 

@@ -318,6 +318,61 @@ class Hdf5RoutesTestCase(unittest.TestCase):
 
         reader.get_dataset_info.assert_called_once()
         reader.get_preview.assert_called_once()
+        _, kwargs = reader.get_preview.call_args
+        self.assertEqual(kwargs['detail'], 'full')
+        self.assertTrue(kwargs['include_stats'])
+
+    def test_preview_fast_detail_forwards_reader_flags(self):
+        reader = Mock()
+        reader.get_dataset_info.return_value = {
+            'shape': [10],
+            'ndim': 1,
+            'dtype': 'float32'
+        }
+        reader.get_preview.return_value = {
+            'key': 'sample.h5',
+            'path': '/array_1d',
+            'dtype': 'float32',
+            'shape': [10],
+            'ndim': 1,
+            'preview_type': '1d',
+            'mode': 'line',
+            'detail': 'fast',
+            'display_dims': None,
+            'fixed_indices': {},
+            'stats': {'supported': False, 'reason': 'disabled'},
+            'table': None,
+            'plot': {'type': 'line', 'x': [0, 1], 'y': [1.0, 2.0]},
+            'profile': None,
+            'limits': {}
+        }
+
+        with patch('src.routes.hdf5.get_hdf5_reader', return_value=reader), \
+             patch('src.routes.hdf5.get_dataset_cache', return_value=_MemoryCache()), \
+             patch('src.routes.hdf5.get_hdf5_cache', return_value=_MemoryCache()):
+            response = self.client.get(
+                '/files/sample.h5/preview'
+                '?path=/array_1d'
+                '&mode=line'
+                '&detail=fast'
+                '&include_stats=0'
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload['success'])
+        reader.get_preview.assert_called_once()
+        _, kwargs = reader.get_preview.call_args
+        self.assertEqual(kwargs['mode'], 'line')
+        self.assertEqual(kwargs['detail'], 'fast')
+        self.assertFalse(kwargs['include_stats'])
+
+    def test_preview_rejects_invalid_detail(self):
+        response = self.client.get('/files/sample.h5/preview?path=/array_1d&detail=ultra')
+        self.assertEqual(response.status_code, 400)
+        payload = response.get_json()
+        self.assertFalse(payload['success'])
+        self.assertIn('detail', payload['error'])
 
 
 if __name__ == '__main__':

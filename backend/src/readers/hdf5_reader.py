@@ -102,7 +102,9 @@ class HDF5Reader:
         display_dims: Optional[Tuple[int, int]] = None,
         fixed_indices: Optional[Dict[int, int]] = None,
         mode: str = 'auto',
-        max_size: Optional[int] = None
+        max_size: Optional[int] = None,
+        include_stats: bool = True,
+        detail: str = 'full'
     ) -> Dict[str, Any]:
         """Generate a preview payload for a dataset."""
         try:
@@ -125,11 +127,43 @@ class HDF5Reader:
 
                     preview_type = '1d' if ndim == 1 else '2d' if ndim == 2 else 'nd'
                     numeric = self._is_numeric_dtype(dtype)
+                    requested_mode = str(mode or 'auto').strip().lower()
+                    if requested_mode not in ('auto', 'line', 'table', 'heatmap'):
+                        requested_mode = 'auto'
 
-                    stats = self._compute_stats(obj, shape, numeric)
+                    detail_level = str(detail or 'full').strip().lower()
+                    if detail_level not in ('fast', 'full'):
+                        detail_level = 'full'
+
+                    selective_fast_mode = detail_level == 'fast' and requested_mode in (
+                        'line',
+                        'table',
+                        'heatmap'
+                    )
+
+                    if include_stats:
+                        stats = self._compute_stats(obj, shape, numeric)
+                    else:
+                        stats = {
+                            'supported': False,
+                            'reason': 'disabled'
+                        }
 
                     if ndim == 1:
-                        table, plot = self._preview_1d(obj, numeric)
+                        include_table = True
+                        include_plot = True
+                        if selective_fast_mode:
+                            include_table = requested_mode == 'table'
+                            include_plot = requested_mode in ('line', 'heatmap')
+                            if not include_table and not include_plot:
+                                include_plot = True
+
+                        table, plot = self._preview_1d(
+                            obj,
+                            numeric,
+                            include_table=include_table,
+                            include_plot=include_plot
+                        )
                         profile = None
                         display_dims_out = None
                         fixed_indices_out = {}
@@ -142,13 +176,24 @@ class HDF5Reader:
                             )
 
                         max_heatmap_size = min(max_size or MAX_HEATMAP_SIZE, MAX_HEATMAP_SIZE)
+                        include_table = True
+                        include_heatmap = True
+                        include_profile = True
+                        if selective_fast_mode:
+                            include_table = requested_mode == 'table'
+                            include_heatmap = requested_mode == 'heatmap'
+                            include_profile = requested_mode == 'line'
+
                         table, plot, profile = self._preview_2d(
                             obj,
                             shape,
                             display_dims,
                             fixed_indices,
                             max_heatmap_size,
-                            numeric
+                            numeric,
+                            include_table=include_table,
+                            include_heatmap=include_heatmap,
+                            include_profile=include_profile
                         )
                         display_dims_out = list(display_dims)
                         fixed_indices_out = fixed_indices
@@ -160,7 +205,8 @@ class HDF5Reader:
                         'shape': shape,
                         'ndim': ndim,
                         'preview_type': preview_type,
-                        'mode': mode,
+                        'mode': requested_mode,
+                        'detail': detail_level,
                         'display_dims': display_dims_out,
                         'fixed_indices': fixed_indices_out,
                         'stats': stats,
@@ -751,49 +797,58 @@ class HDF5Reader:
             'method': 'strided'
         }
 
-    def _preview_1d(self, dataset, numeric: bool) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    def _preview_1d(
+        self,
+        dataset,
+        numeric: bool,
+        include_table: bool = True,
+        include_plot: bool = True
+    ) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
         length = int(dataset.shape[0]) if dataset.shape else 0
 
-        table_n = min(TABLE_1D_MAX, length)
-        table_values = dataset[:table_n] if table_n > 0 else []
-        table_values = self._sanitize(table_values)
+        table = None
+        if include_table:
+            table_n = min(TABLE_1D_MAX, length)
+            table_values = dataset[:table_n] if table_n > 0 else []
+            table_values = self._sanitize(table_values)
 
-        table = {
-            'kind': '1d',
-            'values': table_values,
-            'count': len(table_values),
-            'start': 0,
-            'step': 1
-        }
-
-        if not numeric:
-            plot = {
-                'supported': False,
-                'reason': 'non-numeric'
+            table = {
+                'kind': '1d',
+                'values': table_values,
+                'count': len(table_values),
+                'start': 0,
+                'step': 1
             }
-            return table, plot
 
-        if length <= MAX_LINE_POINTS:
-            step = 1
-            y_values = dataset[:] if length > 0 else []
-        else:
-            target = min(MAX_LINE_POINTS, max(MIN_LINE_POINTS, 3000))
-            step = max(1, int(math.ceil(length / target)))
-            y_values = dataset[::step]
-            if len(y_values) > MAX_LINE_POINTS:
-                y_values = y_values[:MAX_LINE_POINTS]
+        plot = None
+        if include_plot:
+            if not numeric:
+                plot = {
+                    'supported': False,
+                    'reason': 'non-numeric'
+                }
+            else:
+                if length <= MAX_LINE_POINTS:
+                    step = 1
+                    y_values = dataset[:] if length > 0 else []
+                else:
+                    target = min(MAX_LINE_POINTS, max(MIN_LINE_POINTS, 3000))
+                    step = max(1, int(math.ceil(length / target)))
+                    y_values = dataset[::step]
+                    if len(y_values) > MAX_LINE_POINTS:
+                        y_values = y_values[:MAX_LINE_POINTS]
 
-        y_values = self._sanitize(y_values)
-        x_values = list(range(0, step * len(y_values), step))
+                y_values = self._sanitize(y_values)
+                x_values = list(range(0, step * len(y_values), step))
 
-        plot = {
-            'type': 'line',
-            'x': x_values,
-            'y': y_values,
-            'count': len(y_values),
-            'x_start': 0,
-            'x_step': step
-        }
+                plot = {
+                    'type': 'line',
+                    'x': x_values,
+                    'y': y_values,
+                    'count': len(y_values),
+                    'x_start': 0,
+                    'x_step': step
+                }
 
         return table, plot
 
@@ -804,109 +859,118 @@ class HDF5Reader:
         display_dims: Tuple[int, int],
         fixed_indices: Dict[int, int],
         max_heatmap_size: int,
-        numeric: bool
-    ) -> Tuple[Dict[str, Any], Dict[str, Any], Optional[Dict[str, Any]]]:
+        numeric: bool,
+        include_table: bool = True,
+        include_heatmap: bool = True,
+        include_profile: bool = True
+    ) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
         dim_row, dim_col = display_dims
         rows = int(shape[dim_row])
         cols = int(shape[dim_col])
         needs_transpose = dim_row > dim_col
 
-        table_rows = min(TABLE_2D_MAX, rows)
-        table_cols = min(TABLE_2D_MAX, cols)
-        table_indexer = self._build_indexer(
-            len(shape),
-            display_dims,
-            fixed_indices,
-            {
-                dim_row: slice(0, table_rows, 1),
-                dim_col: slice(0, table_cols, 1)
+        table = None
+        if include_table:
+            table_rows = min(TABLE_2D_MAX, rows)
+            table_cols = min(TABLE_2D_MAX, cols)
+            table_indexer = self._build_indexer(
+                len(shape),
+                display_dims,
+                fixed_indices,
+                {
+                    dim_row: slice(0, table_rows, 1),
+                    dim_col: slice(0, table_cols, 1)
+                }
+            )
+            table_data = dataset[tuple(table_indexer)] if table_rows > 0 and table_cols > 0 else []
+            if needs_transpose and hasattr(table_data, 'T'):
+                table_data = table_data.T
+            table_data = self._sanitize(table_data)
+            table = {
+                'kind': '2d',
+                'data': table_data,
+                'shape': [table_rows, table_cols],
+                'row_start': 0,
+                'col_start': 0,
+                'row_step': 1,
+                'col_step': 1
             }
-        )
-        table_data = dataset[tuple(table_indexer)] if table_rows > 0 and table_cols > 0 else []
-        if needs_transpose and hasattr(table_data, 'T'):
-            table_data = table_data.T
-        table_data = self._sanitize(table_data)
-        table = {
-            'kind': '2d',
-            'data': table_data,
-            'shape': [table_rows, table_cols],
-            'row_start': 0,
-            'col_start': 0,
-            'row_step': 1,
-            'col_step': 1
-        }
 
-        if not numeric or rows == 0 or cols == 0:
-            plot = {
-                'supported': False,
-                'reason': 'non-numeric' if not numeric else 'empty'
+        plot = None
+        profile = None
+        numeric_with_data = numeric and rows > 0 and cols > 0
+
+        if include_heatmap:
+            if not numeric_with_data:
+                plot = {
+                    'supported': False,
+                    'reason': 'non-numeric' if not numeric else 'empty'
+                }
+            else:
+                target_rows = min(rows, max_heatmap_size)
+                target_cols = min(cols, max_heatmap_size)
+                if target_rows * target_cols > MAX_HEATMAP_ELEMENTS:
+                    scale = math.sqrt((target_rows * target_cols) / MAX_HEATMAP_ELEMENTS)
+                    target_rows = max(1, int(math.floor(target_rows / scale)))
+                    target_cols = max(1, int(math.floor(target_cols / scale)))
+
+                step_r = max(1, int(math.ceil(rows / target_rows)))
+                step_c = max(1, int(math.ceil(cols / target_cols)))
+
+                heatmap_indexer = self._build_indexer(
+                    len(shape),
+                    display_dims,
+                    fixed_indices,
+                    {
+                        dim_row: slice(0, rows, step_r),
+                        dim_col: slice(0, cols, step_c)
+                    }
+                )
+                heatmap = dataset[tuple(heatmap_indexer)]
+                if needs_transpose and hasattr(heatmap, 'T'):
+                    heatmap = heatmap.T
+                heatmap = self._sanitize(heatmap)
+
+                plot = {
+                    'type': 'heatmap',
+                    'data': heatmap,
+                    'shape': [len(heatmap), len(heatmap[0]) if heatmap and isinstance(heatmap[0], list) else 0],
+                    'row_start': 0,
+                    'col_start': 0,
+                    'row_step': step_r,
+                    'col_step': step_c
+                }
+
+        if include_profile and numeric_with_data:
+            row_index = rows // 2
+            target_line = min(MAX_LINE_POINTS, max(MIN_LINE_POINTS, 3000))
+            step_line = max(1, int(math.ceil(cols / target_line)))
+            line_indexer = self._build_indexer(
+                len(shape),
+                display_dims,
+                fixed_indices,
+                {
+                    dim_row: row_index,
+                    dim_col: slice(0, cols, step_line)
+                }
+            )
+            line_values = dataset[tuple(line_indexer)]
+            if len(line_values) > MAX_LINE_POINTS:
+                line_values = line_values[:MAX_LINE_POINTS]
+            line_values = self._sanitize(line_values)
+            line_x = list(range(0, step_line * len(line_values), step_line))
+
+            profile = {
+                'type': 'row',
+                'index': row_index,
+                'x': line_x,
+                'y': line_values,
+                'count': len(line_values),
+                'x_start': 0,
+                'x_step': step_line,
+                'dim_row': dim_row,
+                'dim_col': dim_col
             }
-            profile = None
-            return table, plot, profile
-
-        target_rows = min(rows, max_heatmap_size)
-        target_cols = min(cols, max_heatmap_size)
-        if target_rows * target_cols > MAX_HEATMAP_ELEMENTS:
-            scale = math.sqrt((target_rows * target_cols) / MAX_HEATMAP_ELEMENTS)
-            target_rows = max(1, int(math.floor(target_rows / scale)))
-            target_cols = max(1, int(math.floor(target_cols / scale)))
-
-        step_r = max(1, int(math.ceil(rows / target_rows)))
-        step_c = max(1, int(math.ceil(cols / target_cols)))
-
-        heatmap_indexer = self._build_indexer(
-            len(shape),
-            display_dims,
-            fixed_indices,
-            {
-                dim_row: slice(0, rows, step_r),
-                dim_col: slice(0, cols, step_c)
-            }
-        )
-        heatmap = dataset[tuple(heatmap_indexer)]
-        if needs_transpose and hasattr(heatmap, 'T'):
-            heatmap = heatmap.T
-        heatmap = self._sanitize(heatmap)
-
-        plot = {
-            'type': 'heatmap',
-            'data': heatmap,
-            'shape': [len(heatmap), len(heatmap[0]) if heatmap and isinstance(heatmap[0], list) else 0],
-            'row_start': 0,
-            'col_start': 0,
-            'row_step': step_r,
-            'col_step': step_c
-        }
-
-        row_index = rows // 2
-        target_line = min(MAX_LINE_POINTS, max(MIN_LINE_POINTS, 3000))
-        step_line = max(1, int(math.ceil(cols / target_line)))
-        line_indexer = self._build_indexer(
-            len(shape),
-            display_dims,
-            fixed_indices,
-            {
-                dim_row: row_index,
-                dim_col: slice(0, cols, step_line)
-            }
-        )
-        line_values = dataset[tuple(line_indexer)]
-        if len(line_values) > MAX_LINE_POINTS:
-            line_values = line_values[:MAX_LINE_POINTS]
-        line_values = self._sanitize(line_values)
-        line_x = list(range(0, step_line * len(line_values), step_line))
-
-        profile = {
-            'type': 'row',
-            'index': row_index,
-            'x': line_x,
-            'y': line_values,
-            'count': len(line_values),
-            'x_start': 0,
-            'x_step': step_line,
-            'dim_row': dim_row,
-            'dim_col': dim_col
-        }
 
         return table, plot, profile
 
