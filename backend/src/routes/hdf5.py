@@ -3,10 +3,16 @@ HDF5 file navigation and metadata routes
 """
 import logging
 import math
+import time
 from flask import Blueprint, request, jsonify
 from src.storage.minio_client import get_minio_client
 from src.readers.hdf5_reader import get_hdf5_reader
-from src.utils.cache import get_hdf5_cache, get_dataset_cache, make_cache_key
+from src.utils.cache import (
+    get_hdf5_cache,
+    get_dataset_cache,
+    get_data_cache,
+    make_cache_key
+)
 
 logger = logging.getLogger(__name__)
 
@@ -189,6 +195,47 @@ def _enforce_element_limits(count):
             f"Selection exceeds max_elements ({count} > {MAX_ELEMENTS} elements)"
         )
 
+
+def _resolve_cache_version_tag():
+    """
+    Resolve optional cache-version token from request.
+    `etag` can be provided by clients for stronger invalidation semantics.
+    """
+    hint = request.args.get('etag')
+    if hint is None:
+        return 'ttl'
+    value = str(hint).strip()
+    return value or 'ttl'
+
+
+def _serialize_request_args(exclude_keys=None):
+    """Build a deterministic query-string representation for cache keys."""
+    excluded = set(exclude_keys or ())
+    parts = []
+    for name in sorted(request.args.keys()):
+        if name in excluded:
+            continue
+        values = request.args.getlist(name)
+        if not values:
+            parts.append(f"{name}=")
+            continue
+        for value in sorted(str(entry) for entry in values):
+            parts.append(f"{name}={value}")
+    return '&'.join(parts)
+
+
+def _get_cached_dataset_info(reader, key, hdf_path, cache_version):
+    """Get dataset info with cache reuse across preview/data endpoints."""
+    dataset_cache = get_dataset_cache()
+    dataset_cache_key = make_cache_key('dataset', key, cache_version, hdf_path)
+    dataset_info = dataset_cache.get(dataset_cache_key)
+    if dataset_info is not None:
+        return dataset_info
+
+    dataset_info = reader.get_dataset_info(key, hdf_path)
+    dataset_cache.set(dataset_cache_key, dataset_info)
+    return dataset_info
+
 @hdf5_bp.route('/<path:key>/children', methods=['GET'])
 def get_children(key):
     """Get children at a specific path in an HDF5 file"""
@@ -299,6 +346,7 @@ def get_metadata(key):
 def get_preview(key):
     """Get a preview payload for a specific dataset path"""
     try:
+        request_started = time.perf_counter()
         hdf_path = request.args.get('path')
         if not hdf_path:
             return jsonify({
@@ -325,17 +373,9 @@ def get_preview(key):
                     'error': 'max_size must be a positive integer'
                 }), 400
 
-        minio = get_minio_client()
-        metadata = minio.get_object_metadata(key)
-        etag = metadata['etag']
-
+        cache_version = _resolve_cache_version_tag()
         reader = get_hdf5_reader()
-        dataset_cache = get_dataset_cache()
-        dataset_cache_key = make_cache_key('dataset', key, etag, hdf_path)
-        dataset_info = dataset_cache.get(dataset_cache_key)
-        if dataset_info is None:
-            dataset_info = reader.get_dataset_info(key, hdf_path)
-            dataset_cache.set(dataset_cache_key, dataset_info)
+        dataset_info = _get_cached_dataset_info(reader, key, hdf_path, cache_version)
 
         shape = dataset_info['shape']
         ndim = dataset_info['ndim']
@@ -360,7 +400,7 @@ def get_preview(key):
         cache_key = make_cache_key(
             'preview',
             key,
-            etag,
+            cache_version,
             hdf_path,
             preview_type,
             display_dims_key,
@@ -375,6 +415,9 @@ def get_preview(key):
             response = dict(cached_data)
             response['success'] = True
             response['cached'] = True
+            response['cache_version'] = cache_version
+            elapsed_ms = (time.perf_counter() - request_started) * 1000
+            logger.info(f"HDF5 preview hit completed in {elapsed_ms:.1f}ms")
             return jsonify(response), 200
 
         logger.info(f"HDF5 preview requested for '{key}' at '{hdf_path}' - CACHE MISS")
@@ -391,6 +434,9 @@ def get_preview(key):
         response = dict(preview)
         response['success'] = True
         response['cached'] = False
+        response['cache_version'] = cache_version
+        elapsed_ms = (time.perf_counter() - request_started) * 1000
+        logger.info(f"HDF5 preview miss completed in {elapsed_ms:.1f}ms")
         return jsonify(response), 200
 
     except ValueError as e:
@@ -418,6 +464,7 @@ def get_preview(key):
 def get_data(key):
     """Validate /data selections against hard limits before any data reads."""
     try:
+        request_started = time.perf_counter()
         hdf_path = request.args.get('path')
         mode = request.args.get('mode')
         if not hdf_path:
@@ -438,8 +485,25 @@ def get_data(key):
                 'error': 'Invalid mode parameter'
             }), 400
 
+        cache_version = _resolve_cache_version_tag()
+        cache = get_data_cache()
+        args_key = _serialize_request_args(exclude_keys={'etag'})
+        data_cache_key = make_cache_key('data', key, cache_version, args_key)
+
+        cached_payload = cache.get(data_cache_key)
+        if cached_payload is not None:
+            response = dict(cached_payload)
+            response['cached'] = True
+            response['cache_version'] = cache_version
+            elapsed_ms = (time.perf_counter() - request_started) * 1000
+            logger.info(
+                f"HDF5 data requested for '{key}' at '{hdf_path}' ({mode}) - "
+                f"CACHE HIT in {elapsed_ms:.1f}ms"
+            )
+            return jsonify(response), 200
+
         reader = get_hdf5_reader()
-        dataset_info = reader.get_dataset_info(key, hdf_path)
+        dataset_info = _get_cached_dataset_info(reader, key, hdf_path, cache_version)
         shape = dataset_info['shape']
         ndim = dataset_info['ndim']
 
@@ -454,6 +518,8 @@ def get_data(key):
                 'success': False,
                 'error': 'Mode requires a 2D or higher dataset'
             }), 400
+
+        response_payload = None
 
         if mode == 'matrix':
             row_offset = _parse_int_param('row_offset', 0, 0)
@@ -492,7 +558,7 @@ def get_data(key):
                 col_step=col_step
             )
 
-            return jsonify({
+            response_payload = {
                 'success': True,
                 'key': key,
                 'path': hdf_path,
@@ -506,8 +572,10 @@ def get_data(key):
                 'fixed_indices': {str(k): v for k, v in fixed_indices.items()},
                 'row_offset': matrix['row_offset'],
                 'col_offset': matrix['col_offset'],
-                'downsample_info': matrix['downsample_info']
-            }), 200
+                'downsample_info': matrix['downsample_info'],
+                'cached': False,
+                'cache_version': cache_version
+            }
 
         elif mode == 'heatmap':
             requested_max_size = _parse_int_param('max_size', DEFAULT_MAX_SIZE, 1)
@@ -531,7 +599,7 @@ def get_data(key):
                 effective_max_size
             )
 
-            return jsonify({
+            response_payload = {
                 'success': True,
                 'key': key,
                 'path': hdf_path,
@@ -550,8 +618,10 @@ def get_data(key):
                 'sampled': heatmap['sampled'],
                 'requested_max_size': requested_max_size,
                 'effective_max_size': effective_max_size,
-                'max_size_clamped': effective_max_size != requested_max_size
-            }), 200
+                'max_size_clamped': effective_max_size != requested_max_size,
+                'cached': False,
+                'cache_version': cache_version
+            }
 
         elif mode == 'line':
             line_dim_param = request.args.get('line_dim')
@@ -637,7 +707,7 @@ def get_data(key):
                 line_step
             )
 
-            return jsonify({
+            response_payload = {
                 'success': True,
                 'key': key,
                 'path': hdf_path,
@@ -658,13 +728,24 @@ def get_data(key):
                 'requested_points': requested_points,
                 'returned_points': len(line['data']) if isinstance(line.get('data'), list) else output_points,
                 'line_step': line_step,
-                'downsample_info': line['downsample_info']
-            }), 200
+                'downsample_info': line['downsample_info'],
+                'cached': False,
+                'cache_version': cache_version
+            }
 
-        return jsonify({
-            'success': False,
-            'error': 'Data endpoint not implemented yet'
-        }), 501
+        if response_payload is None:
+            return jsonify({
+                'success': False,
+                'error': 'Data endpoint not implemented yet'
+            }), 501
+
+        cache.set(data_cache_key, response_payload)
+        elapsed_ms = (time.perf_counter() - request_started) * 1000
+        logger.info(
+            f"HDF5 data requested for '{key}' at '{hdf_path}' ({mode}) - "
+            f"CACHE MISS in {elapsed_ms:.1f}ms"
+        )
+        return jsonify(response_payload), 200
 
     except ValueError as e:
         status_code = 404 if _is_not_found_error(e) else 400

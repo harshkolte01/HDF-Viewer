@@ -19,6 +19,7 @@ const frontendCache = {
   heatmapData: new LruCache(20),
   metadata: new LruCache(80),
 };
+const previewRefreshInFlight = new Map();
 
 const DEFAULT_LINE_OVERVIEW_MAX_POINTS = 5000;
 
@@ -60,6 +61,7 @@ function getPreviewCacheKey(fileKey, path, params = {}) {
   return [
     fileKey,
     path,
+    params.etag ?? "no-etag",
     toDisplayDimsKey(params.display_dims),
     toFixedIndicesKey(params.fixed_indices),
     params.max_size ?? "default",
@@ -71,6 +73,7 @@ function getMatrixBlockCacheKey(fileKey, path, params = {}) {
   return [
     fileKey,
     path,
+    params.etag ?? "no-etag",
     toDisplayDimsKey(params.display_dims),
     toFixedIndicesKey(params.fixed_indices),
     params.row_offset ?? 0,
@@ -86,6 +89,7 @@ function getLineCacheKey(fileKey, path, params = {}) {
   return [
     fileKey,
     path,
+    params.etag ?? "no-etag",
     params.line_dim ?? "row",
     params.line_index ?? "auto",
     params.quality ?? "auto",
@@ -101,6 +105,7 @@ function getHeatmapCacheKey(fileKey, path, params = {}) {
   return [
     fileKey,
     path,
+    params.etag ?? "no-etag",
     params.max_size ?? 512,
     toDisplayDimsKey(params.display_dims),
     toFixedIndicesKey(params.fixed_indices),
@@ -119,6 +124,7 @@ export function clearFrontendCaches() {
   frontendCache.lineData.clear();
   frontendCache.heatmapData.clear();
   frontendCache.metadata.clear();
+  previewRefreshInFlight.clear();
 }
 
 export async function getFiles(options = {}) {
@@ -205,15 +211,61 @@ export async function getFileMeta(key, path, options = {}) {
 }
 
 export async function getFilePreview(key, path, params = {}, options = {}) {
-  const { force = false, signal, cancelPrevious = true } = options;
+  const {
+    force = false,
+    signal,
+    cancelPrevious = true,
+    staleWhileRefresh = false,
+    onBackgroundUpdate = null,
+  } = options;
   const cacheKey = getPreviewCacheKey(key, path, params);
 
   if (!force && frontendCache.preview.has(cacheKey)) {
-    return {
+    const cachedPreview = {
       ...frontendCache.preview.get(cacheKey),
       cached: true,
       cache_source: "frontend",
     };
+
+    if (staleWhileRefresh) {
+      const refreshKey = cacheKey;
+      if (!previewRefreshInFlight.has(refreshKey)) {
+        const refreshPromise = apiClient
+          .get(
+            API_ENDPOINTS.FILE_PREVIEW(key),
+            { path, ...params },
+            {
+              cancelKey: `${getCancelChannel("preview-refresh", key, path)}:${refreshKey}`,
+              cancelPrevious: false,
+            }
+          )
+          .then((payload) => {
+            const normalized = assertSuccess(normalizePreviewPayload(payload), "getFilePreview(refresh)");
+            frontendCache.preview.set(cacheKey, normalized);
+            if (typeof onBackgroundUpdate === "function") {
+              onBackgroundUpdate({
+                ...normalized,
+                cached: false,
+                cache_source: "backend-refresh",
+              });
+            }
+            return normalized;
+          })
+          .catch(() => null)
+          .finally(() => {
+            previewRefreshInFlight.delete(refreshKey);
+          });
+
+        previewRefreshInFlight.set(refreshKey, refreshPromise);
+      }
+
+      return {
+        ...cachedPreview,
+        stale: true,
+      };
+    }
+
+    return cachedPreview;
   }
 
   const payload = await apiClient.get(

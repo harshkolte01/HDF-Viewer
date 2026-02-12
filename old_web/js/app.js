@@ -13,6 +13,23 @@ import {
 } from "./views/viewerView.js?v=20260211-11";
 
 const root = document.getElementById("app-root");
+let renderQueued = false;
+
+function queueRender() {
+  if (renderQueued) {
+    return;
+  }
+
+  renderQueued = true;
+  const schedule = typeof window !== "undefined" && window.requestAnimationFrame
+    ? window.requestAnimationFrame.bind(window)
+    : (cb) => setTimeout(cb, 16);
+
+  schedule(() => {
+    renderQueued = false;
+    renderApp();
+  });
+}
 
 function renderApp() {
   if (!root) {
@@ -44,7 +61,7 @@ function renderApp() {
 
 async function bootstrapApp() {
   await Promise.allSettled([initHomeViewTemplate(), initViewerViewTemplate()]);
-  subscribe(renderApp);
+  subscribe(queueRender);
   renderApp();
   void actions.loadFiles();
 }

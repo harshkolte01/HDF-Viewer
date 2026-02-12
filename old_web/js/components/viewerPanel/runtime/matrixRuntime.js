@@ -66,6 +66,7 @@ function initializeMatrixRuntime(shell) {
   const blockRows = Math.max(1, toSafeInteger(shell.dataset.matrixBlockRows, 200));
   const blockCols = Math.max(1, toSafeInteger(shell.dataset.matrixBlockCols, 50));
   const fileKey = shell.dataset.matrixFileKey || "";
+  const fileEtag = shell.dataset.matrixFileEtag || "";
   const path = shell.dataset.matrixPath || "/";
   const displayDims = shell.dataset.matrixDisplayDims || "";
   const fixedIndices = shell.dataset.matrixFixedIndices || "";
@@ -87,6 +88,7 @@ function initializeMatrixRuntime(shell) {
     blockRows,
     blockCols,
     fileKey,
+    fileEtag,
     path,
     displayDims,
     fixedIndices,
@@ -172,6 +174,10 @@ function initializeMatrixRuntime(shell) {
 
     if (runtime.fixedIndices) {
       params.fixed_indices = runtime.fixedIndices;
+    }
+
+    if (runtime.fileEtag) {
+      params.etag = runtime.fileEtag;
     }
 
     try {

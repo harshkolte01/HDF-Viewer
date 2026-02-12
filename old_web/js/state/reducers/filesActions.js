@@ -119,6 +119,8 @@ export function createFileActions(deps) {
       preview: null,
       previewLoading: false,
       previewError: null,
+      previewRequestKey: null,
+      previewRequestInFlight: false,
       viewMode: "inspect",
       displayTab: "line",
       notation: "auto",
@@ -133,11 +135,6 @@ export function createFileActions(deps) {
     });
 
     void actions.loadTreeChildren("/");
-
-    const current = getState();
-    if (current.route === "viewer" && current.viewMode === "inspect") {
-      void actions.loadMetadata("/");
-    }
   },
 
   goHome() {

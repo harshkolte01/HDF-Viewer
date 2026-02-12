@@ -77,7 +77,13 @@ export function createViewActions(deps) {
         void actions.loadPreview(current.selectedPath);
       }
     } else {
-      void actions.loadMetadata(current.selectedPath);
+      const shouldLoadMetadata =
+        current.selectedPath !== "/" &&
+        (!current.metadata || current.metadata.path !== current.selectedPath || current.metadataError);
+
+      if (shouldLoadMetadata) {
+        void actions.loadMetadata(current.selectedPath);
+      }
     }
   },
 

@@ -14,6 +14,17 @@ class _NullCache:
         return None
 
 
+class _MemoryCache:
+    def __init__(self):
+        self._store = {}
+
+    def get(self, key):
+        return self._store.get(key)
+
+    def set(self, key, value):
+        self._store[key] = value
+
+
 class Hdf5RoutesTestCase(unittest.TestCase):
     def setUp(self):
         app = Flask(__name__)
@@ -227,6 +238,86 @@ class Hdf5RoutesTestCase(unittest.TestCase):
         self.assertEqual(response.status_code, 404)
         payload = response.get_json()
         self.assertFalse(payload['success'])
+
+    def test_data_uses_response_cache_on_repeat(self):
+        reader = Mock()
+        reader.get_dataset_info.return_value = {
+            'shape': [1000],
+            'ndim': 1,
+            'dtype': 'float32'
+        }
+        reader.get_line.return_value = {
+            'dtype': 'float32',
+            'data': [1.0, 2.0, 3.0],
+            'shape': [3],
+            'axis': 'dim',
+            'index': None,
+            'downsample_info': {'step': 1}
+        }
+
+        dataset_cache = _MemoryCache()
+        data_cache = _MemoryCache()
+
+        with patch('src.routes.hdf5.get_hdf5_reader', return_value=reader), \
+             patch('src.routes.hdf5.get_dataset_cache', return_value=dataset_cache), \
+             patch('src.routes.hdf5.get_data_cache', return_value=data_cache):
+            first = self.client.get('/files/sample.h5/data?path=/cached_line&mode=line&line_limit=3')
+            second = self.client.get('/files/sample.h5/data?path=/cached_line&mode=line&line_limit=3')
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 200)
+
+        first_payload = first.get_json()
+        second_payload = second.get_json()
+
+        self.assertFalse(first_payload['cached'])
+        self.assertTrue(second_payload['cached'])
+        self.assertEqual(first_payload['cache_version'], 'ttl')
+        self.assertEqual(second_payload['cache_version'], 'ttl')
+
+        reader.get_dataset_info.assert_called_once()
+        reader.get_line.assert_called_once()
+
+    def test_preview_works_without_head_and_uses_ttl_cache_version(self):
+        reader = Mock()
+        reader.get_dataset_info.return_value = {
+            'shape': [10],
+            'ndim': 1,
+            'dtype': 'float32'
+        }
+        reader.get_preview.return_value = {
+            'key': 'sample.h5',
+            'path': '/array_1d',
+            'dtype': 'float32',
+            'shape': [10],
+            'ndim': 1,
+            'preview_type': '1d',
+            'mode': 'auto',
+            'display_dims': None,
+            'fixed_indices': {},
+            'stats': {'supported': True, 'min': 1.0, 'max': 10.0},
+            'table': {'kind': '1d', 'values': [1.0, 2.0]},
+            'plot': {'type': 'line', 'x': [0, 1], 'y': [1.0, 2.0]},
+            'profile': None,
+            'limits': {}
+        }
+
+        dataset_cache = _MemoryCache()
+        preview_cache = _MemoryCache()
+
+        with patch('src.routes.hdf5.get_hdf5_reader', return_value=reader), \
+             patch('src.routes.hdf5.get_dataset_cache', return_value=dataset_cache), \
+             patch('src.routes.hdf5.get_hdf5_cache', return_value=preview_cache):
+            response = self.client.get('/files/sample.h5/preview?path=/array_1d')
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload['success'])
+        self.assertFalse(payload['cached'])
+        self.assertEqual(payload['cache_version'], 'ttl')
+
+        reader.get_dataset_info.assert_called_once()
+        reader.get_preview.assert_called_once()
 
 
 if __name__ == '__main__':

@@ -117,6 +117,7 @@ class SimpleCache:
 _files_cache = SimpleCache(default_ttl=30)  # 30 seconds for file list
 _hdf5_cache = SimpleCache(default_ttl=300)  # 5 minutes for HDF5 metadata
 _dataset_cache = SimpleCache(default_ttl=300)  # 5 minutes for dataset info
+_data_cache = SimpleCache(default_ttl=120)  # 2 minutes for /data windows
 
 
 def get_files_cache() -> SimpleCache:
@@ -132,6 +133,11 @@ def get_hdf5_cache() -> SimpleCache:
 def get_dataset_cache() -> SimpleCache:
     """Get the global dataset info cache instance"""
     return _dataset_cache
+
+
+def get_data_cache() -> SimpleCache:
+    """Get the global /data response cache instance"""
+    return _data_cache
 
 
 def make_cache_key(*parts) -> str:

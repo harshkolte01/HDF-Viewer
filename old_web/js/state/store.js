@@ -21,6 +21,8 @@ export const state = {
   preview: null,
   previewLoading: false,
   previewError: null,
+  previewRequestKey: null,
+  previewRequestInFlight: false,
   displayTab: "line",
   notation: "auto",
   lineGrid: true,

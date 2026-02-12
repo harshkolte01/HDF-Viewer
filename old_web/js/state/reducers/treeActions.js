@@ -83,13 +83,15 @@ export function createTreeActions(deps) {
         preview: null,
         previewLoading: false,
         previewError: null,
+        previewRequestKey: null,
+        previewRequestInFlight: false,
       };
     });
 
     void actions.loadTreeChildren(normalizedPath);
 
     const current = getState();
-    if (current.route === "viewer" && current.viewMode === "inspect") {
+    if (current.route === "viewer" && current.viewMode === "inspect" && normalizedPath !== "/") {
       void actions.loadMetadata(normalizedPath);
     }
   },
@@ -209,6 +211,8 @@ export function createTreeActions(deps) {
               preview: null,
               previewLoading: false,
               previewError: null,
+              previewRequestKey: null,
+              previewRequestInFlight: false,
             }
           : {}),
       };
@@ -217,7 +221,7 @@ export function createTreeActions(deps) {
     const current = getState();
     if (nodeType === "group") {
       void actions.loadTreeChildren(normalizedPath);
-      if (current.viewMode === "inspect") {
+      if (current.viewMode === "inspect" && normalizedPath !== "/") {
         void actions.loadMetadata(normalizedPath);
       }
       return;

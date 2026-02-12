@@ -52,6 +52,7 @@ function initializeLineRuntime(shell) {
   }
 
   const fileKey = shell.dataset.lineFileKey || "";
+  const fileEtag = shell.dataset.lineFileEtag || "";
   const path = shell.dataset.linePath || "/";
   const displayDims = shell.dataset.lineDisplayDims || "";
   const fixedIndices = shell.dataset.lineFixedIndices || "";
@@ -83,6 +84,7 @@ function initializeLineRuntime(shell) {
 
   const runtime = {
     fileKey,
+    fileEtag,
     path,
     displayDims,
     fixedIndices,
@@ -509,6 +511,10 @@ function initializeLineRuntime(shell) {
     if (runtime.lineIndex !== null) {
       params.line_dim = "row";
       params.line_index = runtime.lineIndex;
+    }
+
+    if (runtime.fileEtag) {
+      params.etag = runtime.fileEtag;
     }
 
     try {

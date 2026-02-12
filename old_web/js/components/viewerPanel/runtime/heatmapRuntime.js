@@ -240,6 +240,7 @@ function initializeHeatmapRuntime(shell) {
   }
 
   const fileKey = shell.dataset.heatmapFileKey || "";
+  const fileEtag = shell.dataset.heatmapFileEtag || "";
   const path = shell.dataset.heatmapPath || "/";
   const displayDims = shell.dataset.heatmapDisplayDims || "";
   const fixedIndices = shell.dataset.heatmapFixedIndices || "";
@@ -258,6 +259,7 @@ function initializeHeatmapRuntime(shell) {
 
   const runtime = {
     fileKey,
+    fileEtag,
     path,
     displayDims,
     fixedIndices,
@@ -608,6 +610,10 @@ function initializeHeatmapRuntime(shell) {
     }
     if (runtime.fixedIndices) {
       params.fixed_indices = runtime.fixedIndices;
+    }
+
+    if (runtime.fileEtag) {
+      params.etag = runtime.fileEtag;
     }
 
     try {
