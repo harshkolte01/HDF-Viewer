@@ -120,7 +120,7 @@ export function createFileActions(deps) {
       previewLoading: false,
       previewError: null,
       viewMode: "inspect",
-      displayTab: "table",
+      displayTab: "line",
       notation: "auto",
       lineGrid: true,
       lineAspect: "line",

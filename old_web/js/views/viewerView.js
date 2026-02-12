@@ -99,7 +99,7 @@ function renderViewerTopBar(state) {
 }
 
 function renderPreviewToolbar(state) {
-  const activeTab = state.displayTab || "table";
+  const activeTab = state.displayTab || "line";
   const disabled = state.selectedNodeType !== "dataset" || state.previewLoading;
   const showHeatmap = Number(state.preview?.ndim || 0) >= 2;
 
@@ -222,7 +222,7 @@ export function bindViewerViewEvents(root, actions) {
 
   root.querySelectorAll("[data-display-tab]").forEach((button) => {
     button.addEventListener("click", () => {
-      actions.setDisplayTab(button.dataset.displayTab || "table");
+      actions.setDisplayTab(button.dataset.displayTab || "line");
     });
   });
 

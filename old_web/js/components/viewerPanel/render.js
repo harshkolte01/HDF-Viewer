@@ -4,7 +4,7 @@ export function renderViewerPanel(state) {
   const isDisplay = state.viewMode === "display";
   const isLineFixedPage =
     isDisplay &&
-    (state.displayTab || "table") === "line" &&
+    (state.displayTab || "line") === "line" &&
     state.lineFullEnabled === true;
 
   return `

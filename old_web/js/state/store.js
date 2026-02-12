@@ -21,7 +21,7 @@ export const state = {
   preview: null,
   previewLoading: false,
   previewError: null,
-  displayTab: "table",
+  displayTab: "line",
   notation: "auto",
   lineGrid: true,
   lineAspect: "line",

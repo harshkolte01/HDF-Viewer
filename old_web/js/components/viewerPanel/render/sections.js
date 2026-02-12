@@ -322,7 +322,7 @@ function renderHeatmapSection(state, preview) {
 
 function renderDisplayContent(state) {
   const hasSelection = state.selectedNodeType === "dataset" && state.selectedPath !== "/";
-  const activeTab = state.displayTab || "table";
+  const activeTab = state.displayTab || "line";
   const preview = state.preview;
 
   if (!hasSelection) {

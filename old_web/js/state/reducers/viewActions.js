@@ -82,7 +82,7 @@ export function createViewActions(deps) {
   },
 
   setDisplayTab(tab) {
-    const nextTab = ["table", "line", "heatmap"].includes(tab) ? tab : "table";
+    const nextTab = ["table", "line", "heatmap"].includes(tab) ? tab : "line";
     setState({
       displayTab: nextTab,
       ...(nextTab !== "table" ? { matrixFullEnabled: false } : {}),
