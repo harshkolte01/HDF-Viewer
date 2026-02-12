@@ -448,7 +448,23 @@ body {
   font-size: 0.875rem;
 }
 
-/* Responsive */
+/* ═══════════════════════════════════════════
+   RESPONSIVE — Home Page
+   ═══════════════════════════════════════════ */
+@media (max-width: 1024px) {
+  .stats-bar {
+    flex-wrap: wrap;
+  }
+
+  .stat-card {
+    min-width: 160px;
+  }
+
+  .container {
+    padding: 0 var(--spacing-lg);
+  }
+}
+
 @media (max-width: 768px) {
   .navbar-content {
     padding: 0 var(--spacing-md);
@@ -474,6 +490,10 @@ body {
     flex-direction: column;
   }
 
+  .stat-card {
+    min-width: 100%;
+  }
+
   .controls-bar {
     flex-direction: column;
     align-items: stretch;
@@ -486,5 +506,88 @@ body {
   .files-table th,
   .files-table td {
     padding: var(--spacing-sm) var(--spacing-md);
+  }
+}
+
+@media (max-width: 576px) {
+  .navbar-content {
+    height: 52px;
+    padding: 0 var(--spacing-sm);
+  }
+
+  .navbar-title {
+    font-size: 1rem;
+  }
+
+  .navbar-logo {
+    width: 28px;
+    height: 28px;
+    font-size: 0.95rem;
+  }
+
+  .container {
+    padding: 0 var(--spacing-sm);
+  }
+
+  .main-content {
+    padding: var(--spacing-md) 0;
+  }
+
+  .page-title {
+    font-size: 1.25rem;
+  }
+
+  .page-subtitle {
+    font-size: 0.8125rem;
+  }
+
+  .stat-value {
+    font-size: 1.5rem;
+  }
+
+  .files-table th,
+  .files-table td {
+    padding: var(--spacing-xs) var(--spacing-sm);
+    font-size: 0.8rem;
+  }
+
+  .files-table th:first-child,
+  .files-table td:first-child {
+    width: 40px;
+  }
+
+  .go-btn {
+    padding: var(--spacing-xs) var(--spacing-sm);
+    min-width: 54px;
+    font-size: 0.75rem;
+  }
+
+  .refresh-btn {
+    padding: var(--spacing-xs) var(--spacing-md);
+    font-size: 0.8rem;
+  }
+
+  .search-input {
+    font-size: 0.8125rem;
+    padding-left: 2.2rem;
+  }
+}
+
+@media (max-width: 375px) {
+  .container {
+    padding: 0 var(--spacing-xs);
+  }
+
+  .files-table th,
+  .files-table td {
+    font-size: 0.75rem;
+  }
+
+  .file-name {
+    font-size: 0.72rem;
+    max-width: 140px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 }

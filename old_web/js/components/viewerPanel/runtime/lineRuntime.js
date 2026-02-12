@@ -280,9 +280,16 @@ function initializeLineRuntime(shell) {
     }
   }
 
+  function getSvgDimensions() {
+    const rect = canvas.getBoundingClientRect();
+    const w = Math.max(300, Math.round(rect.width) || LINE_SVG_WIDTH);
+    const h = Math.max(200, Math.round(rect.height) || LINE_SVG_HEIGHT);
+    return { width: w, height: h };
+  }
+
   function renderSeries(points) {
-    const width = LINE_SVG_WIDTH;
-    const height = LINE_SVG_HEIGHT;
+    const { width, height } = getSvgDimensions();
+    svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
     const basePadding = { top: 20, right: 18, bottom: 34, left: 48 };
     const baseChartWidth = width - basePadding.left - basePadding.right;
     const baseChartHeight = height - basePadding.top - basePadding.bottom;
@@ -929,10 +936,25 @@ function initializeLineRuntime(shell) {
   }
   document.addEventListener("fullscreenchange", onFullscreenChange);
 
+  /* ResizeObserver — re-render chart when container resizes */
+  let resizeTimer = null;
+  const resizeObserver = new ResizeObserver(() => {
+    if (runtime.destroyed) return;
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {
+      if (!runtime.destroyed && runtime.points && runtime.points.length >= 2) {
+        renderSeries(runtime.points);
+      }
+    }, 150);
+  });
+  resizeObserver.observe(canvas);
+
   const cleanup = () => {
     persistViewState();
     runtime.destroyed = true;
     hideHover();
+    resizeObserver.disconnect();
+    clearTimeout(resizeTimer);
     if (runtime.fetchTimer !== null) {
       clearTimeout(runtime.fetchTimer);
       runtime.fetchTimer = null;

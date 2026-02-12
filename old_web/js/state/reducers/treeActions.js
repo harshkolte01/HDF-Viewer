@@ -91,7 +91,7 @@ export function createTreeActions(deps) {
     void actions.loadTreeChildren(normalizedPath);
 
     const current = getState();
-    if (current.route === "viewer" && current.viewMode === "inspect" && normalizedPath !== "/") {
+    if (current.route === "viewer" && current.viewMode === "inspect") {
       void actions.loadMetadata(normalizedPath);
     }
   },
@@ -221,7 +221,7 @@ export function createTreeActions(deps) {
     const current = getState();
     if (nodeType === "group") {
       void actions.loadTreeChildren(normalizedPath);
-      if (current.viewMode === "inspect" && normalizedPath !== "/") {
+      if (current.viewMode === "inspect") {
         void actions.loadMetadata(normalizedPath);
       }
       return;

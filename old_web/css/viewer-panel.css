@@ -52,7 +52,7 @@
 
 /* Simple Metadata Layout */
 .metadata-simple {
-    max-width: 800px;
+    max-width: min(800px, 100%);
     max-height: min(72vh, 920px);
     overflow: auto;
     padding-right: var(--spacing-sm);
@@ -75,7 +75,7 @@
 }
 
 .info-label {
-    min-width: 160px;
+    min-width: clamp(100px, 20vw, 160px);
     font-size: 0.875rem;
     font-weight: 600;
     color: var(--text-secondary);
@@ -391,7 +391,7 @@
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
     padding: var(--spacing-lg);
-    min-height: 300px;
+    min-height: clamp(200px, 35vh, 300px);
 }
 
 .data-section {
@@ -451,7 +451,7 @@
 
 .matrix-table {
     position: relative;
-    height: 520px;
+    height: clamp(300px, 55vh, 700px);
     overflow: auto;
     background: var(--surface);
     overscroll-behavior: contain;
@@ -639,7 +639,7 @@
 }
 
 .heatmap-preview-table-wrapper {
-    max-height: 520px;
+    max-height: clamp(300px, 50vh, 600px);
     overflow: auto;
 }
 
@@ -709,11 +709,11 @@
 }
 
 .line-chart-shell-full {
-    min-height: 420px;
+    min-height: clamp(250px, 40vh, 420px);
 }
 
 .line-chart-shell-full .line-chart-canvas {
-    height: 360px;
+    height: clamp(220px, 42vh, 480px);
     cursor: crosshair;
 }
 
@@ -824,7 +824,7 @@
 
 .line-chart-canvas {
     width: 100%;
-    height: 320px;
+    height: clamp(200px, 45vh, 480px);
     border-radius: var(--radius-md);
     background: var(--surface-alt);
     border: 1px solid var(--border);
@@ -838,7 +838,7 @@
 }
 
 .heatmap-chart-shell {
-    min-height: 460px;
+    min-height: clamp(250px, 45vh, 460px);
 }
 
 .heatmap-chart-toolbar {
@@ -847,7 +847,7 @@
 
 .heatmap-chart-canvas {
     position: relative;
-    height: 420px;
+    height: clamp(250px, 50vh, 600px);
     cursor: crosshair;
 }
 
@@ -964,8 +964,8 @@
 .heatmap-container {
     width: 100%;
     height: 100%;
-    min-height: 400px;
-    max-height: 800px;
+    min-height: clamp(250px, 40vh, 400px);
+    max-height: clamp(400px, 70vh, 800px);
     display: flex;
     justify-content: center;
     align-items: center;
@@ -979,33 +979,10 @@
     cursor: crosshair;
 }
 
-/* Responsive */
-@media (max-width: 768px) {
-    .panel-canvas {
-        padding: var(--spacing-md);
-    }
-
-    .panel-canvas.panel-canvas-line-fixed {
-        overflow-y: auto;
-    }
-
-    .info-row {
-        flex-direction: column;
-        gap: var(--spacing-xs);
-    }
-
-    .info-label {
-        min-width: auto;
-        font-weight: 700;
-    }
-
-    .metadata-simple {
-        max-width: 100%;
-        max-height: none;
-        overflow: visible;
-        padding-right: 0;
-    }
-
+/* ═══════════════════════════════════════════
+   RESPONSIVE — ≤1024px (tablet)
+   ═══════════════════════════════════════════ */
+@media (max-width: 1024px) {
     .preview-layout {
         grid-template-columns: 1fr;
     }
@@ -1038,6 +1015,36 @@
     .dimension-controls {
         width: 100%;
     }
+}
+
+/* ═══════════════════════════════════════════
+   RESPONSIVE — ≤768px (phone landscape)
+   ═══════════════════════════════════════════ */
+@media (max-width: 768px) {
+    .panel-canvas {
+        padding: var(--spacing-md);
+    }
+
+    .panel-canvas.panel-canvas-line-fixed {
+        overflow-y: auto;
+    }
+
+    .info-row {
+        flex-direction: column;
+        gap: var(--spacing-xs);
+    }
+
+    .info-label {
+        min-width: auto;
+        font-weight: 700;
+    }
+
+    .metadata-simple {
+        max-width: 100%;
+        max-height: none;
+        overflow: visible;
+        padding-right: 0;
+    }
 
     .heatmap-preview-header {
         align-items: flex-start;
@@ -1048,6 +1055,52 @@
     .preview-table.preview-table-heatmap td {
         min-width: 52px;
         font-size: 0.75rem;
+    }
+
+    .line-chart-toolbar {
+        gap: var(--spacing-sm);
+    }
+
+    .line-tool-btn {
+        padding: 0.3rem 0.5rem;
+        font-size: 0.7rem;
+    }
+
+    .data-btn {
+        padding: 0.3rem 0.6rem;
+        font-size: 0.75rem;
+    }
+}
+
+/* ═══════════════════════════════════════════
+   RESPONSIVE — ≤576px (phone portrait)
+   ═══════════════════════════════════════════ */
+@media (max-width: 576px) {
+    .panel-canvas {
+        padding: var(--spacing-sm);
+    }
+
+    .preview-content {
+        padding: var(--spacing-sm);
+    }
+
+    .dim-controls-buttons {
+        flex-direction: column;
+    }
+
+    .slider-row {
+        grid-template-columns: 1fr 64px;
+        gap: var(--spacing-sm);
+    }
+
+    .json-view {
+        max-height: 240px;
+        font-size: 0.75rem;
+    }
+
+    .line-chart-toolbar {
+        flex-direction: column;
+        gap: var(--spacing-xs);
     }
 }
 

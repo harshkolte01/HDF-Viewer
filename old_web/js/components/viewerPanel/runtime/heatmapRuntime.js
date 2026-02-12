@@ -606,7 +606,7 @@ function initializeHeatmapRuntime(shell) {
 
   async function fetchHeatmapAtSize(maxSize, loadingMessage) {
     if (runtime.destroyed) {
-      return false;
+      return { loaded: false };
     }
 
     if (loadingMessage) {
@@ -640,7 +640,7 @@ function initializeHeatmapRuntime(shell) {
       });
 
       if (runtime.destroyed) {
-        return false;
+        return { loaded: false };
       }
 
       const grid = normalizeHeatmapGrid(response?.data);
@@ -685,16 +685,20 @@ function initializeHeatmapRuntime(shell) {
         statusText += ` Clamped to ${runtime.effectiveMaxSize}.`;
       }
       setMatrixStatus(statusElement, statusText, "info");
-      return true;
+      return {
+        loaded: true,
+        sampled: response?.sampled === true,
+        effectiveMaxSize: runtime.effectiveMaxSize,
+      };
     } catch (error) {
       if (runtime.destroyed) {
-        return false;
+        return { loaded: false };
       }
       if (error?.isAbort || error?.code === "ABORTED") {
-        return false;
+        return { loaded: false };
       }
       setMatrixStatus(statusElement, error?.message || "Failed to load high-res heatmap.", "error");
-      return false;
+      return { loaded: false };
     } finally {
       runtime.activeCancelKeys.delete(cancelKey);
     }
@@ -702,12 +706,14 @@ function initializeHeatmapRuntime(shell) {
 
   async function loadProgressiveHeatmap() {
     const initialSize = Math.min(HEATMAP_INITIAL_MAX_SIZE, HEATMAP_MAX_SIZE);
-    const loaded = await fetchHeatmapAtSize(initialSize, "Loading heatmap preview...");
-    if (!loaded || runtime.destroyed || initialSize >= HEATMAP_MAX_SIZE) {
+    const initialResult = await fetchHeatmapAtSize(initialSize, "Loading heatmap preview...");
+    if (!initialResult.loaded || runtime.destroyed || initialSize >= HEATMAP_MAX_SIZE) {
       return;
     }
 
-    const shouldUpgrade = runtime.rows >= initialSize || runtime.cols >= initialSize;
+    const shouldUpgrade =
+      initialResult.sampled === true ||
+      Number(initialResult.effectiveMaxSize || 0) < HEATMAP_MAX_SIZE;
     if (!shouldUpgrade) {
       return;
     }

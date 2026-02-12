@@ -58,6 +58,15 @@ export function createViewActions(deps) {
   } = unpackDeps(deps);
 
   return {
+  toggleSidebar() {
+    const current = getState();
+    setState({ sidebarOpen: !current.sidebarOpen });
+  },
+
+  setSidebarOpen(open) {
+    setState({ sidebarOpen: !!open });
+  },
+
   setViewMode(viewMode) {
     const mode = viewMode === "display" ? "display" : "inspect";
     setState({
@@ -78,7 +87,6 @@ export function createViewActions(deps) {
       }
     } else {
       const shouldLoadMetadata =
-        current.selectedPath !== "/" &&
         (!current.metadata || current.metadata.path !== current.selectedPath || current.metadataError);
 
       if (shouldLoadMetadata) {

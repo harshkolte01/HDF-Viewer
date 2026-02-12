@@ -23,11 +23,13 @@
 }
 
 .files-table th:first-child {
+  min-width: 40px;
   width: 60px;
   text-align: center;
 }
 
 .files-table th:last-child {
+  min-width: 70px;
   width: 100px;
   text-align: center;
 }
@@ -108,5 +110,26 @@
   .files-table th,
   .files-table td {
     padding: var(--spacing-sm) var(--spacing-md);
+  }
+}
+
+@media (max-width: 576px) {
+  .files-table th,
+  .files-table td {
+    padding: var(--spacing-xs) var(--spacing-sm);
+    font-size: 0.8rem;
+  }
+
+  .files-table th:first-child,
+  .files-table td:first-child {
+    width: 40px;
+    min-width: 32px;
+  }
+
+  .file-name {
+    max-width: 140px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 }

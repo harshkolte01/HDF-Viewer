@@ -383,7 +383,11 @@ function renderDisplayContent(state) {
 }
 
 function renderInspectContent(state) {
-  const hasSelection = state.selectedPath !== "/";
+  const hasSelection =
+    state.selectedPath !== "/" ||
+    state.metadataLoading ||
+    Boolean(state.metadata) ||
+    Boolean(state.metadataError);
 
   if (!hasSelection) {
     return `

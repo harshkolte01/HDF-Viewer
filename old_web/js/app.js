@@ -1,5 +1,5 @@
 import { subscribe, getState } from "./state/store.js";
-import { actions } from "./state/reducers.js?v=20260211-1";
+import { actions } from "./state/reducers.js?v=20260212-2";
 import { renderTopBar, bindTopBarEvents } from "./components/topBar.js";
 import {
   initHomeViewTemplate,
@@ -10,7 +10,7 @@ import {
   initViewerViewTemplate,
   renderViewerView,
   bindViewerViewEvents,
-} from "./views/viewerView.js?v=20260211-11";
+} from "./views/viewerView.js?v=20260212-1";
 
 const root = document.getElementById("app-root");
 let renderQueued = false;
@@ -62,6 +62,17 @@ function renderApp() {
 async function bootstrapApp() {
   await Promise.allSettled([initHomeViewTemplate(), initViewerViewTemplate()]);
   subscribe(queueRender);
+
+  /* Auto-collapse sidebar on narrow viewports */
+  const mql = window.matchMedia("(max-width: 1024px)");
+  function handleViewportChange(e) {
+    actions.setSidebarOpen(!e.matches);
+  }
+  mql.addEventListener("change", handleViewportChange);
+  if (mql.matches) {
+    actions.setSidebarOpen(false);
+  }
+
   renderApp();
   void actions.loadFiles();
 }

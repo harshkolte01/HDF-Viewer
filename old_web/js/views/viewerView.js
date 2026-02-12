@@ -52,18 +52,24 @@ function getBreadcrumbSegments(path) {
 
 function renderViewerTopBar(state) {
   const segments = getBreadcrumbSegments(state.selectedPath);
+  const fileCrumbActive = segments.length === 0 ? "active" : "";
 
   return `
     <div class="viewer-topbar">
       <div class="topbar-left">
-        <div class="breadcrumb-label">File location</div>
-        <div class="breadcrumb">
-          <span class="crumb">${escapeHtml(state.selectedFile || "Unknown")}</span>
-          ${
-            segments.length === 0
-              ? `<button class="crumb crumb-btn active" data-breadcrumb-path="/" type="button">root</button>`
-              : `<button class="crumb crumb-btn" data-breadcrumb-path="/" type="button">root</button>`
-          }
+        <button id="sidebar-toggle-btn" class="sidebar-toggle-btn" type="button" aria-label="Toggle sidebar">
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <line x1="3" y1="5" x2="17" y2="5"/>
+            <line x1="3" y1="10" x2="17" y2="10"/>
+            <line x1="3" y1="15" x2="17" y2="15"/>
+          </svg>
+        </button>
+        <div class="topbar-path">
+          <div class="breadcrumb-label">File location</div>
+          <div class="breadcrumb">
+          <button class="crumb crumb-btn ${fileCrumbActive}" data-breadcrumb-path="/" type="button">${escapeHtml(
+    state.selectedFile || "Unknown"
+  )}</button>
           ${segments
             .map((segment, index) => {
               const active = index === segments.length - 1 ? "active" : "";
@@ -73,10 +79,14 @@ function renderViewerTopBar(state) {
             })
             .join("")}
         </div>
+        </div>
       </div>
 
       <div class="topbar-right">
-        <button id="viewer-back-btn" class="ghost-btn" type="button">Back to files</button>
+        <button id="viewer-back-btn" class="ghost-btn" type="button">
+          <svg class="btn-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="10 2 4 8 10 14"/></svg>
+          <span class="btn-label">Back to files</span>
+        </button>
         <div class="segmented">
           <button
             class="seg-btn ${state.viewMode === "display" ? "active" : ""}"
@@ -194,15 +204,35 @@ function renderPreviewToolbar(state) {
 }
 
 export function renderViewerView(state) {
-  return applyTemplate(viewerTemplate, {
+  const sidebarClass = state.sidebarOpen ? "sidebar-open" : "sidebar-collapsed";
+  const html = applyTemplate(viewerTemplate, {
     VIEWER_SIDEBAR: renderSidebarTree(state),
     VIEWER_TOPBAR: renderViewerTopBar(state),
     VIEWER_SUBBAR: state.viewMode === "display" ? renderPreviewToolbar(state) : "",
     VIEWER_PANEL: renderViewerPanel(state),
   });
+  /* Inject sidebar-open/collapsed class and backdrop onto .viewer-page */
+  return html.replace(
+    'class="viewer-page"',
+    `class="viewer-page ${sidebarClass}"`
+  ) + (state.sidebarOpen ? '<div class="sidebar-backdrop" id="sidebar-backdrop"></div>' : '');
 }
 
 export function bindViewerViewEvents(root, actions) {
+  /* Sidebar toggle / close / backdrop */
+  const sidebarToggle = root.querySelector("#sidebar-toggle-btn");
+  if (sidebarToggle) {
+    sidebarToggle.addEventListener("click", actions.toggleSidebar);
+  }
+  const sidebarClose = root.querySelector("#sidebar-close-btn");
+  if (sidebarClose) {
+    sidebarClose.addEventListener("click", () => actions.setSidebarOpen(false));
+  }
+  const backdrop = document.getElementById("sidebar-backdrop");
+  if (backdrop) {
+    backdrop.addEventListener("click", () => actions.setSidebarOpen(false));
+  }
+
   const backButton = root.querySelector("#viewer-back-btn");
   if (backButton) {
     backButton.addEventListener("click", actions.goHome);

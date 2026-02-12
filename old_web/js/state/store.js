@@ -54,6 +54,7 @@ export const state = {
     heatmap: "canvas",
     matrix: "block-rendering",
   },
+  sidebarOpen: true,
 };
 
 const listeners = new Set();
