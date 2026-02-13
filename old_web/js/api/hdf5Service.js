@@ -159,7 +159,7 @@ export async function refreshFiles(options = {}) {
 }
 
 export async function getFileChildren(key, path = "/", options = {}) {
-  const { force = false, signal } = options;
+  const { force = false, signal, etag } = options;
   const treeCache = getTreeCache(key);
 
   if (!force && treeCache.has(path)) {
@@ -170,9 +170,14 @@ export async function getFileChildren(key, path = "/", options = {}) {
     };
   }
 
+  const queryParams = { path };
+  if (etag) {
+    queryParams.etag = etag;
+  }
+
   const payload = await apiClient.get(
     API_ENDPOINTS.FILE_CHILDREN(key),
-    { path },
+    queryParams,
     {
       signal,
       cancelKey: getCancelChannel("children", key, path),
@@ -186,7 +191,7 @@ export async function getFileChildren(key, path = "/", options = {}) {
 }
 
 export async function getFileMeta(key, path, options = {}) {
-  const { force = false, signal } = options;
+  const { force = false, signal, etag } = options;
   const cacheKey = `${key}|${path}`;
 
   if (!force) {
@@ -200,9 +205,14 @@ export async function getFileMeta(key, path, options = {}) {
     }
   }
 
+  const queryParams = { path };
+  if (etag) {
+    queryParams.etag = etag;
+  }
+
   const payload = await apiClient.get(
     API_ENDPOINTS.FILE_META(key),
-    { path },
+    queryParams,
     {
       signal,
       cancelKey: getCancelChannel("meta", key, path),
