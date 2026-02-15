@@ -1,6 +1,6 @@
 import { escapeHtml } from "../utils/format.js";
 import { renderSidebarTree, bindSidebarTreeEvents } from "../components/sidebarTree.js";
-import { renderViewerPanel, bindViewerPanelEvents } from "../components/viewerPanel.js?v=20260211-12";
+import { renderViewerPanel, bindViewerPanelEvents } from "../components/viewerPanel.js?v=20260215-8";
 import { loadTemplate, applyTemplate } from "../utils/templateLoader.js";
 
 const VIEWER_TEMPLATE_FALLBACK = `
@@ -86,6 +86,10 @@ function renderViewerTopBar(state) {
         <button id="viewer-back-btn" class="ghost-btn" type="button">
           <svg class="btn-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="10 2 4 8 10 14"/></svg>
           <span class="btn-label">Back to files</span>
+        </button>
+        <button id="viewer-fullscreen-btn" class="ghost-btn" type="button" title="Toggle fullscreen">
+          <svg class="btn-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6V2h4M14 6V2h-4M2 10v4h4M14 10v4h-4"/></svg>
+          <span class="btn-label">Fullscreen</span>
         </button>
         <div class="segmented">
           <button
@@ -236,6 +240,37 @@ export function bindViewerViewEvents(root, actions) {
   const backButton = root.querySelector("#viewer-back-btn");
   if (backButton) {
     backButton.addEventListener("click", actions.goHome);
+  }
+
+  /* Global fullscreen — fullscreens the entire viewer page */
+  const globalFsBtn = root.querySelector("#viewer-fullscreen-btn");
+  if (globalFsBtn) {
+    const viewerPage = root.querySelector(".viewer-page") || root.closest(".viewer-page");
+    const updateGlobalFsLabel = () => {
+      const isFs = !!document.fullscreenElement;
+      const label = globalFsBtn.querySelector(".btn-label");
+      if (label) label.textContent = isFs ? "Exit Fullscreen" : "Fullscreen";
+      globalFsBtn.title = isFs ? "Exit fullscreen" : "Toggle fullscreen";
+      const path = globalFsBtn.querySelector("svg path");
+      if (path) {
+        path.setAttribute("d", isFs
+          ? "M5 2v3H2M11 2v3h3M5 14v-3H2M11 14v-3h3"
+          : "M2 6V2h4M14 6V2h-4M2 10v4h4M14 10v4h-4"
+        );
+      }
+    };
+    const onGlobalFsClick = async () => {
+      try {
+        const target = viewerPage || document.documentElement;
+        if (document.fullscreenElement) {
+          await document.exitFullscreen();
+        } else if (target.requestFullscreen) {
+          await target.requestFullscreen();
+        }
+      } catch (_e) { /* ignore */ }
+    };
+    globalFsBtn.addEventListener("click", onGlobalFsClick);
+    document.addEventListener("fullscreenchange", updateGlobalFsLabel);
   }
 
   root.querySelectorAll("[data-view-mode]").forEach((button) => {

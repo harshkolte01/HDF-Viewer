@@ -718,11 +718,16 @@
 }
 
 .line-chart-shell.is-fullscreen {
-    width: 100%;
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    width: 100vw;
     height: 100vh;
     border-radius: 0;
     padding: var(--spacing-lg);
     box-sizing: border-box;
+    background: var(--bg-primary);
+    overflow: auto;
 }
 
 .line-chart-shell.is-fullscreen .line-chart-canvas {
@@ -979,10 +984,69 @@
     cursor: crosshair;
 }
 
+/* ── Sidebar collapse toggle (mobile-only) ── */
+.sidebar-collapse-btn {
+    display: none;
+}
+
+.sidebar-body {
+    display: contents;
+}
+
 /* ═══════════════════════════════════════════
    RESPONSIVE — ≤1024px (tablet)
    ═══════════════════════════════════════════ */
 @media (max-width: 1024px) {
+    /* ── Collapsible dimension sidebar ── */
+    .sidebar-collapse-btn {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-sm);
+        width: 100%;
+        padding: 0.5rem 0.75rem;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        background: var(--surface-alt);
+        color: var(--text-primary);
+        font-size: 0.8rem;
+        font-weight: 700;
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+
+    .sidebar-collapse-btn:hover {
+        border-color: var(--primary);
+        color: var(--primary);
+    }
+
+    .sidebar-collapse-chevron {
+        transition: transform 0.2s ease;
+        flex-shrink: 0;
+    }
+
+    .preview-sidebar.collapsed .sidebar-collapse-chevron {
+        transform: rotate(-90deg);
+    }
+
+    .dim-value-inline {
+        font-weight: 400;
+        font-size: 0.75rem;
+        color: var(--text-secondary);
+        margin-left: auto;
+    }
+
+    .sidebar-body {
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-md);
+        overflow: hidden;
+        transition: max-height 0.25s ease, opacity 0.2s ease;
+    }
+
+    .preview-sidebar.collapsed .sidebar-body {
+        display: none;
+    }
+
     .preview-layout {
         grid-template-columns: 1fr;
     }
@@ -1110,8 +1174,20 @@
     }
 
     .line-chart-toolbar {
-        flex-direction: column;
+        flex-direction: row;
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
         gap: var(--spacing-xs);
+    }
+
+    .line-chart-toolbar::-webkit-scrollbar {
+        display: none;
+    }
+
+    .line-tool-group {
+        flex-shrink: 0;
     }
 
     .line-chart-shell-full .line-chart-canvas {

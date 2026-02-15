@@ -260,12 +260,31 @@ function initializeLineRuntime(shell) {
     }
   }
 
+  function applyFullscreenStyles(entering) {
+    if (entering) {
+      shell.style.position = "fixed";
+      shell.style.inset = "0";
+      shell.style.zIndex = "9999";
+      shell.style.width = "100vw";
+      shell.style.height = "100vh";
+      shell.style.borderRadius = "0";
+      shell.style.padding = "16px";
+      shell.style.boxSizing = "border-box";
+      shell.style.background = "var(--bg-primary, #F8FAFF)";
+      shell.style.overflow = "auto";
+      canvas.style.height = "calc(100vh - 160px)";
+    } else {
+      shell.style.cssText = "";
+      canvas.style.height = "";
+    }
+  }
+
   function syncFullscreenState() {
-    const isFullscreen = document.fullscreenElement === shell;
-    shell.classList.toggle("is-fullscreen", isFullscreen);
+    const isFullscreen = shell.classList.contains("is-fullscreen");
     if (fullscreenButton) {
       fullscreenButton.textContent = isFullscreen ? "Exit Fullscreen" : "Fullscreen";
     }
+    applyFullscreenStyles(isFullscreen);
   }
 
   function updateStats(minValue, maxValue) {
@@ -855,23 +874,26 @@ function initializeLineRuntime(shell) {
     updateViewport(0, maxSpan, true);
   };
 
-  async function onToggleFullscreen() {
-    try {
-      if (document.fullscreenElement === shell) {
-        await document.exitFullscreen();
-      } else if (!document.fullscreenElement && shell.requestFullscreen) {
-        await shell.requestFullscreen();
-      } else if (document.fullscreenElement) {
-        await document.exitFullscreen();
-      }
-    } catch (_error) {
-      // ignore fullscreen errors on restricted contexts
+  function onToggleFullscreen() {
+    shell.classList.toggle("is-fullscreen");
+    syncFullscreenState();
+    /* re-render chart at new size */
+    if (runtime.points && runtime.points.length >= 2) {
+      requestAnimationFrame(() => renderSeries(runtime.points));
     }
   }
 
-  const onFullscreenChange = () => {
-    syncFullscreenState();
-  };
+  function onFullscreenEsc(event) {
+    if (event.key === "Escape" && shell.classList.contains("is-fullscreen")) {
+      event.preventDefault();
+      event.stopPropagation();
+      shell.classList.remove("is-fullscreen");
+      syncFullscreenState();
+      if (runtime.points && runtime.points.length >= 2) {
+        requestAnimationFrame(() => renderSeries(runtime.points));
+      }
+    }
+  }
 
   if (hoverElement) {
     hoverElement.hidden = true;
@@ -934,7 +956,7 @@ function initializeLineRuntime(shell) {
   if (fullscreenButton) {
     fullscreenButton.addEventListener("click", onToggleFullscreen);
   }
-  document.addEventListener("fullscreenchange", onFullscreenChange);
+  document.addEventListener("keydown", onFullscreenEsc);
 
   /* ResizeObserver — re-render chart when container resizes */
   let resizeTimer = null;
@@ -1008,7 +1030,10 @@ function initializeLineRuntime(shell) {
     if (fullscreenButton) {
       fullscreenButton.removeEventListener("click", onToggleFullscreen);
     }
-    document.removeEventListener("fullscreenchange", onFullscreenChange);
+    document.removeEventListener("keydown", onFullscreenEsc);
+    shell.classList.remove("is-fullscreen");
+    shell.style.cssText = "";
+    canvas.style.height = "";
   };
 
   LINE_RUNTIME_CLEANUPS.add(cleanup);

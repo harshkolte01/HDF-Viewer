@@ -24,6 +24,14 @@ function renderDimensionControls(state, preview) {
 
     return `
       <aside class="preview-sidebar">
+        <button type="button" class="sidebar-collapse-btn" data-sidebar-toggle="true">
+          <svg class="sidebar-collapse-chevron" width="12" height="12" viewBox="0 0 12 12" fill="none">
+            <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <span>Dimensions</span>
+          <span class="dim-value-inline">${dimLabel}</span>
+        </button>
+        <div class="sidebar-body">
         <div class="dimension-summary">
           <span class="dim-label">Display dims</span>
           <span class="dim-value">${dimLabel}</span>
@@ -68,6 +76,7 @@ function renderDimensionControls(state, preview) {
             </div>
           </div>
         </div>
+        </div>
       </aside>
     `;
   }
@@ -81,6 +90,14 @@ function renderDimensionControls(state, preview) {
 
   return `
     <aside class="preview-sidebar">
+      <button type="button" class="sidebar-collapse-btn" data-sidebar-toggle="true">
+        <svg class="sidebar-collapse-chevron" width="12" height="12" viewBox="0 0 12 12" fill="none">
+          <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span>Dimensions</span>
+        <span class="dim-value-inline">${dimLabel}</span>
+      </button>
+      <div class="sidebar-body">
       <div class="dimension-summary">
         <span class="dim-label">Display dims</span>
         <span class="dim-value">${dimLabel}</span>
@@ -165,6 +182,7 @@ function renderDimensionControls(state, preview) {
           <button type="button" class="dim-set-btn" data-dim-apply="true">Set</button>
           <button type="button" class="dim-reset-btn" data-dim-reset="true">Reset</button>
         </div>
+      </div>
       </div>
     </aside>
   `;

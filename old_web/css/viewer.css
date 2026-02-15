@@ -675,6 +675,16 @@
 }
 
 /* ═══════════════════════════════════════════
+   GLOBAL FULLSCREEN (viewer-page level)
+   ═══════════════════════════════════════════ */
+.viewer-page:fullscreen,
+.viewer-page:-webkit-full-screen {
+  width: 100vw;
+  height: 100vh;
+  background: var(--bg-primary);
+}
+
+/* ═══════════════════════════════════════════
    RESPONSIVE — ≤1024px (tablet & below)
    ═══════════════════════════════════════════ */
 @media (max-width: 1024px) {
@@ -784,10 +794,22 @@
   }
 
   .viewer-subbar {
-    flex-direction: column;
-    align-items: flex-start;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
     padding: var(--spacing-sm) var(--spacing-md);
     gap: var(--spacing-sm);
+  }
+
+  .viewer-subbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .subbar-tabs,
+  .subbar-actions {
+    flex-shrink: 0;
   }
 
   .tree-row {

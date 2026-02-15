@@ -1,9 +1,26 @@
 import { clearViewerRuntimeBindings } from "./common.js";
 import { initializeMatrixRuntime } from "./matrixRuntime.js";
-import { initializeLineRuntime } from "./lineRuntime.js";
-import { initializeHeatmapRuntime } from "./heatmapRuntime.js?v=20260211-2";
+import { initializeLineRuntime } from "./lineRuntime.js?v=20260215-8";
+import { initializeHeatmapRuntime } from "./heatmapRuntime.js?v=20260215-8";
+function isMobileWidth() {
+  return window.innerWidth <= 1024;
+}
+
 export function bindViewerPanelEvents(root, actions) {
   clearViewerRuntimeBindings();
+
+  /* ── Sidebar collapse toggle (mobile) ── */
+  root.querySelectorAll("[data-sidebar-toggle]").forEach((btn) => {
+    const sidebar = btn.closest(".preview-sidebar");
+    if (!sidebar) return;
+    /* auto-collapse on mobile */
+    if (isMobileWidth()) {
+      sidebar.classList.add("collapsed");
+    }
+    btn.addEventListener("click", () => {
+      sidebar.classList.toggle("collapsed");
+    });
+  });
 
   root.querySelectorAll("[data-axis-change]").forEach((button) => {
     button.addEventListener("click", () => {
@@ -57,6 +74,12 @@ export function bindViewerPanelEvents(root, actions) {
 
   root.querySelectorAll("[data-line-enable]").forEach((button) => {
     button.addEventListener("click", () => {
+      /* auto-collapse dimension sidebar on mobile when loading full chart */
+      if (isMobileWidth()) {
+        root.querySelectorAll(".preview-sidebar").forEach((sb) => {
+          sb.classList.add("collapsed");
+        });
+      }
       actions.enableLineFullView();
     });
   });

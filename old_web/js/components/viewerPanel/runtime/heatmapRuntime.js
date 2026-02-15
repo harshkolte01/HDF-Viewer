@@ -90,6 +90,50 @@ function buildTicks(size, count = 6) {
   return Array.from(ticks).sort((a, b) => a - b);
 }
 
+/**
+ * Build tick marks for the currently visible viewport portion of an axis.
+ * @param {number} totalSize  Total number of cells on this axis (rows or cols)
+ * @param {number} panOffset  runtime.panX or runtime.panY (negative when panned)
+ * @param {number} zoom       runtime.zoom
+ * @param {number} chartSpan  layout.chartWidth or layout.chartHeight
+ * @param {number} count      desired number of ticks
+ * @returns {{dataIndex: number, screenRatio: number}[]}  dataIndex = cell index, screenRatio = 0..1 position on chart axis
+ */
+function buildViewportTicks(totalSize, panOffset, zoom, chartSpan, count = 6) {
+  if (totalSize <= 0 || chartSpan <= 0) return [];
+  // visible data range in cell coordinates
+  const startCell = (-panOffset / (chartSpan * zoom)) * totalSize;
+  const visibleCells = totalSize / zoom;
+  const endCell = startCell + visibleCells;
+  // clamp to data bounds
+  const s = Math.max(0, startCell);
+  const e = Math.min(totalSize - 1, endCell);
+  if (s >= e) return [{ dataIndex: Math.round(s), screenRatio: 0.5 }];
+  // nice tick spacing
+  const span = e - s;
+  const raw = span / Math.max(1, count - 1);
+  const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  const candidates = [1, 2, 5, 10];
+  let step = mag;
+  for (const c of candidates) {
+    if (c * mag >= raw) { step = c * mag; break; }
+  }
+  step = Math.max(1, Math.round(step));
+  const first = Math.ceil(s / step) * step;
+  const ticks = [];
+  for (let v = first; v <= e; v += step) {
+    // screen position ratio (0..1) within the chart area
+    const ratio = totalSize <= 1 ? 0.5 : v / (totalSize - 1);
+    // screen position accounting for zoom + pan
+    const screenPos = ratio * chartSpan * zoom + panOffset;
+    const screenRatio = screenPos / chartSpan;
+    if (screenRatio >= -0.01 && screenRatio <= 1.01) {
+      ticks.push({ dataIndex: Math.round(v), screenRatio: clamp(screenRatio, 0, 1) });
+    }
+  }
+  return ticks;
+}
+
 function formatScaleValue(value) {
   if (!Number.isFinite(value)) {
     return "--";
@@ -161,6 +205,33 @@ function normalizeHeatmapGrid(data) {
   };
 }
 
+const LUT_SIZE = 256;
+const _lutCache = new Map();
+
+function buildColorLUT(colormap) {
+  const key = colormap;
+  if (_lutCache.has(key)) return _lutCache.get(key);
+
+  const stops = getColorStops(colormap);
+  // Flat Uint8Array: [R0,G0,B0, R1,G1,B1, ...] for 256 entries
+  const lut = new Uint8Array(LUT_SIZE * 3);
+  for (let i = 0; i < LUT_SIZE; i += 1) {
+    const ratio = i / (LUT_SIZE - 1);
+    const index = ratio * (stops.length - 1);
+    const lower = Math.floor(index);
+    const upper = Math.min(lower + 1, stops.length - 1);
+    const frac = index - lower;
+    const [r1, g1, b1] = stops[lower];
+    const [r2, g2, b2] = stops[upper];
+    const off = i * 3;
+    lut[off] = (r1 + (r2 - r1) * frac + 0.5) | 0;
+    lut[off + 1] = (g1 + (g2 - g1) * frac + 0.5) | 0;
+    lut[off + 2] = (b1 + (b2 - b1) * frac + 0.5) | 0;
+  }
+  _lutCache.set(key, lut);
+  return lut;
+}
+
 function createHeatmapBitmap(grid, min, max, colormap) {
   const surface = document.createElement("canvas");
   surface.width = grid.cols;
@@ -172,18 +243,24 @@ function createHeatmapBitmap(grid, min, max, colormap) {
 
   const imageData = context.createImageData(grid.cols, grid.rows);
   const pixels = imageData.data;
-  const stops = getColorStops(colormap);
+  const lut = buildColorLUT(colormap);
   const range = max - min || 1;
+  const scale = (LUT_SIZE - 1) / range;
+  const values = grid.values;
+  const len = values.length;
 
-  for (let index = 0; index < grid.values.length; index += 1) {
-    const value = grid.values[index];
-    const ratio = Number.isFinite(value) ? (value - min) / range : 0;
-    const [r, g, b] = interpolateColor(stops, ratio);
-    const offset = index * 4;
-    pixels[offset] = r;
-    pixels[offset + 1] = g;
-    pixels[offset + 2] = b;
-    pixels[offset + 3] = 255;
+  for (let i = 0; i < len; i += 1) {
+    const v = values[i];
+    // LUT index: clamp 0..255
+    const lutIdx = Number.isFinite(v)
+      ? Math.max(0, Math.min(LUT_SIZE - 1, ((v - min) * scale + 0.5) | 0))
+      : 0;
+    const lutOff = lutIdx * 3;
+    const pOff = i << 2;           // i * 4
+    pixels[pOff] = lut[lutOff];
+    pixels[pOff + 1] = lut[lutOff + 1];
+    pixels[pOff + 2] = lut[lutOff + 2];
+    pixels[pOff + 3] = 255;
   }
 
   context.putImageData(imageData, 0, 0);
@@ -227,6 +304,9 @@ function initializeHeatmapRuntime(shell) {
   const canvas = shell.querySelector("[data-heatmap-surface]");
   const tooltip = shell.querySelector("[data-heatmap-hover]");
   const panToggleButton = shell.querySelector("[data-heatmap-pan-toggle]");
+  const zoomInButton = shell.querySelector("[data-heatmap-zoom-in]");
+  const zoomOutButton = shell.querySelector("[data-heatmap-zoom-out]");
+  const resetButton = shell.querySelector("[data-heatmap-reset-view]");
   const fullscreenButton = shell.querySelector("[data-heatmap-fullscreen-toggle]");
   const zoomLabel = shell.querySelector("[data-heatmap-zoom-label]");
   const rangeLabel = shell.querySelector("[data-heatmap-range-label]");
@@ -337,12 +417,31 @@ function initializeHeatmapRuntime(shell) {
     }
   }
 
+  function applyFullscreenStyles(entering) {
+    if (entering) {
+      shell.style.position = "fixed";
+      shell.style.inset = "0";
+      shell.style.zIndex = "9999";
+      shell.style.width = "100vw";
+      shell.style.height = "100vh";
+      shell.style.borderRadius = "0";
+      shell.style.padding = "16px";
+      shell.style.boxSizing = "border-box";
+      shell.style.background = "var(--bg-primary, #F8FAFF)";
+      shell.style.overflow = "auto";
+      if (canvasHost) canvasHost.style.height = "calc(100vh - 170px)";
+    } else {
+      shell.style.cssText = "";
+      if (canvasHost) canvasHost.style.height = "";
+    }
+  }
+
   function syncFullscreenState() {
-    const isFullscreen = document.fullscreenElement === shell;
-    shell.classList.toggle("is-fullscreen", isFullscreen);
+    const isFullscreen = shell.classList.contains("is-fullscreen");
     if (fullscreenButton) {
       fullscreenButton.textContent = isFullscreen ? "Exit Fullscreen" : "Fullscreen";
     }
+    applyFullscreenStyles(isFullscreen);
   }
 
   function hideTooltip() {
@@ -454,18 +553,27 @@ function initializeHeatmapRuntime(shell) {
     context.font = "600 10px 'Segoe UI', Arial, sans-serif";
     context.fillStyle = "#475569";
     context.textAlign = "center";
-    const xTicks = buildTicks(runtime.cols);
-    const yTicks = buildTicks(runtime.rows);
-    xTicks.forEach((col) => {
-      const ratio = runtime.cols <= 1 ? 0.5 : col / (runtime.cols - 1);
-      const x = layout.chartX + ratio * layout.chartWidth;
-      context.fillText(String(col), x, layout.chartY + layout.chartHeight + 14);
+    // Viewport-aware axis ticks — update as user zooms/pans
+    const xTicks = runtime.zoom > 1
+      ? buildViewportTicks(runtime.cols, runtime.panX, runtime.zoom, layout.chartWidth)
+      : buildTicks(runtime.cols).map((col) => ({
+          dataIndex: col,
+          screenRatio: runtime.cols <= 1 ? 0.5 : col / (runtime.cols - 1),
+        }));
+    const yTicks = runtime.zoom > 1
+      ? buildViewportTicks(runtime.rows, runtime.panY, runtime.zoom, layout.chartHeight)
+      : buildTicks(runtime.rows).map((row) => ({
+          dataIndex: row,
+          screenRatio: runtime.rows <= 1 ? 0.5 : row / (runtime.rows - 1),
+        }));
+    xTicks.forEach((tick) => {
+      const x = layout.chartX + tick.screenRatio * layout.chartWidth;
+      context.fillText(String(tick.dataIndex), x, layout.chartY + layout.chartHeight + 14);
     });
     context.textAlign = "right";
-    yTicks.forEach((row) => {
-      const ratio = runtime.rows <= 1 ? 0.5 : row / (runtime.rows - 1);
-      const y = layout.chartY + ratio * layout.chartHeight + 3;
-      const yLabel = toDisplayRow(runtime.rows, row);
+    yTicks.forEach((tick) => {
+      const y = layout.chartY + tick.screenRatio * layout.chartHeight + 3;
+      const yLabel = toDisplayRow(runtime.rows, tick.dataIndex);
       context.fillText(String(yLabel), layout.chartX - 8, y);
     });
 
@@ -698,7 +806,19 @@ function initializeHeatmapRuntime(shell) {
   }
 
   async function loadHighResHeatmap() {
-    await fetchHeatmapAtSize(HEATMAP_MAX_SIZE, "Loading high-res heatmap...");
+    // Progressive loading: fast preview first (256), then full resolution (1024)
+    const PREVIEW_SIZE = 256;
+    const previewResult = await fetchHeatmapAtSize(PREVIEW_SIZE, "Loading heatmap preview...");
+    if (runtime.destroyed) return;
+    if (previewResult.loaded && HEATMAP_MAX_SIZE > PREVIEW_SIZE) {
+      // Small delay so the user sees the preview before the full load starts
+      await new Promise((r) => setTimeout(r, 50));
+      if (runtime.destroyed) return;
+      await fetchHeatmapAtSize(HEATMAP_MAX_SIZE, "Loading full resolution...");
+    } else if (!previewResult.loaded) {
+      // Fallback: try full size directly
+      await fetchHeatmapAtSize(HEATMAP_MAX_SIZE, "Loading high-res heatmap...");
+    }
   }
 
   function cancelInFlightRequests() {
@@ -810,53 +930,23 @@ function initializeHeatmapRuntime(shell) {
     applyZoom(runtime.zoom / 1.15);
   }
 
-  async function onToggleFullscreen() {
-    try {
-      if (document.fullscreenElement === shell) {
-        await document.exitFullscreen();
-      } else if (!document.fullscreenElement && shell.requestFullscreen) {
-        await shell.requestFullscreen();
-      } else if (document.fullscreenElement) {
-        await document.exitFullscreen();
-      }
-    } catch (_error) {
-      // ignore fullscreen errors on restricted contexts
-    }
-  }
-
-  const onFullscreenChange = () => {
+  function onToggleFullscreen() {
+    shell.classList.toggle("is-fullscreen");
     syncFullscreenState();
     renderHeatmap();
-  };
+  }
 
-  function onToolbarClick(event) {
-    if (!(event.target instanceof Element)) {
-      return;
-    }
-    const button = event.target.closest("button");
-    if (!button) {
-      return;
-    }
-    if (button.matches("[data-heatmap-pan-toggle]")) {
-      onTogglePan();
-      return;
-    }
-    if (button.matches("[data-heatmap-zoom-in]")) {
-      onZoomIn();
-      return;
-    }
-    if (button.matches("[data-heatmap-zoom-out]")) {
-      onZoomOut();
-      return;
-    }
-    if (button.matches("[data-heatmap-reset-view]")) {
-      onResetView();
-      return;
-    }
-    if (button.matches("[data-heatmap-fullscreen-toggle]")) {
-      void onToggleFullscreen();
+  function onFullscreenEsc(event) {
+    if (event.key === "Escape" && shell.classList.contains("is-fullscreen")) {
+      event.preventDefault();
+      event.stopPropagation();
+      shell.classList.remove("is-fullscreen");
+      syncFullscreenState();
+      renderHeatmap();
     }
   }
+
+  const onFullscreenClick = () => onToggleFullscreen();
 
   setPanState();
   syncFullscreenState();
@@ -870,8 +960,12 @@ function initializeHeatmapRuntime(shell) {
   canvas.addEventListener("pointerup", stopPan);
   canvas.addEventListener("pointercancel", stopPan);
   canvas.addEventListener("pointerleave", onPointerLeave);
-  shell.addEventListener("click", onToolbarClick);
-  document.addEventListener("fullscreenchange", onFullscreenChange);
+  if (panToggleButton) panToggleButton.addEventListener("click", onTogglePan);
+  if (zoomInButton) zoomInButton.addEventListener("click", onZoomIn);
+  if (zoomOutButton) zoomOutButton.addEventListener("click", onZoomOut);
+  if (resetButton) resetButton.addEventListener("click", onResetView);
+  if (fullscreenButton) fullscreenButton.addEventListener("click", onFullscreenClick);
+  document.addEventListener("keydown", onFullscreenEsc);
 
   let resizeObserver = null;
   const onWindowResize = () => {
@@ -893,8 +987,15 @@ function initializeHeatmapRuntime(shell) {
     canvas.removeEventListener("pointerup", stopPan);
     canvas.removeEventListener("pointercancel", stopPan);
     canvas.removeEventListener("pointerleave", onPointerLeave);
-    shell.removeEventListener("click", onToolbarClick);
-    document.removeEventListener("fullscreenchange", onFullscreenChange);
+    if (panToggleButton) panToggleButton.removeEventListener("click", onTogglePan);
+    if (zoomInButton) zoomInButton.removeEventListener("click", onZoomIn);
+    if (zoomOutButton) zoomOutButton.removeEventListener("click", onZoomOut);
+    if (resetButton) resetButton.removeEventListener("click", onResetView);
+    if (fullscreenButton) fullscreenButton.removeEventListener("click", onFullscreenClick);
+    document.removeEventListener("keydown", onFullscreenEsc);
+    shell.classList.remove("is-fullscreen");
+    shell.style.cssText = "";
+    if (canvasHost) canvasHost.style.height = "";
     if (resizeObserver) {
       resizeObserver.disconnect();
     } else {
