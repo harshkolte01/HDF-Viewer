@@ -685,12 +685,20 @@
     display: inline-flex;
   }
 
-  /* Drawer behaviour */
-  .viewer-page {
+  /* Drawer behaviour — single column, sidebar becomes fixed overlay */
+  .viewer-page,
+  .viewer-page.sidebar-collapsed,
+  .viewer-page.sidebar-open {
     grid-template-columns: 1fr;
-    height: auto;
-    min-height: 100dvh;
-    overflow: visible;
+    height: 100vh;
+    height: 100dvh;
+    overflow: hidden;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  .viewer-main {
+    overflow-y: auto;
+    overflow-x: hidden;
   }
 
   .viewer-page > .viewer-sidebar {
@@ -703,9 +711,12 @@
     z-index: 200;
     transform: translateX(-100%);
     transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    will-change: transform;
     border-right: 1px solid var(--border);
     box-shadow: var(--shadow-xl);
     overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
   }
 
   .viewer-page.sidebar-open > .viewer-sidebar {
@@ -733,6 +744,8 @@
   .viewer-topbar {
     flex-direction: row;
     align-items: center;
+    padding-left: max(var(--spacing-md), env(safe-area-inset-left));
+    padding-right: max(var(--spacing-md), env(safe-area-inset-right));
   }
 }
 
@@ -742,6 +755,8 @@
 @media (max-width: 768px) {
   .viewer-topbar {
     padding: var(--spacing-sm) var(--spacing-md);
+    padding-left: max(var(--spacing-sm), env(safe-area-inset-left));
+    padding-right: max(var(--spacing-sm), env(safe-area-inset-right));
     gap: var(--spacing-sm);
   }
 
@@ -816,6 +831,42 @@
 
   .viewer-page > .viewer-sidebar {
     width: min(var(--sidebar-width), 85vw);
+  }
+}
+
+/* ═══════════════════════════════════════════
+   RESPONSIVE — landscape short viewports
+   ═══════════════════════════════════════════ */
+@media (max-height: 500px) and (max-width: 1024px) {
+  .viewer-topbar {
+    padding-top: var(--spacing-xs);
+    padding-bottom: var(--spacing-xs);
+  }
+
+  .viewer-subbar {
+    padding-top: var(--spacing-xs);
+    padding-bottom: var(--spacing-xs);
+    gap: var(--spacing-xs);
+  }
+
+  .breadcrumb {
+    max-height: 1.6em;
+    overflow: hidden;
+  }
+
+  .seg-btn {
+    padding: 0.25rem 0.45rem;
+    font-size: 0.72rem;
+  }
+
+  .ghost-btn {
+    padding: 0.25rem 0.45rem;
+    font-size: 0.72rem;
+  }
+
+  .subbar-tab {
+    padding: 0.2rem 0.5rem;
+    font-size: 0.7rem;
   }
 }
 

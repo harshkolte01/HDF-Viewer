@@ -1005,6 +1005,16 @@
 
     .preview-shell.preview-shell-line-fixed {
         height: auto;
+        max-height: calc(100dvh - 120px);
+        overflow-y: auto;
+    }
+
+    .line-chart-shell-full {
+        min-height: clamp(200px, 35vh, 350px);
+    }
+
+    .line-chart-shell-full .line-chart-canvas {
+        height: clamp(180px, 35vh, 380px);
     }
 
     .preview-sidebar {
@@ -1027,6 +1037,7 @@
 
     .panel-canvas.panel-canvas-line-fixed {
         overflow-y: auto;
+        max-height: calc(100dvh - 100px);
     }
 
     .info-row {
@@ -1101,6 +1112,10 @@
     .line-chart-toolbar {
         flex-direction: column;
         gap: var(--spacing-xs);
+    }
+
+    .line-chart-shell-full .line-chart-canvas {
+        height: clamp(160px, 30vh, 320px);
     }
 }
 
