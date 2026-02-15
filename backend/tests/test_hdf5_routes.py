@@ -237,11 +237,7 @@ class Hdf5RoutesTestCase(unittest.TestCase):
 
     def test_preview_invalid_display_dims_returns_400(self):
         reader = Mock()
-        reader.get_dataset_info.return_value = {
-            'shape': [10, 20, 30],
-            'ndim': 3,
-            'dtype': 'float32'
-        }
+        reader.get_preview.side_effect = ValueError("display_dims must include two distinct dims")
         minio = Mock()
         minio.get_object_metadata.return_value = {'etag': 'etag-1'}
 
@@ -260,7 +256,7 @@ class Hdf5RoutesTestCase(unittest.TestCase):
 
     def test_preview_not_found_returns_404(self):
         reader = Mock()
-        reader.get_dataset_info.side_effect = ValueError("Path '/missing' not found in 'sample.h5'")
+        reader.get_preview.side_effect = ValueError("Path '/missing' not found in 'sample.h5'")
         minio = Mock()
         minio.get_object_metadata.return_value = {'etag': 'etag-1'}
 
@@ -351,7 +347,7 @@ class Hdf5RoutesTestCase(unittest.TestCase):
         self.assertFalse(payload['cached'])
         self.assertEqual(payload['cache_version'], 'ttl')
 
-        reader.get_dataset_info.assert_called_once()
+        reader.get_dataset_info.assert_not_called()
         reader.get_preview.assert_called_once()
         _, kwargs = reader.get_preview.call_args
         self.assertEqual(kwargs['detail'], 'full')

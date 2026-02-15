@@ -101,6 +101,8 @@ class HDF5Reader:
         path: str,
         display_dims: Optional[Tuple[int, int]] = None,
         fixed_indices: Optional[Dict[int, int]] = None,
+        display_dims_param: Optional[str] = None,
+        fixed_indices_param: Optional[str] = None,
         mode: str = 'auto',
         max_size: Optional[int] = None,
         include_stats: bool = True,
@@ -171,8 +173,8 @@ class HDF5Reader:
                         if display_dims is None or fixed_indices is None:
                             display_dims, fixed_indices = self.normalize_preview_axes(
                                 shape,
-                                None,
-                                None
+                                display_dims_param,
+                                fixed_indices_param
                             )
 
                         max_heatmap_size = min(max_size or MAX_HEATMAP_SIZE, MAX_HEATMAP_SIZE)

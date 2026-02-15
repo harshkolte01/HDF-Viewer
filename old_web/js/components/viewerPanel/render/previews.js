@@ -314,6 +314,42 @@ function getHeatmapRows(preview) {
   return [];
 }
 
+const HEATMAP_PREVIEW_MAX_ROWS = 48;
+const HEATMAP_PREVIEW_MAX_COLS = 48;
+
+function buildSampledHeatmapRows(rawRows, maxRows = HEATMAP_PREVIEW_MAX_ROWS, maxCols = HEATMAP_PREVIEW_MAX_COLS) {
+  const sourceRows = Array.isArray(rawRows) ? rawRows.filter((row) => Array.isArray(row)) : [];
+  if (!sourceRows.length) {
+    return [];
+  }
+
+  const sourceRowCount = sourceRows.length;
+  const sourceColCount = sourceRows.reduce(
+    (maxCount, row) => Math.max(maxCount, Array.isArray(row) ? row.length : 0),
+    0
+  );
+  if (!sourceColCount) {
+    return [];
+  }
+
+  const rowStep = Math.max(1, Math.ceil(sourceRowCount / maxRows));
+  const colStep = Math.max(1, Math.ceil(sourceColCount / maxCols));
+  const sampledRows = [];
+
+  for (let rowIndex = 0; rowIndex < sourceRowCount && sampledRows.length < maxRows; rowIndex += rowStep) {
+    const sourceRow = sourceRows[rowIndex] || [];
+    const sampledRow = [];
+
+    for (let colIndex = 0; colIndex < sourceColCount && sampledRow.length < maxCols; colIndex += colStep) {
+      sampledRow.push(colIndex < sourceRow.length ? sourceRow[colIndex] : null);
+    }
+
+    sampledRows.push(sampledRow);
+  }
+
+  return sampledRows;
+}
+
 const HEATMAP_PREVIEW_COLOR_STOPS = Object.freeze({
   viridis: [
     [68, 1, 84],
@@ -422,10 +458,7 @@ function renderHeatmapPreview(preview, options = {}) {
   const colormap = options.heatmapColormap || "viridis";
   const showGrid = options.heatmapGrid !== false;
   const colorStops = getHeatColorStops(colormap);
-  const rawRows = getHeatmapRows(preview)
-    .filter((row) => Array.isArray(row))
-    .slice(0, 72)
-    .map((row) => row.slice(0, 72));
+  const rawRows = buildSampledHeatmapRows(getHeatmapRows(preview));
 
   if (!rawRows.length) {
     return '<div class="panel-state"><div class="state-text">No matrix preview is available for heatmap rendering.</div></div>';
@@ -444,16 +477,26 @@ function renderHeatmapPreview(preview, options = {}) {
     Array.from({ length: colCount }, (_, index) => (index < row.length ? row[index] : null))
   );
 
-  const values = normalizedRows
-    .flat()
-    .map((value) => Number(value))
-    .filter((value) => Number.isFinite(value));
-  if (!values.length) {
+  let min = Infinity;
+  let max = -Infinity;
+  let hasNumericValue = false;
+  for (let rowIndex = 0; rowIndex < rowCount; rowIndex += 1) {
+    const row = normalizedRows[rowIndex];
+    for (let colIndex = 0; colIndex < colCount; colIndex += 1) {
+      const numeric = Number(row[colIndex]);
+      if (!Number.isFinite(numeric)) {
+        continue;
+      }
+      hasNumericValue = true;
+      min = Math.min(min, numeric);
+      max = Math.max(max, numeric);
+    }
+  }
+
+  if (!hasNumericValue) {
     return '<div class="panel-state"><div class="state-text">Heatmap preview requires numeric values.</div></div>';
   }
 
-  const min = Math.min(...values);
-  const max = Math.max(...values);
   const width = 760;
   const height = 420;
   const paddingLeft = 46;
@@ -488,27 +531,22 @@ function renderHeatmapPreview(preview, options = {}) {
   const cellStrokeWidth = cellStroke === "none" ? 0 : 0.5;
   const cellRects = normalizedRows
     .map((row, rowIndex) => {
-      const displayRow = Math.max(0, rowCount - 1 - rowIndex);
       return row
         .map((value, colIndex) => {
           const numeric = Number(value);
           const fill = getHeatColor(numeric, min, max, colorStops);
           const x = chartX + colIndex * cellWidth;
           const y = chartY + rowIndex * cellHeight;
-          const label = Number.isFinite(numeric) ? formatCell(numeric) : "--";
           return `
-            <g>
-              <rect
-                x="${x.toFixed(3)}"
-                y="${y.toFixed(3)}"
-                width="${cellWidth.toFixed(3)}"
-                height="${cellHeight.toFixed(3)}"
-                fill="${fill}"
-                stroke="${cellStroke}"
-                stroke-width="${cellStrokeWidth}"
-              ></rect>
-              <title>Y ${displayRow}, X ${colIndex}: ${escapeHtml(label)}</title>
-            </g>
+            <rect
+              x="${x.toFixed(3)}"
+              y="${y.toFixed(3)}"
+              width="${cellWidth.toFixed(3)}"
+              height="${cellHeight.toFixed(3)}"
+              fill="${fill}"
+              stroke="${cellStroke}"
+              stroke-width="${cellStrokeWidth}"
+            ></rect>
           `;
         })
         .join("");
@@ -537,7 +575,7 @@ function renderHeatmapPreview(preview, options = {}) {
     <div class="line-chart-shell heatmap-chart-shell heatmap-preview-chart-shell">
       <div class="line-chart-toolbar heatmap-chart-toolbar">
         <div class="line-tool-group">
-          <span class="line-tool-label">Preview</span>
+          <span class="line-tool-label">Preview (Sampled)</span>
         </div>
         <div class="line-tool-group">
           <span class="line-zoom-label">Grid: ${rowCount.toLocaleString()} x ${colCount.toLocaleString()}</span>

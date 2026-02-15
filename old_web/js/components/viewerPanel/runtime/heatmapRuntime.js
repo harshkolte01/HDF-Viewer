@@ -5,8 +5,6 @@ import { buildHeatmapSelectionKey } from "../render/config.js";
 import { HEATMAP_RUNTIME_CLEANUPS, setMatrixStatus } from "./common.js";
 
 const HEATMAP_MAX_SIZE = 1024;
-const HEATMAP_INITIAL_MAX_SIZE = 384;
-const HEATMAP_UPGRADE_DELAY_MS = 80;
 const HEATMAP_MIN_ZOOM = 1;
 const HEATMAP_MAX_ZOOM = 8;
 const HEATMAP_COLOR_STOPS = Object.freeze({
@@ -291,7 +289,6 @@ function initializeHeatmapRuntime(shell) {
     hover: null,
     hoverDisplayRow: null,
     activeCancelKeys: new Set(),
-    upgradeTimer: null,
     destroyed: false,
   };
 
@@ -685,11 +682,7 @@ function initializeHeatmapRuntime(shell) {
         statusText += ` Clamped to ${runtime.effectiveMaxSize}.`;
       }
       setMatrixStatus(statusElement, statusText, "info");
-      return {
-        loaded: true,
-        sampled: response?.sampled === true,
-        effectiveMaxSize: runtime.effectiveMaxSize,
-      };
+      return { loaded: true };
     } catch (error) {
       if (runtime.destroyed) {
         return { loaded: false };
@@ -704,30 +697,8 @@ function initializeHeatmapRuntime(shell) {
     }
   }
 
-  async function loadProgressiveHeatmap() {
-    const initialSize = Math.min(HEATMAP_INITIAL_MAX_SIZE, HEATMAP_MAX_SIZE);
-    const initialResult = await fetchHeatmapAtSize(initialSize, "Loading heatmap preview...");
-    if (!initialResult.loaded || runtime.destroyed || initialSize >= HEATMAP_MAX_SIZE) {
-      return;
-    }
-
-    const shouldUpgrade =
-      initialResult.sampled === true ||
-      Number(initialResult.effectiveMaxSize || 0) < HEATMAP_MAX_SIZE;
-    if (!shouldUpgrade) {
-      return;
-    }
-
-    if (runtime.upgradeTimer !== null) {
-      clearTimeout(runtime.upgradeTimer);
-    }
-    runtime.upgradeTimer = setTimeout(() => {
-      runtime.upgradeTimer = null;
-      if (runtime.destroyed) {
-        return;
-      }
-      void fetchHeatmapAtSize(HEATMAP_MAX_SIZE, "Refining heatmap...");
-    }, HEATMAP_UPGRADE_DELAY_MS);
+  async function loadHighResHeatmap() {
+    await fetchHeatmapAtSize(HEATMAP_MAX_SIZE, "Loading high-res heatmap...");
   }
 
   function cancelInFlightRequests() {
@@ -735,10 +706,6 @@ function initializeHeatmapRuntime(shell) {
       cancelPendingRequest(cancelKey, "heatmap-runtime-disposed");
     });
     runtime.activeCancelKeys.clear();
-    if (runtime.upgradeTimer !== null) {
-      clearTimeout(runtime.upgradeTimer);
-      runtime.upgradeTimer = null;
-    }
   }
 
   function onWheel(event) {
@@ -895,7 +862,7 @@ function initializeHeatmapRuntime(shell) {
   syncFullscreenState();
   updateLabels();
   renderHeatmap();
-  void loadProgressiveHeatmap();
+  void loadHighResHeatmap();
 
   canvas.addEventListener("wheel", onWheel, { passive: false });
   canvas.addEventListener("pointerdown", onPointerDown);

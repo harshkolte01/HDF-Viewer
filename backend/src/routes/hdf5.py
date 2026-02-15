@@ -401,26 +401,8 @@ def get_preview(key):
                 }), 400
 
         cache_version = _resolve_cache_version_tag()
-        reader = get_hdf5_reader()
-        dataset_info = _get_cached_dataset_info(reader, key, hdf_path, cache_version)
-
-        shape = dataset_info['shape']
-        ndim = dataset_info['ndim']
-        preview_type = '1d' if ndim == 1 else '2d' if ndim == 2 else 'nd'
-
-        display_dims = None
-        fixed_indices = {}
-        if ndim > 1:
-            display_dims, fixed_indices = _normalize_selection(
-                shape,
-                display_dims_param,
-                fixed_indices_param
-            )
-
-        display_dims_key = ','.join(str(dim) for dim in display_dims) if display_dims else 'none'
-        fixed_indices_key = ','.join(
-            f"{dim}={idx}" for dim, idx in sorted((fixed_indices or {}).items())
-        ) or 'none'
+        display_dims_key = str(display_dims_param or '').strip() or 'none'
+        fixed_indices_key = str(fixed_indices_param or '').strip() or 'none'
         max_size_key = max_size if max_size is not None else 'default'
 
         cache = get_hdf5_cache()
@@ -429,7 +411,6 @@ def get_preview(key):
             key,
             cache_version,
             hdf_path,
-            preview_type,
             display_dims_key,
             fixed_indices_key,
             max_size_key,
@@ -450,11 +431,12 @@ def get_preview(key):
             return jsonify(response), 200
 
         logger.info(f"HDF5 preview requested for '{key}' at '{hdf_path}' - CACHE MISS")
+        reader = get_hdf5_reader()
         preview = reader.get_preview(
             key,
             hdf_path,
-            display_dims=display_dims,
-            fixed_indices=fixed_indices,
+            display_dims_param=display_dims_param,
+            fixed_indices_param=fixed_indices_param,
             mode=mode,
             max_size=max_size,
             include_stats=include_stats,
