@@ -1,2 +1,2 @@
-export { bindViewerPanelEvents } from "./runtime/bindEvents.js?v=20260220-2";
+export { bindViewerPanelEvents } from "./runtime/bindEvents.js?v=20260220-3";
 

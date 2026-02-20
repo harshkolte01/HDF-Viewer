@@ -251,6 +251,16 @@ function initializeLineRuntime(shell) {
     }
   }
 
+  function clearTextSelection() {
+    if (typeof window === "undefined" || typeof window.getSelection !== "function") {
+      return;
+    }
+    const selection = window.getSelection();
+    if (selection && selection.rangeCount > 0) {
+      selection.removeAllRanges();
+    }
+  }
+
   function syncPanState() {
     canvas.classList.toggle("is-pan", runtime.panEnabled);
     canvas.classList.toggle("is-grabbing", runtime.isPanning);
@@ -658,6 +668,8 @@ function initializeLineRuntime(shell) {
       return;
     }
 
+    event.preventDefault();
+    clearTextSelection();
     runtime.isPanning = true;
     runtime.panPointerId = event.pointerId;
     runtime.panStartX = event.clientX;
@@ -668,6 +680,8 @@ function initializeLineRuntime(shell) {
 
   function onPointerMove(event) {
     if (runtime.panEnabled && runtime.isPanning && runtime.panPointerId === event.pointerId) {
+      event.preventDefault();
+      clearTextSelection();
       const rect = canvas.getBoundingClientRect();
       const deltaPixels = event.clientX - runtime.panStartX;
       const deltaIndex = Math.round((deltaPixels / Math.max(rect.width, 1)) * runtime.viewSpan);
@@ -750,6 +764,9 @@ function initializeLineRuntime(shell) {
     runtime.panEnabled = !runtime.panEnabled;
     if (!runtime.panEnabled && runtime.isPanning) {
       endPan();
+    }
+    if (runtime.panEnabled) {
+      clearTextSelection();
     }
     syncPanState();
     persistViewState();

@@ -891,8 +891,20 @@
     cursor: grab;
 }
 
+.line-chart-canvas.is-pan,
+.line-chart-canvas.is-pan * {
+    user-select: none;
+    -webkit-user-select: none;
+}
+
 .line-chart-canvas.is-grabbing {
     cursor: grabbing;
+}
+
+.line-chart-canvas.is-grabbing,
+.line-chart-canvas.is-grabbing * {
+    user-select: none;
+    -webkit-user-select: none;
 }
 
 .line-chart-bg {
