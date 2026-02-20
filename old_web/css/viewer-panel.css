@@ -717,21 +717,33 @@
     cursor: crosshair;
 }
 
+body.line-panel-fullscreen-active {
+    overflow: hidden;
+}
+
 .line-chart-shell.is-fullscreen {
     position: fixed;
     inset: 0;
-    z-index: 9999;
-    width: 100vw;
-    height: 100vh;
+    z-index: 1500;
+    width: auto;
+    height: auto;
+    min-height: 0;
     border-radius: 0;
     padding: var(--spacing-lg);
     box-sizing: border-box;
     background: var(--bg-primary);
-    overflow: auto;
+    box-shadow: var(--shadow-xl);
+    overflow: hidden;
+}
+
+.line-chart-shell.is-fullscreen .line-chart-stage {
+    flex: 1;
+    min-height: 0;
 }
 
 .line-chart-shell.is-fullscreen .line-chart-canvas {
-    height: calc(100vh - 160px);
+    height: 100%;
+    min-height: 0;
 }
 
 .line-chart-shell.is-fullscreen .heatmap-chart-canvas {

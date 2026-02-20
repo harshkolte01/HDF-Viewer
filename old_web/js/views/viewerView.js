@@ -1,6 +1,6 @@
 import { escapeHtml } from "../utils/format.js";
 import { renderSidebarTree, bindSidebarTreeEvents } from "../components/sidebarTree.js";
-import { renderViewerPanel, bindViewerPanelEvents } from "../components/viewerPanel.js?v=20260220-3";
+import { renderViewerPanel, bindViewerPanelEvents } from "../components/viewerPanel.js?v=20260220-7";
 import { loadTemplate, applyTemplate } from "../utils/templateLoader.js";
 
 const VIEWER_TEMPLATE_FALLBACK = `
@@ -246,8 +246,11 @@ export function bindViewerViewEvents(root, actions) {
   const globalFsBtn = root.querySelector("#viewer-fullscreen-btn");
   if (globalFsBtn) {
     const viewerPage = root.querySelector(".viewer-page") || root.closest(".viewer-page");
+    const fullscreenTarget = viewerPage || document.documentElement;
+    const isViewerFullscreen = () => document.fullscreenElement === fullscreenTarget;
+
     const updateGlobalFsLabel = () => {
-      const isFs = !!document.fullscreenElement;
+      const isFs = isViewerFullscreen();
       const label = globalFsBtn.querySelector(".btn-label");
       if (label) label.textContent = isFs ? "Exit Fullscreen" : "Fullscreen";
       globalFsBtn.title = isFs ? "Exit fullscreen" : "Toggle fullscreen";
@@ -261,11 +264,17 @@ export function bindViewerViewEvents(root, actions) {
     };
     const onGlobalFsClick = async () => {
       try {
-        const target = viewerPage || document.documentElement;
+        if (isViewerFullscreen()) {
+          await document.exitFullscreen();
+          return;
+        }
+
         if (document.fullscreenElement) {
           await document.exitFullscreen();
-        } else if (target.requestFullscreen) {
-          await target.requestFullscreen();
+        }
+
+        if (fullscreenTarget.requestFullscreen) {
+          await fullscreenTarget.requestFullscreen();
         }
       } catch (_e) { /* ignore */ }
     };

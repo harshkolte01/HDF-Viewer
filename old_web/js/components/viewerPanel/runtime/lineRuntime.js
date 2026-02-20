@@ -18,6 +18,29 @@ import {
 } from "../shared.js";
 import { buildLineSelectionKey } from "../render/config.js";
 import { LINE_RUNTIME_CLEANUPS, setMatrixStatus } from "./common.js";
+
+const LINE_FULLSCREEN_RESTORE_TTL_MS = 1200;
+let lineFullscreenRestore = null;
+
+function rememberLineFullscreen(selectionKey) {
+  if (!selectionKey) {
+    lineFullscreenRestore = null;
+    return;
+  }
+  lineFullscreenRestore = {
+    key: selectionKey,
+    expiresAt: Date.now() + LINE_FULLSCREEN_RESTORE_TTL_MS,
+  };
+}
+
+function consumeLineFullscreenRestore(selectionKey) {
+  if (!lineFullscreenRestore || !selectionKey) {
+    return false;
+  }
+  const { key, expiresAt } = lineFullscreenRestore;
+  lineFullscreenRestore = null;
+  return key === selectionKey && Date.now() <= expiresAt;
+}
 function initializeLineRuntime(shell) {
   if (!shell || shell.dataset.lineBound === "true") {
     return;
@@ -115,7 +138,12 @@ function initializeLineRuntime(shell) {
     points: [],
     frame: null,
     hoverDot: null,
+    fullscreenActive: false,
   };
+
+  if (consumeLineFullscreenRestore(selectionKey)) {
+    runtime.fullscreenActive = true;
+  }
 
   function getMaxSpanForQuality() {
     if (runtime.qualityRequested === "exact") {
@@ -270,31 +298,29 @@ function initializeLineRuntime(shell) {
     }
   }
 
-  function applyFullscreenStyles(entering) {
-    if (entering) {
-      shell.style.position = "fixed";
-      shell.style.inset = "0";
-      shell.style.zIndex = "9999";
-      shell.style.width = "100vw";
-      shell.style.height = "100vh";
-      shell.style.borderRadius = "0";
-      shell.style.padding = "16px";
-      shell.style.boxSizing = "border-box";
-      shell.style.background = "var(--bg-primary, #F8FAFF)";
-      shell.style.overflow = "auto";
-      canvas.style.height = "calc(100vh - 160px)";
-    } else {
-      shell.style.cssText = "";
-      canvas.style.height = "";
+  function setDocumentFullscreenLock(locked) {
+    if (typeof document === "undefined" || !document.body) {
+      return;
+    }
+    document.body.classList.toggle("line-panel-fullscreen-active", locked);
+  }
+
+  function rerenderAfterFullscreenChange() {
+    if (runtime.destroyed) {
+      return;
+    }
+    if (runtime.points && runtime.points.length >= 2) {
+      requestAnimationFrame(() => renderSeries(runtime.points));
     }
   }
 
   function syncFullscreenState() {
-    const isFullscreen = shell.classList.contains("is-fullscreen");
+    const isFullscreen = runtime.fullscreenActive;
+    shell.classList.toggle("is-fullscreen", isFullscreen);
     if (fullscreenButton) {
       fullscreenButton.textContent = isFullscreen ? "Exit Fullscreen" : "Fullscreen";
     }
-    applyFullscreenStyles(isFullscreen);
+    setDocumentFullscreenLock(isFullscreen);
   }
 
   function updateStats(minValue, maxValue) {
@@ -892,25 +918,42 @@ function initializeLineRuntime(shell) {
   };
 
   function onToggleFullscreen() {
-    shell.classList.toggle("is-fullscreen");
-    syncFullscreenState();
-    /* re-render chart at new size */
-    if (runtime.points && runtime.points.length >= 2) {
-      requestAnimationFrame(() => renderSeries(runtime.points));
+    runtime.fullscreenActive = !runtime.fullscreenActive;
+    if (!runtime.fullscreenActive) {
+      lineFullscreenRestore = null;
     }
+    syncFullscreenState();
+    rerenderAfterFullscreenChange();
   }
 
   function onFullscreenEsc(event) {
-    if (event.key === "Escape" && shell.classList.contains("is-fullscreen")) {
+    if (event.key === "Escape" && runtime.fullscreenActive) {
       event.preventDefault();
       event.stopPropagation();
-      shell.classList.remove("is-fullscreen");
+      runtime.fullscreenActive = false;
+      lineFullscreenRestore = null;
       syncFullscreenState();
-      if (runtime.points && runtime.points.length >= 2) {
-        requestAnimationFrame(() => renderSeries(runtime.points));
-      }
+      rerenderAfterFullscreenChange();
     }
   }
+
+  function exitPanelFullscreen() {
+    if (!runtime.fullscreenActive) {
+      return;
+    }
+    runtime.fullscreenActive = false;
+    syncFullscreenState();
+    rerenderAfterFullscreenChange();
+  }
+
+  const onFullscreenButtonClick = (event) => {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+    }
+    onToggleFullscreen();
+  };
 
   if (hoverElement) {
     hoverElement.hidden = true;
@@ -971,7 +1014,7 @@ function initializeLineRuntime(shell) {
     jumpInput.addEventListener("keydown", onJumpInputKeyDown);
   }
   if (fullscreenButton) {
-    fullscreenButton.addEventListener("click", onToggleFullscreen);
+    fullscreenButton.addEventListener("click", onFullscreenButtonClick);
   }
   document.addEventListener("keydown", onFullscreenEsc);
 
@@ -1045,12 +1088,16 @@ function initializeLineRuntime(shell) {
       jumpInput.removeEventListener("keydown", onJumpInputKeyDown);
     }
     if (fullscreenButton) {
-      fullscreenButton.removeEventListener("click", onToggleFullscreen);
+      fullscreenButton.removeEventListener("click", onFullscreenButtonClick);
     }
     document.removeEventListener("keydown", onFullscreenEsc);
+    if (runtime.fullscreenActive) {
+      rememberLineFullscreen(runtime.selectionKey);
+    }
+    exitPanelFullscreen();
+    runtime.fullscreenActive = false;
+    setDocumentFullscreenLock(false);
     shell.classList.remove("is-fullscreen");
-    shell.style.cssText = "";
-    canvas.style.height = "";
   };
 
   LINE_RUNTIME_CLEANUPS.add(cleanup);
