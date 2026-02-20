@@ -1,6 +1,6 @@
 import { escapeHtml } from "../utils/format.js";
 import { renderSidebarTree, bindSidebarTreeEvents } from "../components/sidebarTree.js";
-import { renderViewerPanel, bindViewerPanelEvents } from "../components/viewerPanel.js?v=20260215-8";
+import { renderViewerPanel, bindViewerPanelEvents } from "../components/viewerPanel.js?v=20260220-2";
 import { loadTemplate, applyTemplate } from "../utils/templateLoader.js";
 
 const VIEWER_TEMPLATE_FALLBACK = `
@@ -242,7 +242,7 @@ export function bindViewerViewEvents(root, actions) {
     backButton.addEventListener("click", actions.goHome);
   }
 
-  /* Global fullscreen — fullscreens the entire viewer page */
+  /* Global fullscreen â€” fullscreens the entire viewer page */
   const globalFsBtn = root.querySelector("#viewer-fullscreen-btn");
   if (globalFsBtn) {
     const viewerPage = root.querySelector(".viewer-page") || root.closest(".viewer-page");
@@ -324,3 +324,4 @@ export function bindViewerViewEvents(root, actions) {
   bindSidebarTreeEvents(root, actions);
   bindViewerPanelEvents(root, actions);
 }
+

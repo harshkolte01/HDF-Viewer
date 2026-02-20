@@ -10,7 +10,7 @@ import {
   initViewerViewTemplate,
   renderViewerView,
   bindViewerViewEvents,
-} from "./views/viewerView.js?v=20260215-8";
+} from "./views/viewerView.js?v=20260220-2";
 
 const root = document.getElementById("app-root");
 let renderQueued = false;
@@ -78,3 +78,4 @@ async function bootstrapApp() {
 }
 
 void bootstrapApp();
+

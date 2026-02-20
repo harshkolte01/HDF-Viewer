@@ -875,7 +875,15 @@
     cursor: grab;
 }
 
+.heatmap-chart-canvas.is-pan .heatmap-canvas {
+    cursor: grab;
+}
+
 .heatmap-chart-canvas.is-grabbing {
+    cursor: grabbing;
+}
+
+.heatmap-chart-canvas.is-grabbing .heatmap-canvas {
     cursor: grabbing;
 }
 
@@ -981,7 +989,7 @@
     border: 1px solid var(--border);
     background: var(--surface);
     box-shadow: var(--shadow-sm);
-    cursor: crosshair;
+    cursor: inherit;
 }
 
 /* ── Sidebar collapse toggle (mobile-only) ── */

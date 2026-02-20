@@ -1,7 +1,7 @@
 import { clearViewerRuntimeBindings } from "./common.js";
 import { initializeMatrixRuntime } from "./matrixRuntime.js";
 import { initializeLineRuntime } from "./lineRuntime.js?v=20260215-8";
-import { initializeHeatmapRuntime } from "./heatmapRuntime.js?v=20260215-8";
+import { initializeHeatmapRuntime } from "./heatmapRuntime.js?v=20260220-2";
 function isMobileWidth() {
   return window.innerWidth <= 1024;
 }
@@ -9,7 +9,7 @@ function isMobileWidth() {
 export function bindViewerPanelEvents(root, actions) {
   clearViewerRuntimeBindings();
 
-  /* ── Sidebar collapse toggle (mobile) ── */
+  /* â”€â”€ Sidebar collapse toggle (mobile) â”€â”€ */
   root.querySelectorAll("[data-sidebar-toggle]").forEach((btn) => {
     const sidebar = btn.closest(".preview-sidebar");
     if (!sidebar) return;
@@ -102,3 +102,4 @@ export function bindViewerPanelEvents(root, actions) {
     initializeHeatmapRuntime(shell);
   });
 }
+

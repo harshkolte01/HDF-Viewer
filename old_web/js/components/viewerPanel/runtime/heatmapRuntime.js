@@ -7,6 +7,10 @@ import { HEATMAP_RUNTIME_CLEANUPS, setMatrixStatus } from "./common.js";
 const HEATMAP_MAX_SIZE = 1024;
 const HEATMAP_MIN_ZOOM = 1;
 const HEATMAP_MAX_ZOOM = 8;
+const HEATMAP_PAN_START_ZOOM = 1.2;
+const HEATMAP_SELECTION_CACHE_LIMIT = 12;
+const HEATMAP_SELECTION_DATA_CACHE = new Map();
+const HEATMAP_SELECTION_VIEW_CACHE = new Map();
 const HEATMAP_COLOR_STOPS = Object.freeze({
   viridis: [
     [68, 1, 84],
@@ -328,6 +332,7 @@ function initializeHeatmapRuntime(shell) {
   const selectionKey =
     shell.dataset.heatmapSelectionKey ||
     buildHeatmapSelectionKey(fileKey, path, displayDims, fixedIndices);
+  const cacheKey = `${selectionKey}|${fileEtag || "no-etag"}`;
   const colormap = shell.dataset.heatmapColormap || "viridis";
   const showGrid = shell.dataset.heatmapGrid !== "0";
 
@@ -345,6 +350,7 @@ function initializeHeatmapRuntime(shell) {
     displayDims,
     fixedIndices,
     selectionKey,
+    cacheKey,
     colormap,
     showGrid,
     zoom: 1,
@@ -370,6 +376,7 @@ function initializeHeatmapRuntime(shell) {
     hoverDisplayRow: null,
     activeCancelKeys: new Set(),
     destroyed: false,
+    loadedPhase: "preview",
   };
 
   function updateLabels() {
@@ -396,6 +403,31 @@ function initializeHeatmapRuntime(shell) {
     }
   }
 
+  function persistViewState() {
+    HEATMAP_SELECTION_VIEW_CACHE.set(runtime.cacheKey, {
+      zoom: runtime.zoom,
+      panX: runtime.panX,
+      panY: runtime.panY,
+      panEnabled: runtime.panEnabled === true,
+    });
+    if (HEATMAP_SELECTION_VIEW_CACHE.size > HEATMAP_SELECTION_CACHE_LIMIT) {
+      const oldestKey = HEATMAP_SELECTION_VIEW_CACHE.keys().next().value;
+      if (oldestKey) {
+        HEATMAP_SELECTION_VIEW_CACHE.delete(oldestKey);
+      }
+    }
+  }
+
+  function buildLoadedStatusText(phase = runtime.loadedPhase) {
+    const prefix = phase === "highres" ? "High-res heatmap loaded" : "Preview heatmap loaded";
+    let statusText = `${prefix} (${runtime.rows.toLocaleString()} x ${runtime.cols.toLocaleString()}).`;
+    statusText += " Wheel to zoom. Use Hand to pan.";
+    if (runtime.maxSizeClamped && phase === "highres") {
+      statusText += ` Clamped to ${runtime.effectiveMaxSize}.`;
+    }
+    return statusText;
+  }
+
   function clampPanForZoom(panX, panY, zoomLevel = runtime.zoom) {
     const layout = runtime.layout;
     if (!layout || zoomLevel <= HEATMAP_MIN_ZOOM) {
@@ -409,9 +441,73 @@ function initializeHeatmapRuntime(shell) {
     };
   }
 
+  function restoreCachedHeatmapData() {
+    const cachedData = HEATMAP_SELECTION_DATA_CACHE.get(runtime.cacheKey);
+    if (!cachedData) {
+      return false;
+    }
+
+    const grid = {
+      rows: Math.max(0, Number(cachedData.rows) || 0),
+      cols: Math.max(0, Number(cachedData.cols) || 0),
+      values: cachedData.values,
+    };
+    if (!grid.rows || !grid.cols || !(grid.values instanceof Float64Array)) {
+      return false;
+    }
+
+    const cachedMin = Number(cachedData.min);
+    const cachedMax = Number(cachedData.max);
+    const min = Number.isFinite(cachedMin) ? cachedMin : 0;
+    const max = Number.isFinite(cachedMax) && cachedMax !== min ? cachedMax : min + 1;
+    const bitmap = createHeatmapBitmap(grid, min, max, runtime.colormap);
+    if (!bitmap) {
+      return false;
+    }
+
+    runtime.rows = grid.rows;
+    runtime.cols = grid.cols;
+    runtime.values = grid.values;
+    runtime.min = min;
+    runtime.max = max;
+    runtime.bitmap = bitmap;
+    runtime.maxSizeClamped = cachedData.maxSizeClamped === true;
+    runtime.effectiveMaxSize = Number(cachedData.effectiveMaxSize) || HEATMAP_MAX_SIZE;
+    runtime.loadedPhase = cachedData.phase === "highres" ? "highres" : "preview";
+
+    const cachedView = HEATMAP_SELECTION_VIEW_CACHE.get(runtime.cacheKey);
+    if (cachedView && typeof cachedView === "object") {
+      runtime.zoom = clamp(Number(cachedView.zoom) || HEATMAP_MIN_ZOOM, HEATMAP_MIN_ZOOM, HEATMAP_MAX_ZOOM);
+      runtime.panX = Number(cachedView.panX) || 0;
+      runtime.panY = Number(cachedView.panY) || 0;
+      runtime.panEnabled = cachedView.panEnabled === true;
+    } else {
+      runtime.zoom = HEATMAP_MIN_ZOOM;
+      runtime.panX = 0;
+      runtime.panY = 0;
+    }
+
+    hideTooltip();
+    updateLabels();
+    setPanState();
+    renderHeatmap();
+
+    const clampedPan = clampPanForZoom(runtime.panX, runtime.panY, runtime.zoom);
+    runtime.panX = clampedPan.x;
+    runtime.panY = clampedPan.y;
+    renderHeatmap();
+    persistViewState();
+
+    setMatrixStatus(statusElement, buildLoadedStatusText(runtime.loadedPhase), "info");
+    return true;
+  }
+
   function setPanState() {
     canvasHost.classList.toggle("is-pan", runtime.panEnabled);
     canvasHost.classList.toggle("is-grabbing", runtime.isPanning);
+    const cursor = runtime.isPanning ? "grabbing" : runtime.panEnabled ? "grab" : "crosshair";
+    canvasHost.style.cursor = cursor;
+    canvas.style.cursor = cursor;
     if (panToggleButton) {
       panToggleButton.classList.toggle("active", runtime.panEnabled);
     }
@@ -632,6 +728,7 @@ function initializeHeatmapRuntime(shell) {
       runtime.panY = 0;
       updateLabels();
       renderHeatmap();
+      persistViewState();
       return;
     }
 
@@ -647,6 +744,7 @@ function initializeHeatmapRuntime(shell) {
     runtime.panY = clampedPan.y;
     updateLabels();
     renderHeatmap();
+    persistViewState();
   }
 
   function getRelativePoint(event) {
@@ -777,19 +875,31 @@ function initializeHeatmapRuntime(shell) {
       runtime.panY = 0;
       runtime.maxSizeClamped = response?.max_size_clamped === true;
       runtime.effectiveMaxSize = Number(response?.effective_max_size) || requestedMaxSize;
+      runtime.loadedPhase = requestedMaxSize >= HEATMAP_MAX_SIZE ? "highres" : "preview";
+
+      HEATMAP_SELECTION_DATA_CACHE.set(runtime.cacheKey, {
+        rows: runtime.rows,
+        cols: runtime.cols,
+        values: runtime.values,
+        min: runtime.min,
+        max: runtime.max,
+        maxSizeClamped: runtime.maxSizeClamped,
+        effectiveMaxSize: runtime.effectiveMaxSize,
+        phase: runtime.loadedPhase,
+      });
+      if (HEATMAP_SELECTION_DATA_CACHE.size > HEATMAP_SELECTION_CACHE_LIMIT) {
+        const oldestKey = HEATMAP_SELECTION_DATA_CACHE.keys().next().value;
+        if (oldestKey) {
+          HEATMAP_SELECTION_DATA_CACHE.delete(oldestKey);
+        }
+      }
+
       hideTooltip();
       updateLabels();
       renderHeatmap();
+      persistViewState();
 
-      const isHighResPhase = requestedMaxSize >= HEATMAP_MAX_SIZE;
-      let statusText = isHighResPhase
-        ? `High-res heatmap loaded (${grid.rows.toLocaleString()} x ${grid.cols.toLocaleString()}).`
-        : `Preview heatmap loaded (${grid.rows.toLocaleString()} x ${grid.cols.toLocaleString()}).`;
-      statusText += " Wheel to zoom. Use Hand to pan.";
-      if (runtime.maxSizeClamped && isHighResPhase) {
-        statusText += ` Clamped to ${runtime.effectiveMaxSize}.`;
-      }
-      setMatrixStatus(statusElement, statusText, "info");
+      setMatrixStatus(statusElement, buildLoadedStatusText(runtime.loadedPhase), "info");
       return { loaded: true };
     } catch (error) {
       if (runtime.destroyed) {
@@ -842,7 +952,8 @@ function initializeHeatmapRuntime(shell) {
   }
 
   function onPointerDown(event) {
-    if (!runtime.panEnabled || event.button !== 0) {
+    const isMousePointer = !event.pointerType || event.pointerType === "mouse";
+    if (!runtime.panEnabled || (isMousePointer && event.button !== 0)) {
       return;
     }
     event.preventDefault();
@@ -871,6 +982,7 @@ function initializeHeatmapRuntime(shell) {
       runtime.panX = nextPan.x;
       runtime.panY = nextPan.y;
       renderHeatmap();
+      persistViewState();
       return;
     }
     updateHover(point);
@@ -905,7 +1017,11 @@ function initializeHeatmapRuntime(shell) {
     if (!runtime.panEnabled && runtime.isPanning) {
       stopPan();
     }
+    if (runtime.panEnabled && runtime.zoom <= HEATMAP_MIN_ZOOM + 0.001) {
+      applyZoom(HEATMAP_PAN_START_ZOOM);
+    }
     setPanState();
+    persistViewState();
   }
 
   function onResetView() {
@@ -920,6 +1036,7 @@ function initializeHeatmapRuntime(shell) {
     setPanState();
     updateLabels();
     renderHeatmap();
+    persistViewState();
   }
 
   function onZoomIn() {
@@ -950,9 +1067,12 @@ function initializeHeatmapRuntime(shell) {
 
   setPanState();
   syncFullscreenState();
-  updateLabels();
-  renderHeatmap();
-  void loadHighResHeatmap();
+  const restoredFromCache = restoreCachedHeatmapData();
+  if (!restoredFromCache) {
+    updateLabels();
+    renderHeatmap();
+    void loadHighResHeatmap();
+  }
 
   canvas.addEventListener("wheel", onWheel, { passive: false });
   canvas.addEventListener("pointerdown", onPointerDown);
@@ -979,6 +1099,7 @@ function initializeHeatmapRuntime(shell) {
   }
 
   const cleanup = () => {
+    persistViewState();
     runtime.destroyed = true;
     cancelInFlightRequests();
     canvas.removeEventListener("wheel", onWheel);
@@ -996,6 +1117,8 @@ function initializeHeatmapRuntime(shell) {
     shell.classList.remove("is-fullscreen");
     shell.style.cssText = "";
     if (canvasHost) canvasHost.style.height = "";
+    canvasHost.style.cursor = "";
+    canvas.style.cursor = "";
     if (resizeObserver) {
       resizeObserver.disconnect();
     } else {
