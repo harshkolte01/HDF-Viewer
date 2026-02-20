@@ -924,6 +924,10 @@ body.line-panel-fullscreen-active {
     cursor: grab;
 }
 
+.line-chart-canvas.is-zoom-click {
+    cursor: zoom-in;
+}
+
 .line-chart-canvas.is-pan,
 .line-chart-canvas.is-pan * {
     user-select: none;
@@ -988,6 +992,28 @@ body.line-panel-fullscreen-active {
     fill: var(--accent);
     stroke: #fff;
     stroke-width: 2;
+}
+
+.line-zoom-focus-line {
+    stroke: rgba(217, 119, 6, 0.8);
+    stroke-width: 1.8;
+    stroke-dasharray: 6 4;
+    vector-effect: non-scaling-stroke;
+}
+
+.line-zoom-focus-halo {
+    fill: rgba(217, 119, 6, 0.2);
+    stroke: rgba(217, 119, 6, 0.75);
+    stroke-width: 1.2;
+    vector-effect: non-scaling-stroke;
+}
+
+.line-zoom-focus-dot {
+    fill: var(--warning);
+    stroke: #fff;
+    stroke-width: 2.4;
+    filter: drop-shadow(0 0 2px rgba(15, 23, 42, 0.35));
+    vector-effect: non-scaling-stroke;
 }
 
 .line-hover {

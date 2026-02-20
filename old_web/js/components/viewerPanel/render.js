@@ -1,4 +1,4 @@
-import { renderDisplayContent, renderInspectContent } from "./render/sections.js?v=20260220-9";
+import { renderDisplayContent, renderInspectContent } from "./render/sections.js?v=20260220-13";
 
 export function renderViewerPanel(state) {
   const isDisplay = state.viewMode === "display";

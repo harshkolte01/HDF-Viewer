@@ -55,6 +55,7 @@ function initializeLineRuntime(shell) {
   const maxStat = shell.querySelector("[data-line-stat-max]");
   const spanStat = shell.querySelector("[data-line-stat-span]");
   const panToggleButton = shell.querySelector("[data-line-pan-toggle]");
+  const zoomClickToggleButton = shell.querySelector("[data-line-zoom-click-toggle]");
   const zoomInButton = shell.querySelector("[data-line-zoom-in]");
   const zoomOutButton = shell.querySelector("[data-line-zoom-out]");
   const resetButton = shell.querySelector("[data-line-reset-view]");
@@ -131,13 +132,20 @@ function initializeLineRuntime(shell) {
     requestSeq: 0,
     destroyed: false,
     panEnabled: false,
+    zoomClickEnabled: false,
     isPanning: false,
     panPointerId: null,
     panStartX: 0,
     panStartViewStart: 0,
+    clickZoomPointerId: null,
+    clickZoomStartX: 0,
+    clickZoomStartY: 0,
+    clickZoomMoved: false,
+    pendingZoomFocusX: null,
     points: [],
     frame: null,
     hoverDot: null,
+    zoomFocusX: null,
     fullscreenActive: false,
   };
 
@@ -166,7 +174,9 @@ function initializeLineRuntime(shell) {
       start: runtime.viewStart,
       span: runtime.viewSpan,
       panEnabled: runtime.panEnabled === true,
+      zoomClickEnabled: runtime.zoomClickEnabled === true,
       qualityRequested: runtime.qualityRequested,
+      zoomFocusX: Number.isFinite(runtime.zoomFocusX) ? runtime.zoomFocusX : null,
     });
   }
 
@@ -179,6 +189,11 @@ function initializeLineRuntime(shell) {
     runtime.viewStart = restored.start;
     runtime.viewSpan = restored.span;
     runtime.panEnabled = cachedView.panEnabled === true;
+    runtime.zoomClickEnabled = cachedView.zoomClickEnabled === true;
+    runtime.zoomFocusX = Number.isFinite(cachedView.zoomFocusX) ? cachedView.zoomFocusX : null;
+    if (runtime.panEnabled && runtime.zoomClickEnabled) {
+      runtime.zoomClickEnabled = false;
+    }
   }
 
   function getZoomPercent() {
@@ -298,6 +313,37 @@ function initializeLineRuntime(shell) {
     }
   }
 
+  function syncZoomClickState() {
+    canvas.classList.toggle("is-zoom-click", runtime.zoomClickEnabled);
+    if (zoomClickToggleButton) {
+      const label = runtime.zoomClickEnabled ? "Disable zoom on click" : "Zoom on click";
+      zoomClickToggleButton.classList.toggle("active", runtime.zoomClickEnabled);
+      zoomClickToggleButton.setAttribute("aria-label", label);
+      zoomClickToggleButton.setAttribute("title", label);
+    }
+  }
+
+  function clearClickZoomPointerTracking(event = null) {
+    if (
+      event &&
+      Number.isFinite(runtime.clickZoomPointerId) &&
+      runtime.clickZoomPointerId !== event.pointerId
+    ) {
+      return;
+    }
+    const activePointerId = runtime.clickZoomPointerId;
+    runtime.clickZoomPointerId = null;
+    runtime.clickZoomStartX = 0;
+    runtime.clickZoomStartY = 0;
+    runtime.clickZoomMoved = false;
+    if (
+      Number.isFinite(activePointerId) &&
+      canvas.hasPointerCapture(activePointerId)
+    ) {
+      canvas.releasePointerCapture(activePointerId);
+    }
+  }
+
   function setDocumentFullscreenLock(locked) {
     if (typeof document === "undefined" || !document.body) {
       return;
@@ -343,6 +389,25 @@ function initializeLineRuntime(shell) {
     const w = Math.max(300, Math.round(rect.width) || LINE_SVG_WIDTH);
     const h = Math.max(200, Math.round(rect.height) || LINE_SVG_HEIGHT);
     return { width: w, height: h };
+  }
+
+  function resolveZoomFocusPoint(points) {
+    if (!Array.isArray(points) || points.length < 1 || !Number.isFinite(runtime.zoomFocusX)) {
+      return null;
+    }
+
+    let nearestPoint = points[0];
+    let nearestDistance = Math.abs(points[0].x - runtime.zoomFocusX);
+    for (let index = 1; index < points.length; index += 1) {
+      const candidate = points[index];
+      const distance = Math.abs(candidate.x - runtime.zoomFocusX);
+      if (distance < nearestDistance) {
+        nearestPoint = candidate;
+        nearestDistance = distance;
+      }
+    }
+
+    return nearestPoint;
   }
 
   function renderSeries(points) {
@@ -503,6 +568,20 @@ function initializeLineRuntime(shell) {
 
     const showLine = runtime.lineAspect !== "point";
     const showPoints = runtime.lineAspect !== "line";
+    const focusPoint = resolveZoomFocusPoint(points);
+    const focusMarkup = focusPoint
+      ? `<g class="line-zoom-focus" data-line-zoom-focus="true">
+      <line class="line-zoom-focus-line" x1="${toX(focusPoint.x).toFixed(2)}" y1="${padding.top}" x2="${toX(
+          focusPoint.x
+        ).toFixed(2)}" y2="${padding.top + chartHeight}"></line>
+      <circle class="line-zoom-focus-halo" cx="${toX(focusPoint.x).toFixed(2)}" cy="${toY(
+          focusPoint.y
+        ).toFixed(2)}" r="9"></circle>
+      <circle class="line-zoom-focus-dot" cx="${toX(focusPoint.x).toFixed(2)}" cy="${toY(
+          focusPoint.y
+        ).toFixed(2)}" r="4.5"></circle>
+    </g>`
+      : "";
 
     svg.innerHTML = `
       <rect x="0" y="0" width="${width}" height="${height}" class="line-chart-bg"></rect>
@@ -525,6 +604,7 @@ function initializeLineRuntime(shell) {
       </g>
       ${showLine ? `<path class="line-path" d="${path}"></path>` : ""}
       ${showPoints ? `<g class="line-points">${markers}</g>` : ""}
+      ${focusMarkup}
       <circle class="line-hover-dot" data-line-hover-dot="true" cx="-9999" cy="-9999" r="4"></circle>
     `;
     runtime.hoverDot = svg.querySelector("[data-line-hover-dot]");
@@ -617,6 +697,11 @@ function initializeLineRuntime(shell) {
         }))
         .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y));
 
+      if (Number.isFinite(runtime.pendingZoomFocusX)) {
+        runtime.zoomFocusX = runtime.pendingZoomFocusX;
+      }
+      runtime.pendingZoomFocusX = null;
+
       updateRangeLabel(points.length);
       updateZoomLabel();
       renderSeries(points);
@@ -650,15 +735,16 @@ function initializeLineRuntime(shell) {
     persistViewState();
 
     if (!changed) {
-      return;
+      return false;
     }
 
     if (immediate) {
       void fetchLineRange();
-      return;
+      return true;
     }
 
     scheduleFetch();
+    return true;
   }
 
   function zoomBy(factor, anchorRatio = 0.5) {
@@ -688,23 +774,71 @@ function initializeLineRuntime(shell) {
     zoomBy(factor, ratio);
   }
 
-  function onPointerDown(event) {
-    if (
-      !runtime.panEnabled ||
-      event.button !== 0 ||
-      runtime.totalPoints <= runtime.viewSpan
-    ) {
+  function zoomIntoPointAtClientPosition(clientX, clientY) {
+    if (!runtime.frame || runtime.points.length < 2) {
       return;
     }
 
-    event.preventDefault();
-    clearTextSelection();
-    runtime.isPanning = true;
-    runtime.panPointerId = event.pointerId;
-    runtime.panStartX = event.clientX;
-    runtime.panStartViewStart = runtime.viewStart;
-    syncPanState();
-    canvas.setPointerCapture(event.pointerId);
+    const rect = canvas.getBoundingClientRect();
+    const frame = runtime.frame;
+    const svgX = ((clientX - rect.left) / Math.max(rect.width, 1)) * frame.width;
+    const svgY = ((clientY - rect.top) / Math.max(rect.height, 1)) * frame.height;
+    const ratioX = (svgX - frame.padding.left) / frame.chartWidth;
+    const ratioY = (svgY - frame.padding.top) / frame.chartHeight;
+    if (ratioX < 0 || ratioX > 1 || ratioY < 0 || ratioY > 1) {
+      return;
+    }
+
+    const pointIndex = clamp(
+      Math.round(ratioX * (runtime.points.length - 1)),
+      0,
+      runtime.points.length - 1
+    );
+    const point = runtime.points[pointIndex];
+    if (!point || !Number.isFinite(point.x)) {
+      return;
+    }
+
+    runtime.zoomFocusX = point.x;
+    runtime.pendingZoomFocusX = point.x;
+    const maxSpan = getMaxSpanForQuality();
+    const targetSpan = Math.min(runtime.minSpan, maxSpan);
+    const nextStart = point.x - Math.floor(targetSpan / 2);
+    const changed = updateViewport(nextStart, targetSpan, true);
+    if (!changed) {
+      renderSeries(runtime.points);
+    }
+  }
+
+  function onPointerDown(event) {
+    const isMousePointer = !event.pointerType || event.pointerType === "mouse";
+    if (isMousePointer && event.button !== 0) {
+      return;
+    }
+
+    if (
+      runtime.panEnabled &&
+      runtime.totalPoints > runtime.viewSpan
+    ) {
+      event.preventDefault();
+      clearTextSelection();
+      runtime.isPanning = true;
+      runtime.panPointerId = event.pointerId;
+      runtime.panStartX = event.clientX;
+      runtime.panStartViewStart = runtime.viewStart;
+      syncPanState();
+      canvas.setPointerCapture(event.pointerId);
+      return;
+    }
+
+    if (runtime.zoomClickEnabled) {
+      event.preventDefault();
+      runtime.clickZoomPointerId = event.pointerId;
+      runtime.clickZoomStartX = event.clientX;
+      runtime.clickZoomStartY = event.clientY;
+      runtime.clickZoomMoved = false;
+      canvas.setPointerCapture(event.pointerId);
+    }
   }
 
   function onPointerMove(event) {
@@ -717,6 +851,17 @@ function initializeLineRuntime(shell) {
       const nextStart = runtime.panStartViewStart - deltaIndex;
       updateViewport(nextStart, runtime.viewSpan, false);
       return;
+    }
+
+    if (
+      runtime.zoomClickEnabled &&
+      Number.isFinite(runtime.clickZoomPointerId) &&
+      runtime.clickZoomPointerId === event.pointerId &&
+      !runtime.clickZoomMoved
+    ) {
+      const deltaX = event.clientX - runtime.clickZoomStartX;
+      const deltaY = event.clientY - runtime.clickZoomStartY;
+      runtime.clickZoomMoved = deltaX * deltaX + deltaY * deltaY > 25;
     }
 
     if (!runtime.frame || runtime.points.length < 2) {
@@ -760,6 +905,30 @@ function initializeLineRuntime(shell) {
     }
   }
 
+  function onPointerUp(event) {
+    if (
+      runtime.zoomClickEnabled &&
+      Number.isFinite(runtime.clickZoomPointerId) &&
+      runtime.clickZoomPointerId === event.pointerId
+    ) {
+      const shouldZoom = !runtime.clickZoomMoved;
+      const clientX = event.clientX;
+      const clientY = event.clientY;
+      clearClickZoomPointerTracking(event);
+      if (shouldZoom) {
+        event.preventDefault();
+        zoomIntoPointAtClientPosition(clientX, clientY);
+      }
+      return;
+    }
+    endPan(event);
+  }
+
+  function onPointerCancel(event) {
+    clearClickZoomPointerTracking(event);
+    endPan(event);
+  }
+
   function endPan(event) {
     if (!runtime.isPanning) {
       return;
@@ -783,10 +952,12 @@ function initializeLineRuntime(shell) {
   }
 
   function onPointerLeave() {
+    clearClickZoomPointerTracking();
     hideHover();
     if (runtime.isPanning) {
       endPan();
     }
+    clearClickZoomPointerTracking();
   }
 
   function onTogglePan() {
@@ -795,9 +966,27 @@ function initializeLineRuntime(shell) {
       endPan();
     }
     if (runtime.panEnabled) {
+      runtime.zoomClickEnabled = false;
+      clearClickZoomPointerTracking();
       clearTextSelection();
     }
     syncPanState();
+    syncZoomClickState();
+    persistViewState();
+  }
+
+  function onToggleClickZoom() {
+    runtime.zoomClickEnabled = !runtime.zoomClickEnabled;
+    if (runtime.zoomClickEnabled) {
+      if (runtime.isPanning) {
+        endPan();
+      }
+      runtime.panEnabled = false;
+      clearTextSelection();
+    }
+    clearClickZoomPointerTracking();
+    syncPanState();
+    syncZoomClickState();
     persistViewState();
   }
 
@@ -916,8 +1105,16 @@ function initializeLineRuntime(shell) {
   }
 
   const onReset = () => {
+    runtime.zoomClickEnabled = false;
+    runtime.zoomFocusX = null;
+    runtime.pendingZoomFocusX = null;
+    clearClickZoomPointerTracking();
+    syncZoomClickState();
     const maxSpan = getMaxSpanForQuality();
-    updateViewport(0, maxSpan, true);
+    const changed = updateViewport(0, maxSpan, true);
+    if (!changed) {
+      renderSeries(runtime.points);
+    }
   };
 
   function onToggleFullscreen() {
@@ -963,6 +1160,7 @@ function initializeLineRuntime(shell) {
   }
 
   syncPanState();
+  syncZoomClickState();
   syncFullscreenState();
   syncQualityControl();
   syncWindowControl();
@@ -976,12 +1174,15 @@ function initializeLineRuntime(shell) {
   canvas.addEventListener("wheel", onWheel, { passive: false });
   canvas.addEventListener("pointerdown", onPointerDown);
   canvas.addEventListener("pointermove", onPointerMove);
-  canvas.addEventListener("pointerup", endPan);
-  canvas.addEventListener("pointercancel", endPan);
+  canvas.addEventListener("pointerup", onPointerUp);
+  canvas.addEventListener("pointercancel", onPointerCancel);
   canvas.addEventListener("pointerleave", onPointerLeave);
   canvas.addEventListener("keydown", onKeyDown);
   if (panToggleButton) {
     panToggleButton.addEventListener("click", onTogglePan);
+  }
+  if (zoomClickToggleButton) {
+    zoomClickToggleButton.addEventListener("click", onToggleClickZoom);
   }
   if (zoomInButton) {
     zoomInButton.addEventListener("click", onZoomIn);
@@ -1047,15 +1248,19 @@ function initializeLineRuntime(shell) {
     if (runtime.isPanning) {
       endPan();
     }
+    clearClickZoomPointerTracking();
     canvas.removeEventListener("wheel", onWheel);
     canvas.removeEventListener("pointerdown", onPointerDown);
     canvas.removeEventListener("pointermove", onPointerMove);
-    canvas.removeEventListener("pointerup", endPan);
-    canvas.removeEventListener("pointercancel", endPan);
+    canvas.removeEventListener("pointerup", onPointerUp);
+    canvas.removeEventListener("pointercancel", onPointerCancel);
     canvas.removeEventListener("pointerleave", onPointerLeave);
     canvas.removeEventListener("keydown", onKeyDown);
     if (panToggleButton) {
       panToggleButton.removeEventListener("click", onTogglePan);
+    }
+    if (zoomClickToggleButton) {
+      zoomClickToggleButton.removeEventListener("click", onToggleClickZoom);
     }
     if (zoomInButton) {
       zoomInButton.removeEventListener("click", onZoomIn);

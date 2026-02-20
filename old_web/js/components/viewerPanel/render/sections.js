@@ -37,6 +37,15 @@ function renderToolIcon(kind) {
       </svg>
     `;
   }
+  if (kind === "zoom-click") {
+    return `
+      <svg class="line-tool-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+        <circle cx="7" cy="7" r="4.5"></circle>
+        <path d="M10.4 10.4 14 14M7 5v4M5 7h4"></path>
+        <path d="M2.2 2.2 4.2 4.2"></path>
+      </svg>
+    `;
+  }
   if (kind === "zoom-out") {
     return `
       <svg class="line-tool-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
@@ -104,6 +113,7 @@ function renderVirtualLineShell(state, config) {
       <div class="line-chart-toolbar">
         <div class="line-tool-group">
           ${renderIconToolButton("Hand", "data-line-pan-toggle", "pan")}
+          ${renderIconToolButton("Zoom on click", "data-line-zoom-click-toggle", "zoom-click")}
           ${renderIconToolButton("Zoom in", "data-line-zoom-in", "zoom-in")}
           ${renderIconToolButton("Zoom out", "data-line-zoom-out", "zoom-out")}
           ${renderIconToolButton("Reset view", "data-line-reset-view", "reset")}

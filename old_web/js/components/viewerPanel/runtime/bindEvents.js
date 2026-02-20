@@ -1,7 +1,7 @@
 import { clearViewerRuntimeBindings } from "./common.js";
 import { initializeMatrixRuntime } from "./matrixRuntime.js";
-import { initializeLineRuntime } from "./lineRuntime.js?v=20260220-9";
-import { initializeHeatmapRuntime } from "./heatmapRuntime.js?v=20260220-9";
+import { initializeLineRuntime } from "./lineRuntime.js?v=20260220-13";
+import { initializeHeatmapRuntime } from "./heatmapRuntime.js?v=20260220-13";
 function isMobileWidth() {
   return window.innerWidth <= 1024;
 }
