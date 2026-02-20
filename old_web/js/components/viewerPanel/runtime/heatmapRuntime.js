@@ -11,6 +11,8 @@ const HEATMAP_PAN_START_ZOOM = 1.2;
 const HEATMAP_SELECTION_CACHE_LIMIT = 12;
 const HEATMAP_SELECTION_DATA_CACHE = new Map();
 const HEATMAP_SELECTION_VIEW_CACHE = new Map();
+const HEATMAP_FULLSCREEN_RESTORE_TTL_MS = 1200;
+let heatmapFullscreenRestore = null;
 const HEATMAP_COLOR_STOPS = Object.freeze({
   viridis: [
     [68, 1, 84],
@@ -271,6 +273,26 @@ function createHeatmapBitmap(grid, min, max, colormap) {
   return surface;
 }
 
+function rememberHeatmapFullscreen(selectionKey) {
+  if (!selectionKey) {
+    heatmapFullscreenRestore = null;
+    return;
+  }
+  heatmapFullscreenRestore = {
+    key: selectionKey,
+    expiresAt: Date.now() + HEATMAP_FULLSCREEN_RESTORE_TTL_MS,
+  };
+}
+
+function consumeHeatmapFullscreenRestore(selectionKey) {
+  if (!heatmapFullscreenRestore || !selectionKey) {
+    return false;
+  }
+  const { key, expiresAt } = heatmapFullscreenRestore;
+  heatmapFullscreenRestore = null;
+  return key === selectionKey && Date.now() <= expiresAt;
+}
+
 function getLayout(width, height) {
   const paddingLeft = 46;
   const paddingTop = 24;
@@ -377,7 +399,12 @@ function initializeHeatmapRuntime(shell) {
     activeCancelKeys: new Set(),
     destroyed: false,
     loadedPhase: "preview",
+    fullscreenActive: false,
   };
+
+  if (consumeHeatmapFullscreenRestore(selectionKey)) {
+    runtime.fullscreenActive = true;
+  }
 
   function updateLabels() {
     if (zoomLabel) {
@@ -513,31 +540,27 @@ function initializeHeatmapRuntime(shell) {
     }
   }
 
-  function applyFullscreenStyles(entering) {
-    if (entering) {
-      shell.style.position = "fixed";
-      shell.style.inset = "0";
-      shell.style.zIndex = "9999";
-      shell.style.width = "100vw";
-      shell.style.height = "100vh";
-      shell.style.borderRadius = "0";
-      shell.style.padding = "16px";
-      shell.style.boxSizing = "border-box";
-      shell.style.background = "var(--bg-primary, #F8FAFF)";
-      shell.style.overflow = "auto";
-      if (canvasHost) canvasHost.style.height = "calc(100vh - 170px)";
-    } else {
-      shell.style.cssText = "";
-      if (canvasHost) canvasHost.style.height = "";
+  function setDocumentFullscreenLock(locked) {
+    if (typeof document === "undefined" || !document.body) {
+      return;
     }
+    document.body.classList.toggle("line-panel-fullscreen-active", locked);
+  }
+
+  function rerenderAfterFullscreenChange() {
+    if (runtime.destroyed) {
+      return;
+    }
+    renderHeatmap();
   }
 
   function syncFullscreenState() {
-    const isFullscreen = shell.classList.contains("is-fullscreen");
+    const isFullscreen = runtime.fullscreenActive;
+    shell.classList.toggle("is-fullscreen", isFullscreen);
     if (fullscreenButton) {
       fullscreenButton.textContent = isFullscreen ? "Exit Fullscreen" : "Fullscreen";
     }
-    applyFullscreenStyles(isFullscreen);
+    setDocumentFullscreenLock(isFullscreen);
   }
 
   function hideTooltip() {
@@ -1048,22 +1071,42 @@ function initializeHeatmapRuntime(shell) {
   }
 
   function onToggleFullscreen() {
-    shell.classList.toggle("is-fullscreen");
+    runtime.fullscreenActive = !runtime.fullscreenActive;
+    if (!runtime.fullscreenActive) {
+      heatmapFullscreenRestore = null;
+    }
     syncFullscreenState();
-    renderHeatmap();
+    rerenderAfterFullscreenChange();
   }
 
   function onFullscreenEsc(event) {
-    if (event.key === "Escape" && shell.classList.contains("is-fullscreen")) {
+    if (event.key === "Escape" && runtime.fullscreenActive) {
       event.preventDefault();
       event.stopPropagation();
-      shell.classList.remove("is-fullscreen");
+      runtime.fullscreenActive = false;
+      heatmapFullscreenRestore = null;
       syncFullscreenState();
-      renderHeatmap();
+      rerenderAfterFullscreenChange();
     }
   }
 
-  const onFullscreenClick = () => onToggleFullscreen();
+  function exitPanelFullscreen() {
+    if (!runtime.fullscreenActive) {
+      return;
+    }
+    runtime.fullscreenActive = false;
+    syncFullscreenState();
+    rerenderAfterFullscreenChange();
+  }
+
+  const onFullscreenClick = (event) => {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+    }
+    onToggleFullscreen();
+  };
 
   setPanState();
   syncFullscreenState();
@@ -1114,9 +1157,13 @@ function initializeHeatmapRuntime(shell) {
     if (resetButton) resetButton.removeEventListener("click", onResetView);
     if (fullscreenButton) fullscreenButton.removeEventListener("click", onFullscreenClick);
     document.removeEventListener("keydown", onFullscreenEsc);
+    if (runtime.fullscreenActive) {
+      rememberHeatmapFullscreen(runtime.selectionKey);
+    }
+    exitPanelFullscreen();
+    runtime.fullscreenActive = false;
+    setDocumentFullscreenLock(false);
     shell.classList.remove("is-fullscreen");
-    shell.style.cssText = "";
-    if (canvasHost) canvasHost.style.height = "";
     canvasHost.style.cursor = "";
     canvas.style.cursor = "";
     if (resizeObserver) {

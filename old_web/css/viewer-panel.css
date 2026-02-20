@@ -747,7 +747,8 @@ body.line-panel-fullscreen-active {
 }
 
 .line-chart-shell.is-fullscreen .heatmap-chart-canvas {
-    height: calc(100vh - 170px);
+    height: 100%;
+    min-height: 0;
 }
 
 .line-chart-toolbar {
