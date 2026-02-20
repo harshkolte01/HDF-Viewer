@@ -318,7 +318,10 @@ function initializeLineRuntime(shell) {
     const isFullscreen = runtime.fullscreenActive;
     shell.classList.toggle("is-fullscreen", isFullscreen);
     if (fullscreenButton) {
-      fullscreenButton.textContent = isFullscreen ? "Exit Fullscreen" : "Fullscreen";
+      const label = isFullscreen ? "Exit fullscreen" : "Fullscreen";
+      fullscreenButton.setAttribute("aria-label", label);
+      fullscreenButton.setAttribute("title", label);
+      fullscreenButton.classList.toggle("active", isFullscreen);
     }
     setDocumentFullscreenLock(isFullscreen);
   }

@@ -798,6 +798,26 @@ body.line-panel-fullscreen-active {
     transition: all 0.2s ease;
 }
 
+.line-tool-btn.line-tool-btn-icon {
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.line-tool-icon {
+    width: 15px;
+    height: 15px;
+    stroke: currentColor;
+    fill: none;
+    stroke-width: 1.7;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    pointer-events: none;
+}
+
 .line-tool-btn.active {
     background: rgba(37, 99, 235, 0.15);
     border-color: var(--primary);

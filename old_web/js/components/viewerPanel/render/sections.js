@@ -20,6 +20,62 @@ import {
   resolveHeatmapRuntimeConfig,
 } from "./config.js";
 import { renderDimensionControls } from "./dimensionControls.js";
+
+function renderToolIcon(kind) {
+  if (kind === "pan") {
+    return `
+      <svg class="line-tool-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+        <path d="M8 1v14M1 8h14M8 1 6.3 2.7M8 1l1.7 1.7M8 15l-1.7-1.7M8 15l1.7-1.7M1 8l1.7-1.7M1 8l1.7 1.7M15 8l-1.7-1.7M15 8l-1.7 1.7"></path>
+      </svg>
+    `;
+  }
+  if (kind === "zoom-in") {
+    return `
+      <svg class="line-tool-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+        <circle cx="7" cy="7" r="4.5"></circle>
+        <path d="M10.4 10.4 14 14M7 5v4M5 7h4"></path>
+      </svg>
+    `;
+  }
+  if (kind === "zoom-out") {
+    return `
+      <svg class="line-tool-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+        <circle cx="7" cy="7" r="4.5"></circle>
+        <path d="M10.4 10.4 14 14M5 7h4"></path>
+      </svg>
+    `;
+  }
+  if (kind === "reset") {
+    return `
+      <svg class="line-tool-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+        <path d="M3.2 5.4A5 5 0 1 1 3 8M3 3v3h3"></path>
+      </svg>
+    `;
+  }
+  if (kind === "fullscreen") {
+    return `
+      <svg class="line-tool-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+        <path d="M2 6V2h4M14 6V2h-4M2 10v4h4M14 10v4h-4"></path>
+      </svg>
+    `;
+  }
+  return "";
+}
+
+function renderIconToolButton(label, dataAttr, kind) {
+  return `
+    <button
+      type="button"
+      class="line-tool-btn line-tool-btn-icon"
+      ${dataAttr}="true"
+      aria-label="${label}"
+      title="${label}"
+    >
+      ${renderToolIcon(kind)}
+    </button>
+  `;
+}
+
 function renderVirtualLineShell(state, config) {
   const windowOptions = LINE_WINDOW_OPTIONS.filter((size) => size <= config.totalPoints);
   if (!windowOptions.includes(config.totalPoints)) {
@@ -47,10 +103,10 @@ function renderVirtualLineShell(state, config) {
     >
       <div class="line-chart-toolbar">
         <div class="line-tool-group">
-          <button type="button" class="line-tool-btn" data-line-pan-toggle="true">Hand</button>
-          <button type="button" class="line-tool-btn" data-line-zoom-in="true">Zoom +</button>
-          <button type="button" class="line-tool-btn" data-line-zoom-out="true">Zoom -</button>
-          <button type="button" class="line-tool-btn" data-line-reset-view="true">Reset</button>
+          ${renderIconToolButton("Hand", "data-line-pan-toggle", "pan")}
+          ${renderIconToolButton("Zoom in", "data-line-zoom-in", "zoom-in")}
+          ${renderIconToolButton("Zoom out", "data-line-zoom-out", "zoom-out")}
+          ${renderIconToolButton("Reset view", "data-line-reset-view", "reset")}
         </div>
         <div class="line-tool-group">
           <button type="button" class="line-tool-btn" data-line-jump-start="true">Start</button>
@@ -85,7 +141,7 @@ function renderVirtualLineShell(state, config) {
         </div>
         <div class="line-tool-group">
           <span class="line-zoom-label" data-line-zoom-label="true">100%</span>
-          <button type="button" class="line-tool-btn" data-line-fullscreen-toggle="true">Fullscreen</button>
+          ${renderIconToolButton("Fullscreen", "data-line-fullscreen-toggle", "fullscreen")}
           <span class="line-zoom-label" data-line-range-label="true">Range: --</span>
         </div>
       </div>
@@ -251,14 +307,14 @@ function renderVirtualHeatmapShell(state, config) {
     >
       <div class="line-chart-toolbar heatmap-chart-toolbar">
         <div class="line-tool-group">
-          <button type="button" class="line-tool-btn" data-heatmap-pan-toggle="true">Hand</button>
-          <button type="button" class="line-tool-btn" data-heatmap-zoom-in="true">Zoom +</button>
-          <button type="button" class="line-tool-btn" data-heatmap-zoom-out="true">Zoom -</button>
-          <button type="button" class="line-tool-btn" data-heatmap-reset-view="true">Reset</button>
+          ${renderIconToolButton("Hand", "data-heatmap-pan-toggle", "pan")}
+          ${renderIconToolButton("Zoom in", "data-heatmap-zoom-in", "zoom-in")}
+          ${renderIconToolButton("Zoom out", "data-heatmap-zoom-out", "zoom-out")}
+          ${renderIconToolButton("Reset view", "data-heatmap-reset-view", "reset")}
         </div>
         <div class="line-tool-group">
           <span class="line-zoom-label" data-heatmap-zoom-label="true">100%</span>
-          <button type="button" class="line-tool-btn" data-heatmap-fullscreen-toggle="true">Fullscreen</button>
+          ${renderIconToolButton("Fullscreen", "data-heatmap-fullscreen-toggle", "fullscreen")}
           <span class="line-zoom-label" data-heatmap-range-label="true">Grid: --</span>
         </div>
       </div>
