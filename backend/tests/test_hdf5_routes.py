@@ -235,6 +235,51 @@ class Hdf5RoutesTestCase(unittest.TestCase):
         payload = response.get_json()
         self.assertFalse(payload['success'])
 
+    def test_children_not_found_returns_404(self):
+        reader = Mock()
+        reader.get_children.side_effect = ValueError("Path '/missing' not found in 'sample.h5'")
+        minio = Mock()
+        minio.get_object_metadata.return_value = {'etag': 'etag-1'}
+
+        with patch('src.routes.hdf5.get_hdf5_reader', return_value=reader), \
+             patch('src.routes.hdf5.get_minio_client', return_value=minio), \
+             patch('src.routes.hdf5.get_hdf5_cache', return_value=_NullCache()):
+            response = self.client.get('/files/sample.h5/children?path=/missing')
+
+        self.assertEqual(response.status_code, 404)
+        payload = response.get_json()
+        self.assertFalse(payload['success'])
+
+    def test_meta_not_found_returns_404(self):
+        reader = Mock()
+        reader.get_metadata.side_effect = ValueError("Path '/missing' not found in 'sample.h5'")
+        minio = Mock()
+        minio.get_object_metadata.return_value = {'etag': 'etag-1'}
+
+        with patch('src.routes.hdf5.get_hdf5_reader', return_value=reader), \
+             patch('src.routes.hdf5.get_minio_client', return_value=minio), \
+             patch('src.routes.hdf5.get_hdf5_cache', return_value=_NullCache()):
+            response = self.client.get('/files/sample.h5/meta?path=/missing')
+
+        self.assertEqual(response.status_code, 404)
+        payload = response.get_json()
+        self.assertFalse(payload['success'])
+
+    def test_meta_non_dataset_returns_400(self):
+        reader = Mock()
+        reader.get_metadata.side_effect = TypeError("Path '/group' is not a dataset")
+        minio = Mock()
+        minio.get_object_metadata.return_value = {'etag': 'etag-1'}
+
+        with patch('src.routes.hdf5.get_hdf5_reader', return_value=reader), \
+             patch('src.routes.hdf5.get_minio_client', return_value=minio), \
+             patch('src.routes.hdf5.get_hdf5_cache', return_value=_NullCache()):
+            response = self.client.get('/files/sample.h5/meta?path=/group')
+
+        self.assertEqual(response.status_code, 400)
+        payload = response.get_json()
+        self.assertFalse(payload['success'])
+
     def test_preview_invalid_display_dims_returns_400(self):
         reader = Mock()
         reader.get_preview.side_effect = ValueError("display_dims must include two distinct dims")

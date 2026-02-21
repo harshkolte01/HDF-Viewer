@@ -15,6 +15,21 @@ const VIEWER_TEMPLATE_FALLBACK = `
 `;
 
 let viewerTemplate = VIEWER_TEMPLATE_FALLBACK;
+let disposeViewerViewBindings = null;
+
+export function clearViewerViewBindings() {
+  if (typeof disposeViewerViewBindings !== "function") {
+    return;
+  }
+
+  try {
+    disposeViewerViewBindings();
+  } catch (_error) {
+    // ignore cleanup errors from detached nodes
+  } finally {
+    disposeViewerViewBindings = null;
+  }
+}
 
 export async function initViewerViewTemplate() {
   try {
@@ -223,6 +238,9 @@ export function renderViewerView(state) {
 }
 
 export function bindViewerViewEvents(root, actions) {
+  clearViewerViewBindings();
+  const cleanupFns = [];
+
   /* Sidebar toggle / close / backdrop */
   const sidebarToggle = root.querySelector("#sidebar-toggle-btn");
   if (sidebarToggle) {
@@ -280,6 +298,11 @@ export function bindViewerViewEvents(root, actions) {
     };
     globalFsBtn.addEventListener("click", onGlobalFsClick);
     document.addEventListener("fullscreenchange", updateGlobalFsLabel);
+    updateGlobalFsLabel();
+    cleanupFns.push(() => {
+      globalFsBtn.removeEventListener("click", onGlobalFsClick);
+      document.removeEventListener("fullscreenchange", updateGlobalFsLabel);
+    });
   }
 
   root.querySelectorAll("[data-view-mode]").forEach((button) => {
@@ -332,5 +355,16 @@ export function bindViewerViewEvents(root, actions) {
 
   bindSidebarTreeEvents(root, actions);
   bindViewerPanelEvents(root, actions);
+
+  disposeViewerViewBindings = () => {
+    cleanupFns.forEach((cleanup) => {
+      try {
+        cleanup();
+      } catch (_error) {
+        // ignore cleanup errors from detached nodes
+      }
+    });
+    cleanupFns.length = 0;
+  };
 }
 

@@ -1224,7 +1224,7 @@ function initializeLineRuntime(shell) {
 
   /* ResizeObserver — re-render chart when container resizes */
   let resizeTimer = null;
-  const resizeObserver = new ResizeObserver(() => {
+  const onResize = () => {
     if (runtime.destroyed) return;
     clearTimeout(resizeTimer);
     resizeTimer = setTimeout(() => {
@@ -1232,14 +1232,24 @@ function initializeLineRuntime(shell) {
         renderSeries(runtime.points);
       }
     }, 150);
-  });
-  resizeObserver.observe(canvas);
+  };
+  let resizeObserver = null;
+  if (typeof ResizeObserver !== "undefined") {
+    resizeObserver = new ResizeObserver(onResize);
+    resizeObserver.observe(canvas);
+  } else {
+    window.addEventListener("resize", onResize);
+  }
 
   const cleanup = () => {
     persistViewState();
     runtime.destroyed = true;
     hideHover();
-    resizeObserver.disconnect();
+    if (resizeObserver) {
+      resizeObserver.disconnect();
+    } else {
+      window.removeEventListener("resize", onResize);
+    }
     clearTimeout(resizeTimer);
     if (runtime.fetchTimer !== null) {
       clearTimeout(runtime.fetchTimer);

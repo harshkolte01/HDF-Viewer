@@ -302,12 +302,26 @@ def get_children(key):
             'cached': False
         }), 200
         
-    except Exception as e:
+    except ValueError as e:
+        logger.error(f"Error getting HDF5 children for '{key}' at '{hdf_path}': {e}")
+        status_code = 404 if _is_not_found_error(e) else 400
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), status_code
+    except TypeError as e:
         logger.error(f"Error getting HDF5 children for '{key}' at '{hdf_path}': {e}")
         return jsonify({
             'success': False,
             'error': str(e)
-        }), 500
+        }), 400
+    except Exception as e:
+        logger.error(f"Error getting HDF5 children for '{key}' at '{hdf_path}': {e}")
+        status_code = 404 if _is_not_found_error(e) else 500
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), status_code
 
 
 @hdf5_bp.route('/<path:key>/meta', methods=['GET'])
@@ -357,12 +371,26 @@ def get_metadata(key):
             'cached': False
         }), 200
         
-    except Exception as e:
+    except ValueError as e:
+        logger.error(f"Error getting HDF5 metadata for '{key}' at '{hdf_path}': {e}")
+        status_code = 404 if _is_not_found_error(e) else 400
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), status_code
+    except TypeError as e:
         logger.error(f"Error getting HDF5 metadata for '{key}' at '{hdf_path}': {e}")
         return jsonify({
             'success': False,
             'error': str(e)
-        }), 500
+        }), 400
+    except Exception as e:
+        logger.error(f"Error getting HDF5 metadata for '{key}' at '{hdf_path}': {e}")
+        status_code = 404 if _is_not_found_error(e) else 500
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), status_code
 
 
 @hdf5_bp.route('/<path:key>/preview', methods=['GET'])

@@ -194,7 +194,9 @@ export function createDataActions(deps) {
     });
 
     try {
-      const response = await getFileMeta(snapshot.selectedFile, targetPath);
+      const response = await getFileMeta(snapshot.selectedFile, targetPath, {
+        etag: snapshot.selectedFileEtag || undefined,
+      });
       const metadata = response.metadata || null;
       const latest = getState();
 

@@ -63,10 +63,23 @@ export function createTreeActions(deps) {
   onBreadcrumbSelect(path) {
     const normalizedPath = normalizePath(path);
     const requiredAncestors = getAncestorPaths(normalizedPath);
+    const snapshot = getState();
+    const preserveDatasetSelection =
+      snapshot.selectedNodeType === "dataset" &&
+      snapshot.selectedPath === normalizedPath;
 
     setState((prev) => {
       const expanded = new Set(prev.expandedPaths || ["/"]);
       requiredAncestors.forEach((entry) => expanded.add(entry));
+
+      if (preserveDatasetSelection) {
+        return {
+          selectedPath: normalizedPath,
+          selectedNodeType: "dataset",
+          selectedNodeName: getNodeName(normalizedPath, prev.selectedNodeName || ""),
+          expandedPaths: expanded,
+        };
+      }
 
       return {
         selectedPath: normalizedPath,
@@ -88,7 +101,9 @@ export function createTreeActions(deps) {
       };
     });
 
-    void actions.loadTreeChildren(normalizedPath);
+    if (!preserveDatasetSelection) {
+      void actions.loadTreeChildren(normalizedPath);
+    }
 
     const current = getState();
     if (current.route === "viewer" && current.viewMode === "inspect") {
@@ -123,7 +138,10 @@ export function createTreeActions(deps) {
     });
 
     try {
-      const response = await getFileChildren(snapshot.selectedFile, normalizedPath, { force });
+      const response = await getFileChildren(snapshot.selectedFile, normalizedPath, {
+        force,
+        etag: snapshot.selectedFileEtag || undefined,
+      });
       const children = Array.isArray(response.children) ? response.children : [];
 
       setState((prev) => {

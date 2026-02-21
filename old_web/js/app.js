@@ -10,7 +10,9 @@ import {
   initViewerViewTemplate,
   renderViewerView,
   bindViewerViewEvents,
-} from "./views/viewerView.js?v=20260220-13";
+  clearViewerViewBindings,
+} from "./views/viewerView.js?v=20260221-1";
+import { clearViewerRuntimeBindings } from "./components/viewerPanel/runtime/common.js";
 
 const root = document.getElementById("app-root");
 let renderQueued = false;
@@ -37,6 +39,11 @@ function renderApp() {
   }
 
   const state = getState();
+  if (state.route !== "viewer") {
+    clearViewerViewBindings();
+    clearViewerRuntimeBindings();
+  }
+
   if (state.route === "viewer") {
     root.innerHTML = renderViewerView(state);
   } else {

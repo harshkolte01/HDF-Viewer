@@ -161,10 +161,11 @@ export async function refreshFiles(options = {}) {
 export async function getFileChildren(key, path = "/", options = {}) {
   const { force = false, signal, etag } = options;
   const treeCache = getTreeCache(key);
+  const treeCacheKey = `${path}|${etag || "no-etag"}`;
 
-  if (!force && treeCache.has(path)) {
+  if (!force && treeCache.has(treeCacheKey)) {
     return {
-      ...treeCache.get(path),
+      ...treeCache.get(treeCacheKey),
       cached: true,
       cache_source: "frontend",
     };
@@ -186,13 +187,13 @@ export async function getFileChildren(key, path = "/", options = {}) {
   );
 
   const normalized = assertSuccess(normalizeChildrenResponse(payload), "getFileChildren");
-  treeCache.set(path, normalized);
+  treeCache.set(treeCacheKey, normalized);
   return normalized;
 }
 
 export async function getFileMeta(key, path, options = {}) {
   const { force = false, signal, etag } = options;
-  const cacheKey = `${key}|${path}`;
+  const cacheKey = `${key}|${path}|${etag || "no-etag"}`;
 
   if (!force) {
     const cached = frontendCache.metadata.get(cacheKey);

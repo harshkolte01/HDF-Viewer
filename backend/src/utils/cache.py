@@ -6,6 +6,7 @@ import time
 import logging
 from typing import Any, Optional, Tuple
 from threading import Lock
+from collections import OrderedDict
 
 logger = logging.getLogger(__name__)
 
@@ -13,17 +14,21 @@ logger = logging.getLogger(__name__)
 class SimpleCache:
     """Thread-safe in-memory cache with TTL support"""
     
-    def __init__(self, default_ttl: int = 30):
+    def __init__(self, default_ttl: int = 30, max_entries: int = 1000):
         """
         Initialize cache
         
         Args:
             default_ttl: Default time-to-live in seconds
+            max_entries: Maximum number of cache entries to retain
         """
         self.default_ttl = default_ttl
-        self._cache = {}
+        self.max_entries = max(1, int(max_entries))
+        self._cache = OrderedDict()
         self._lock = Lock()
-        logger.info(f"Cache initialized with default TTL: {default_ttl}s")
+        logger.info(
+            f"Cache initialized with default TTL: {default_ttl}s, max entries: {self.max_entries}"
+        )
     
     def get(self, key: str) -> Optional[Any]:
         """
@@ -48,6 +53,7 @@ class SimpleCache:
                 del self._cache[key]
                 return None
             
+            self._cache.move_to_end(key)
             logger.debug(f"Cache HIT: {key}")
             return entry['value']
     
@@ -64,11 +70,18 @@ class SimpleCache:
         expires_at = time.time() + ttl
         
         with self._lock:
+            if key in self._cache:
+                self._cache.move_to_end(key)
             self._cache[key] = {
                 'value': value,
                 'expires_at': expires_at,
                 'created_at': time.time()
             }
+
+            while len(self._cache) > self.max_entries:
+                evicted_key, _ = self._cache.popitem(last=False)
+                logger.debug(f"Cache EVICT: {evicted_key}")
+
             logger.debug(f"Cache SET: {key} (TTL: {ttl}s)")
     
     def delete(self, key: str):
@@ -114,10 +127,10 @@ class SimpleCache:
 
 
 # Global cache instances
-_files_cache = SimpleCache(default_ttl=30)  # 30 seconds for file list
-_hdf5_cache = SimpleCache(default_ttl=300)  # 5 minutes for HDF5 metadata
-_dataset_cache = SimpleCache(default_ttl=300)  # 5 minutes for dataset info
-_data_cache = SimpleCache(default_ttl=120)  # 2 minutes for /data windows
+_files_cache = SimpleCache(default_ttl=30, max_entries=200)  # 30 seconds for file list
+_hdf5_cache = SimpleCache(default_ttl=300, max_entries=3000)  # 5 minutes for HDF5 metadata
+_dataset_cache = SimpleCache(default_ttl=300, max_entries=3000)  # 5 minutes for dataset info
+_data_cache = SimpleCache(default_ttl=120, max_entries=1200)  # 2 minutes for /data windows
 
 
 def get_files_cache() -> SimpleCache:
