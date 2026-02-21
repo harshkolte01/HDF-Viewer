@@ -1,27 +1,29 @@
 # js/state
 
-Global state management for old_web.
+Global state container and action composition for `old_web`.
 
 ## Files
 
 - `store.js`
-  - Holds a single mutable `state` object.
-  - Exposes `getState`, `setState`, `subscribe`.
+  - Mutable singleton `state` object.
+  - `getState`, `setState`, `subscribe`.
 - `reducers.js`
-  - Composes all action factories into one exported `actions` object.
-  - Injects dependencies (`api`, store helpers, reducer utils).
+  - Dependency injection root.
+  - Composes all reducer factories into exported `actions` object.
 - `reducers/`
-  - Feature-specific action modules and shared reducer utilities.
+  - Feature-specific action factory modules.
 
-## Imported By
+## Runtime Responsibilities
 
-- `old_web/js/app.js` imports `getState` and `subscribe`, plus `actions`.
-- View and runtime event handlers call `actions.*` methods.
+- Route state (`home` / `viewer`).
+- File list and refresh status.
+- Tree expansion/loading/error maps.
+- Selection and metadata lifecycle.
+- Preview lifecycle + full-view enable flags.
+- Display config staging/applied values for dimensions and fixed indices.
+- Viewer UI settings (notation, line grid/aspect, heatmap grid/colormap, sidebar open).
 
-## Action Factory Groups
+## How It Is Used
 
-- File and route actions
-- Tree actions
-- View mode and toolbar actions
-- Display config actions
-- Data loading actions (metadata and preview)
+- `old_web/js/app.js` subscribes to state changes and triggers rerender.
+- View and runtime modules call `actions.*` methods for all mutations.

@@ -1,18 +1,20 @@
 # js/components/viewer
 
-Legacy viewer component placeholders kept for compatibility and history.
+Legacy viewer module namespace kept for compatibility.
 
 ## Files
 
-- `TopBar.js` (empty)
-- `SidebarTree.js` (empty)
-- `PreviewToolbar.js` (empty)
-- `ViewerPanel.js` (empty)
+- `TopBar.js`
+- `SidebarTree.js`
+- `PreviewToolbar.js`
+- `ViewerPanel.js`
 
-## Current Status
+All files are placeholders and are not used by the active runtime.
 
-- Not imported by active runtime.
-- Active viewer implementation lives in:
-  - `old_web/js/views/viewerView.js`
-  - `old_web/js/components/sidebarTree.js`
-  - `old_web/js/components/viewerPanel/*`
+## Active Viewer Modules
+
+Use these instead:
+
+- `old_web/js/views/viewerView.js`
+- `old_web/js/components/sidebarTree.js`
+- `old_web/js/components/viewerPanel/*`

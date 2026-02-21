@@ -1,8 +1,8 @@
 # css
 
-Style system for old_web.
+Style system for `old_web`.
 
-## Load Order from `old_web/index.html`
+## Load Order (from `old_web/index.html`)
 
 1. `tokens.css`
 2. `app.css`
@@ -13,21 +13,29 @@ Style system for old_web.
 7. `components/table.css`
 8. `components/charts.css`
 
-## Implemented Files
+## Active Ownership
 
-- `tokens.css`: design tokens (colors, spacing, radius, shadows).
-- `app.css`: shared layout, navbar, home page states, utilities.
-- `home.css`: minimal file, points to home styles living in `app.css`.
-- `viewer.css`: viewer layout, sidebar/tree, top bars, responsive behavior.
-- `viewer-panel.css`: inspect/display panel, matrix/line/heatmap panel styling.
-- `reset.css`: basic margin/padding/box model reset.
-- `theme.css`: legacy token/base duplication kept for compatibility.
+- `tokens.css`: color, spacing, radius, shadow, and semantic design tokens.
+- `app.css`: global app shell + home page base styling.
+- `home.css`: small home-specific extensions.
+- `viewer.css`: viewer layout (sidebar, top bars, tabs, responsive drawer/fullscreen shell).
+- `viewer-panel.css`: matrix/line/heatmap panel visuals and interactive runtime states.
+- `components/table.css`: home file table styling.
+- `components/charts.css`: generic chart surface class.
 
-## Placeholder
+## Important Runtime Classes
 
-- `common.css`: currently empty.
+- Viewer fullscreen shell: `.viewer-page:fullscreen`
+- Panel fullscreen lock: `body.line-panel-fullscreen-active`
+- Line panel fullscreen: `.line-chart-shell.is-fullscreen`
+- Heatmap plot mode: `.heatmap-chart-canvas.is-plot`
+- Heatmap pan mode: `.heatmap-chart-canvas.is-pan`
+- Inline linked line shell: `.heatmap-inline-line-shell`
 
-## Notes for New Developers
+## Files Not Loaded by `index.html`
 
-- Primary active styling is in `app.css`, `viewer.css`, and `viewer-panel.css`.
-- Keep tokens in `tokens.css` aligned with project palette.
+- `reset.css`
+- `theme.css`
+- `common.css`
+
+These are retained for compatibility/history and can be removed only after confirming no external dependency.

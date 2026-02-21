@@ -736,17 +736,17 @@ body.line-panel-fullscreen-active {
     overflow: hidden;
 }
 
-.line-chart-shell.is-fullscreen .line-chart-stage {
+.line-chart-shell.is-fullscreen > .line-chart-stage {
     flex: 1;
     min-height: 0;
 }
 
-.line-chart-shell.is-fullscreen .line-chart-canvas {
+.line-chart-shell.is-fullscreen > .line-chart-stage > .line-chart-canvas {
     height: 100%;
     min-height: 0;
 }
 
-.line-chart-shell.is-fullscreen .heatmap-chart-canvas {
+.line-chart-shell.is-fullscreen > .line-chart-stage > .heatmap-chart-canvas {
     height: 100%;
     min-height: 0;
 }
@@ -774,7 +774,7 @@ body.line-panel-fullscreen-active {
     display: none;
 }
 
-.line-chart-shell.is-fullscreen .line-tool-group-fullscreen-only {
+.line-chart-shell.is-fullscreen > .line-chart-toolbar .line-tool-group-fullscreen-only {
     display: flex;
 }
 
@@ -908,6 +908,14 @@ body.line-panel-fullscreen-active {
     cursor: grab;
 }
 
+.heatmap-chart-canvas.is-plot {
+    cursor: crosshair;
+}
+
+.heatmap-chart-canvas.is-plot .heatmap-canvas {
+    cursor: crosshair;
+}
+
 .heatmap-chart-canvas.is-pan .heatmap-canvas {
     cursor: grab;
 }
@@ -1016,6 +1024,28 @@ body.line-panel-fullscreen-active {
     vector-effect: non-scaling-stroke;
 }
 
+.line-selected-point-line {
+    stroke: rgba(220, 38, 38, 0.9);
+    stroke-width: 2;
+    stroke-dasharray: 5 3;
+    vector-effect: non-scaling-stroke;
+}
+
+.line-selected-point-halo {
+    fill: rgba(220, 38, 38, 0.18);
+    stroke: rgba(220, 38, 38, 0.85);
+    stroke-width: 1.4;
+    vector-effect: non-scaling-stroke;
+}
+
+.line-selected-point-dot {
+    fill: var(--error);
+    stroke: #fff;
+    stroke-width: 2.4;
+    filter: drop-shadow(0 0 3px rgba(15, 23, 42, 0.32));
+    vector-effect: non-scaling-stroke;
+}
+
 .line-hover {
     position: absolute;
     right: var(--spacing-md);
@@ -1034,6 +1064,58 @@ body.line-panel-fullscreen-active {
     gap: var(--spacing-md);
     font-size: 0.75rem;
     color: var(--text-secondary);
+}
+
+.heatmap-linked-plot {
+    border-top: 1px solid var(--border);
+    padding-top: var(--spacing-sm);
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+}
+
+.heatmap-linked-plot[hidden] {
+    display: none !important;
+}
+
+.heatmap-linked-plot-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-sm);
+    flex-wrap: wrap;
+}
+
+.heatmap-linked-plot-title {
+    font-size: 0.76rem;
+    font-weight: 700;
+    color: var(--text-secondary);
+    letter-spacing: 0.02em;
+}
+
+.heatmap-linked-plot-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+}
+
+.heatmap-linked-plot-shell-host {
+    width: 100%;
+}
+
+.heatmap-inline-line-shell {
+    margin: 0;
+    min-height: clamp(230px, 36vh, 390px);
+    overflow-anchor: none;
+}
+
+.heatmap-inline-line-shell .line-chart-canvas {
+    height: clamp(210px, 34vh, 380px);
+    overflow-anchor: none;
+}
+
+.heatmap-inline-line-shell .line-chart-stage {
+    overflow-anchor: none;
 }
 
 .preview-heatmap {

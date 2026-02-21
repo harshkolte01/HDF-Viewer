@@ -1,30 +1,29 @@
 # js
 
-Application logic for old_web, organized as ES modules.
+Application logic for `old_web`, organized as ES modules.
 
 ## Entry Points
 
-- `app.js`: active bootstrap and render loop.
-- `main.js`: tiny wrapper that imports `app.js`.
-- `router.js`: legacy placeholder, currently empty.
+- `app.js`: active bootstrap, render loop, route switch, and startup file load.
+- `main.js`: tiny wrapper importing `app.js`.
+- `router.js`: legacy empty file (not used).
 
 ## Runtime Layers
 
-- `api/`: HTTP client, contracts, and frontend caching service.
-- `state/`: global store plus action factories.
-- `views/`: route-level UI rendering and event binding.
-- `components/`: reusable UI and viewer panel modules.
-- `utils/`: formatting, template loading, debounce, LRU cache.
-- `visualizations/`: legacy placeholder visual modules.
+- `api/`: HTTP client, payload normalization contracts, frontend caching service.
+- `state/`: store + composed action creators.
+- `views/`: route-level renderers and event binders.
+- `components/`: reusable UI modules and viewer panel facade.
+- `utils/`: formatting, debounce, LRU cache, template loading.
+- `visualizations/`: legacy placeholders (inactive).
 
-## Core Dependency Flow
+## Active Dependency Spine
 
 - `app.js` -> `state/store.js`, `state/reducers.js`, `views/*`, `components/topBar.js`
-- `state/reducers.js` -> `api/hdf5Service.js` + `state/reducers/*`
-- `views/viewerView.js` -> `components/sidebarTree.js` + `components/viewerPanel.js`
-- `components/viewerPanel.js` -> `components/viewerPanel/render.js` + `components/viewerPanel/runtime.js`
-- runtime modules -> `api/hdf5Service.js` for `/data` fetches
+- `views/viewerView.js` -> `components/sidebarTree.js`, `components/viewerPanel.js`
+- `components/viewerPanel.js` -> `components/viewerPanel/render.js`, `components/viewerPanel/runtime.js`
+- Runtime modules -> `api/hdf5Service.js` for `/data` requests
 
 ## Notes
 
-- Query-parameter cache busting (`?v=...`) is intentionally used on some imports to control browser cache.
+- Query-string version suffixes (`?v=...`) are intentionally used on some imports to force browser cache refresh after runtime fixes.

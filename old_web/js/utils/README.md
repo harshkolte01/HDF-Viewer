@@ -1,13 +1,17 @@
 # js/utils
 
-Shared utility helpers.
+Shared utility modules.
 
 ## Active Files
 
-- `format.js`: `escapeHtml`, `formatBytes`.
-- `debounce.js`: debounce helper for UI interactions.
-- `lru.js`: simple LRU cache class.
-- `templateLoader.js`: loads and caches HTML templates from `old_web/pages/` and applies placeholders.
+- `format.js`
+  - `escapeHtml`, `formatBytes`.
+- `debounce.js`
+  - Generic debounce helper.
+- `lru.js`
+  - Simple LRU cache used by API/runtime caching.
+- `templateLoader.js`
+  - Loads `old_web/pages/*.html`, caches templates, applies placeholders.
 
 ## Placeholder Files
 
@@ -15,8 +19,7 @@ Shared utility helpers.
 - `dom.js` (empty)
 - `formatters.js` (empty)
 
-## Imported By
+## Import Notes
 
-- `format.js`: used by views and components for escaping and formatting.
-- `lru.js`: used by `old_web/js/api/hdf5Service.js` and `old_web/js/components/viewerPanel/shared.js`.
-- `templateLoader.js`: used by home and viewer views.
+- `templateLoader.js` is used by both `homeView.js` and `viewerView.js`.
+- `lru.js` is used by `js/api/hdf5Service.js` and viewer-panel shared caches.

@@ -1,12 +1,12 @@
 # assets
 
-Static assets used by old_web pages.
+Static assets used by `old_web`.
 
 ## Files
 
-- `logo.svg`: brand asset available for headers or landing sections.
+- `logo.svg`: optional brand/logo asset for headers or docs.
 
-## Current Usage
+## Runtime Usage
 
-- No direct import from JS modules.
-- Can be referenced from HTML or CSS when needed.
+- No direct JS import currently.
+- Can be referenced from HTML/CSS when needed.

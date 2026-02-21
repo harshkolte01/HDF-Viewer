@@ -46,6 +46,14 @@ function renderToolIcon(kind) {
       </svg>
     `;
   }
+  if (kind === "plot") {
+    return `
+      <svg class="line-tool-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+        <circle cx="8" cy="8" r="5.5"></circle>
+        <path d="M8 4.6v6.8M4.6 8h6.8"></path>
+      </svg>
+    `;
+  }
   if (kind === "zoom-out") {
     return `
       <svg class="line-tool-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
@@ -65,6 +73,13 @@ function renderToolIcon(kind) {
     return `
       <svg class="line-tool-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
         <path d="M2 6V2h4M14 6V2h-4M2 10v4h4M14 10v4h-4"></path>
+      </svg>
+    `;
+  }
+  if (kind === "close") {
+    return `
+      <svg class="line-tool-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+        <path d="M4 4l8 8M12 4l-8 8"></path>
       </svg>
     `;
   }
@@ -314,10 +329,14 @@ function renderVirtualHeatmapShell(state, config) {
       data-heatmap-selection-key="${escapeHtml(config.selectionKey || "")}"
       data-heatmap-colormap="${escapeHtml(state.heatmapColormap || "viridis")}"
       data-heatmap-grid="${state.heatmapGrid ? "1" : "0"}"
+      data-heatmap-line-notation="${escapeHtml(state.notation || "auto")}"
+      data-heatmap-line-grid="${state.lineGrid ? "1" : "0"}"
+      data-heatmap-line-aspect="${escapeHtml(state.lineAspect || "line")}"
     >
       <div class="line-chart-toolbar heatmap-chart-toolbar">
         <div class="line-tool-group">
           ${renderIconToolButton("Hand", "data-heatmap-pan-toggle", "pan")}
+          ${renderIconToolButton("Plotting", "data-heatmap-plot-toggle", "plot")}
           ${renderIconToolButton("Zoom in", "data-heatmap-zoom-in", "zoom-in")}
           ${renderIconToolButton("Zoom out", "data-heatmap-zoom-out", "zoom-out")}
           ${renderIconToolButton("Reset view", "data-heatmap-reset-view", "reset")}
@@ -339,6 +358,19 @@ function renderVirtualHeatmapShell(state, config) {
           <canvas class="heatmap-canvas" data-heatmap-surface="true"></canvas>
           <div class="line-hover" data-heatmap-hover="true" hidden></div>
         </div>
+      </div>
+      <div class="heatmap-linked-plot" data-heatmap-linked-plot="true" hidden>
+        <div class="heatmap-linked-plot-header">
+          <div class="heatmap-linked-plot-title" data-heatmap-linked-title="true">
+            Plot mode: click a heatmap cell to inspect row/column profiles.
+          </div>
+          <div class="heatmap-linked-plot-actions">
+            <button type="button" class="line-tool-btn" data-heatmap-plot-axis="row">Row</button>
+            <button type="button" class="line-tool-btn" data-heatmap-plot-axis="col">Column</button>
+            ${renderIconToolButton("Close plot", "data-heatmap-plot-close", "close")}
+          </div>
+        </div>
+        <div class="heatmap-linked-plot-shell-host" data-heatmap-linked-shell-host="true"></div>
       </div>
       <div class="line-stats">
         <span data-heatmap-stat-min="true">min: --</span>

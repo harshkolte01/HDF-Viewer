@@ -42,8 +42,13 @@ function consumeLineFullscreenRestore(selectionKey) {
   return key === selectionKey && Date.now() <= expiresAt;
 }
 function initializeLineRuntime(shell) {
-  if (!shell || shell.dataset.lineBound === "true") {
-    return;
+  if (!shell) {
+    return null;
+  }
+  if (shell.dataset.lineBound === "true") {
+    return typeof shell.__lineRuntimeCleanup === "function"
+      ? shell.__lineRuntimeCleanup
+      : null;
   }
 
   const canvas = shell.querySelector("[data-line-canvas]");
@@ -72,7 +77,7 @@ function initializeLineRuntime(shell) {
     shell.closest(".data-section")?.querySelector("[data-line-status]") || null;
 
   if (!canvas || !svg) {
-    return;
+    return null;
   }
 
   const fileKey = shell.dataset.lineFileKey || "";
@@ -98,10 +103,16 @@ function initializeLineRuntime(shell) {
   const totalPoints = Math.max(0, toSafeInteger(shell.dataset.lineTotalPoints, 0));
   const parsedLineIndex = toSafeInteger(shell.dataset.lineIndex, null);
   const lineIndex = Number.isFinite(parsedLineIndex) ? parsedLineIndex : null;
+  const parsedLineDim = (shell.dataset.lineDim || "").trim().toLowerCase();
+  const lineDim =
+    lineIndex === null ? null : parsedLineDim === "col" ? "col" : "row";
+  const parsedSelectedPoint = toSafeInteger(shell.dataset.lineSelectedPoint, null);
+  const selectedPointX = Number.isFinite(parsedSelectedPoint) ? parsedSelectedPoint : null;
+  const inlineHeatmapLinked = shell.classList.contains("heatmap-inline-line-shell");
 
   if (!fileKey || totalPoints <= 0) {
     setMatrixStatus(statusElement, "No line data available.", "error");
-    return;
+    return null;
   }
 
   shell.dataset.lineBound = "true";
@@ -118,6 +129,8 @@ function initializeLineRuntime(shell) {
     selectionKey,
     totalPoints,
     lineIndex,
+    lineDim,
+    selectedPointX,
     qualityRequested: initialQuality,
     qualityApplied: initialQuality,
     overviewMaxPoints,
@@ -294,6 +307,125 @@ function initializeLineRuntime(shell) {
     }
   }
 
+  let inlineScrollSnapshot = null;
+  let inlineScrollSnapshotCapturedAt = 0;
+
+  function isInlineControlTarget(event) {
+    if (!inlineHeatmapLinked || !event?.target || typeof event.target.closest !== "function") {
+      return false;
+    }
+    const control = event.target.closest(
+      "button.line-tool-btn, select.line-tool-select, input.line-tool-input"
+    );
+    return Boolean(control && shell.contains(control));
+  }
+
+  function collectScrollableAncestors(node) {
+    if (typeof window === "undefined" || !node) {
+      return [];
+    }
+    const entries = [];
+    let current = node.parentElement;
+    while (current) {
+      const style = window.getComputedStyle(current);
+      const overflowY = (style.overflowY || "").toLowerCase();
+      const overflowX = (style.overflowX || "").toLowerCase();
+      const canScrollY =
+        (overflowY === "auto" || overflowY === "scroll" || overflowY === "overlay") &&
+        current.scrollHeight > current.clientHeight + 1;
+      const canScrollX =
+        (overflowX === "auto" || overflowX === "scroll" || overflowX === "overlay") &&
+        current.scrollWidth > current.clientWidth + 1;
+      if (canScrollY || canScrollX) {
+        entries.push({
+          kind: "element",
+          target: current,
+          top: current.scrollTop,
+          left: current.scrollLeft,
+        });
+      }
+      current = current.parentElement;
+    }
+
+    const scrollingElement =
+      typeof document !== "undefined" && document.scrollingElement
+        ? document.scrollingElement
+        : null;
+    if (scrollingElement) {
+      entries.push({
+        kind: "document",
+        target: scrollingElement,
+        top: scrollingElement.scrollTop,
+        left: scrollingElement.scrollLeft,
+      });
+    }
+    return entries;
+  }
+
+  function restoreScrollableAncestors(snapshot) {
+    if (!Array.isArray(snapshot) || snapshot.length < 1) {
+      return;
+    }
+    snapshot.forEach((entry) => {
+      if (!entry || !entry.target) {
+        return;
+      }
+      if (entry.kind === "document") {
+        entry.target.scrollTop = entry.top;
+        entry.target.scrollLeft = entry.left;
+        return;
+      }
+      if (entry.kind === "element" && entry.target.isConnected) {
+        entry.target.scrollTop = entry.top;
+        entry.target.scrollLeft = entry.left;
+      }
+    });
+  }
+
+  function getActiveInlineScrollSnapshot(maxAgeMs = 2200) {
+    if (!Array.isArray(inlineScrollSnapshot) || inlineScrollSnapshot.length < 1) {
+      return null;
+    }
+    const age = Date.now() - inlineScrollSnapshotCapturedAt;
+    if (age > maxAgeMs) {
+      inlineScrollSnapshot = null;
+      inlineScrollSnapshotCapturedAt = 0;
+      return null;
+    }
+    return inlineScrollSnapshot;
+  }
+
+  function scheduleInlineScrollRestore(snapshot) {
+    if (!Array.isArray(snapshot) || snapshot.length < 1) {
+      return;
+    }
+    const runRestore = () => restoreScrollableAncestors(snapshot);
+    runRestore();
+    if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
+      window.requestAnimationFrame(runRestore);
+    }
+    [0, 60, 140, 260, 420, 700].forEach((delay) => {
+      setTimeout(runRestore, delay);
+    });
+  }
+
+  function snapshotInlineScroll(event) {
+    if (!isInlineControlTarget(event)) {
+      return;
+    }
+    inlineScrollSnapshot = collectScrollableAncestors(event.target);
+    inlineScrollSnapshotCapturedAt = Date.now();
+  }
+
+  function restoreInlineScroll(event) {
+    if (!isInlineControlTarget(event)) {
+      return;
+    }
+    const snapshot =
+      getActiveInlineScrollSnapshot() || collectScrollableAncestors(event.target);
+    scheduleInlineScrollRestore(snapshot);
+  }
+
   function clearTextSelection() {
     if (typeof window === "undefined" || typeof window.getSelection !== "function") {
       return;
@@ -401,6 +533,25 @@ function initializeLineRuntime(shell) {
     for (let index = 1; index < points.length; index += 1) {
       const candidate = points[index];
       const distance = Math.abs(candidate.x - runtime.zoomFocusX);
+      if (distance < nearestDistance) {
+        nearestPoint = candidate;
+        nearestDistance = distance;
+      }
+    }
+
+    return nearestPoint;
+  }
+
+  function resolveSelectedPoint(points) {
+    if (!Array.isArray(points) || points.length < 1 || !Number.isFinite(runtime.selectedPointX)) {
+      return null;
+    }
+
+    let nearestPoint = points[0];
+    let nearestDistance = Math.abs(points[0].x - runtime.selectedPointX);
+    for (let index = 1; index < points.length; index += 1) {
+      const candidate = points[index];
+      const distance = Math.abs(candidate.x - runtime.selectedPointX);
       if (distance < nearestDistance) {
         nearestPoint = candidate;
         nearestDistance = distance;
@@ -569,6 +720,7 @@ function initializeLineRuntime(shell) {
     const showLine = runtime.lineAspect !== "point";
     const showPoints = runtime.lineAspect !== "line";
     const focusPoint = resolveZoomFocusPoint(points);
+    const selectedPoint = resolveSelectedPoint(points);
     const focusMarkup = focusPoint
       ? `<g class="line-zoom-focus" data-line-zoom-focus="true">
       <line class="line-zoom-focus-line" x1="${toX(focusPoint.x).toFixed(2)}" y1="${padding.top}" x2="${toX(
@@ -580,6 +732,19 @@ function initializeLineRuntime(shell) {
       <circle class="line-zoom-focus-dot" cx="${toX(focusPoint.x).toFixed(2)}" cy="${toY(
           focusPoint.y
         ).toFixed(2)}" r="4.5"></circle>
+    </g>`
+      : "";
+    const selectedMarkup = selectedPoint
+      ? `<g class="line-selected-point" data-line-selected-point="true">
+      <line class="line-selected-point-line" x1="${toX(selectedPoint.x).toFixed(2)}" y1="${padding.top}" x2="${toX(
+          selectedPoint.x
+        ).toFixed(2)}" y2="${padding.top + chartHeight}"></line>
+      <circle class="line-selected-point-halo" cx="${toX(selectedPoint.x).toFixed(2)}" cy="${toY(
+          selectedPoint.y
+        ).toFixed(2)}" r="10"></circle>
+      <circle class="line-selected-point-dot" cx="${toX(selectedPoint.x).toFixed(2)}" cy="${toY(
+          selectedPoint.y
+        ).toFixed(2)}" r="5"></circle>
     </g>`
       : "";
 
@@ -604,6 +769,7 @@ function initializeLineRuntime(shell) {
       </g>
       ${showLine ? `<path class="line-path" d="${path}"></path>` : ""}
       ${showPoints ? `<g class="line-points">${markers}</g>` : ""}
+      ${selectedMarkup}
       ${focusMarkup}
       <circle class="line-hover-dot" data-line-hover-dot="true" cx="-9999" cy="-9999" r="4"></circle>
     `;
@@ -654,7 +820,9 @@ function initializeLineRuntime(shell) {
     }
 
     if (runtime.lineIndex !== null) {
-      params.line_dim = "row";
+      if (runtime.lineDim === "row" || runtime.lineDim === "col") {
+        params.line_dim = runtime.lineDim;
+      }
       params.line_index = runtime.lineIndex;
     }
 
@@ -705,6 +873,12 @@ function initializeLineRuntime(shell) {
       updateRangeLabel(points.length);
       updateZoomLabel();
       renderSeries(points);
+      if (inlineHeatmapLinked) {
+        const snapshot = getActiveInlineScrollSnapshot();
+        if (snapshot) {
+          scheduleInlineScrollRestore(snapshot);
+        }
+      }
       setMatrixStatus(
         statusElement,
         `${runtime.qualityApplied === "exact" ? "Exact" : "Overview"} loaded ${points.length.toLocaleString()} points (step ${step}).`,
@@ -1220,6 +1394,11 @@ function initializeLineRuntime(shell) {
   if (fullscreenButton) {
     fullscreenButton.addEventListener("click", onFullscreenButtonClick);
   }
+  if (inlineHeatmapLinked) {
+    shell.addEventListener("pointerdown", snapshotInlineScroll, true);
+    shell.addEventListener("click", restoreInlineScroll, true);
+    shell.addEventListener("change", restoreInlineScroll, true);
+  }
   document.addEventListener("keydown", onFullscreenEsc);
 
   /* ResizeObserver — re-render chart when container resizes */
@@ -1242,8 +1421,18 @@ function initializeLineRuntime(shell) {
   }
 
   const cleanup = () => {
+    if (runtime.destroyed) {
+      LINE_RUNTIME_CLEANUPS.delete(cleanup);
+      if (shell.__lineRuntimeCleanup === cleanup) {
+        delete shell.__lineRuntimeCleanup;
+      }
+      delete shell.dataset.lineBound;
+      return;
+    }
     persistViewState();
     runtime.destroyed = true;
+    inlineScrollSnapshot = null;
+    inlineScrollSnapshotCapturedAt = 0;
     hideHover();
     if (resizeObserver) {
       resizeObserver.disconnect();
@@ -1308,17 +1497,33 @@ function initializeLineRuntime(shell) {
     if (fullscreenButton) {
       fullscreenButton.removeEventListener("click", onFullscreenButtonClick);
     }
+    if (inlineHeatmapLinked) {
+      shell.removeEventListener("pointerdown", snapshotInlineScroll, true);
+      shell.removeEventListener("click", restoreInlineScroll, true);
+      shell.removeEventListener("change", restoreInlineScroll, true);
+    }
     document.removeEventListener("keydown", onFullscreenEsc);
     if (runtime.fullscreenActive) {
       rememberLineFullscreen(runtime.selectionKey);
     }
+    const shouldUnlockDocument =
+      runtime.fullscreenActive || shell.classList.contains("is-fullscreen");
     exitPanelFullscreen();
     runtime.fullscreenActive = false;
-    setDocumentFullscreenLock(false);
+    if (shouldUnlockDocument) {
+      setDocumentFullscreenLock(false);
+    }
     shell.classList.remove("is-fullscreen");
+    LINE_RUNTIME_CLEANUPS.delete(cleanup);
+    if (shell.__lineRuntimeCleanup === cleanup) {
+      delete shell.__lineRuntimeCleanup;
+    }
+    delete shell.dataset.lineBound;
   };
 
+  shell.__lineRuntimeCleanup = cleanup;
   LINE_RUNTIME_CLEANUPS.add(cleanup);
+  return cleanup;
 }
 
 export { initializeLineRuntime };

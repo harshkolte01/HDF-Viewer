@@ -1,12 +1,12 @@
 # viewer
 
-Legacy static viewer route folder.
+Legacy viewer route shim.
 
 ## Files
 
-- `index.html` (currently empty)
+- `index.html`
 
-## Current Status
+## Current Behavior
 
-- Not used by active app flow.
-- Active viewer route is rendered by `old_web/js/views/viewerView.js` inside `old_web/index.html` single-page flow.
+- `index.html` immediately redirects to `../index.html`.
+- Active viewer runtime is not hosted here; it is rendered inside SPA flow by `old_web/js/views/viewerView.js`.

@@ -1,14 +1,18 @@
 # css/components
 
-Component-level style files.
+Component-level style files loaded by `old_web/index.html`.
 
 ## Files
 
-- `table.css`: file table styles used by home file list.
-- `charts.css`: shared chart surface style.
-- `tree.css`: currently a pointer comment; tree styles are implemented in `old_web/css/viewer.css`.
+- `table.css`
+  - Home file table (`.files-table`, `.go-btn`, row/column responsive behavior).
+- `charts.css`
+  - Shared chart surface utility (`.chart-surface`).
+- `tree.css`
+  - Compatibility stub only.
+  - Actual tree/sidebar styles are implemented in `old_web/css/viewer.css`.
 
-## Usage
+## Notes
 
-- Loaded by `old_web/index.html`.
-- Class names are consumed by rendered HTML from `old_web/js/components/*` and viewer panel renderers.
+- Keep tree-related updates in `viewer.css` to avoid split ownership.
+- Keep table/chart utility classes here when they are reused by multiple views.

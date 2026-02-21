@@ -5,23 +5,25 @@ Viewer panel implementation split into render and runtime layers.
 ## Files
 
 - `render.js`
-  - Builds panel shell and chooses inspect/display renderer.
-  - Re-exports selection-key helpers from `render/config.js`.
+  - Entrypoint for panel HTML generation.
+  - Switches display/inspect content and exports selection-key helpers.
 - `runtime.js`
-  - Re-exports `bindViewerPanelEvents` from runtime binder.
+  - Entrypoint re-export for runtime event binder.
 - `shared.js`
-  - Shared constants and helpers for matrix, line, and heatmap rendering and config normalization.
+  - Shared constants/helpers for matrix, line, and heatmap behavior.
 - `render/`
-  - HTML generation for inspect and display sections.
+  - Pure HTML render modules (shell markup and controls).
 - `runtime/`
-  - Event bindings and full-view runtime engines.
+  - Interactive runtime engines and cleanup utilities.
 
-## Imported By
+## Architecture Pattern
 
-- `old_web/js/components/viewerPanel.js` (facade) re-exports from this folder.
-- `old_web/js/views/viewerView.js` imports the facade.
+1. Render modules output shell markup with `data-*` attributes.
+2. Runtime binder scans shells and initializes matching runtime module.
+3. Runtime modules own all heavy interactions and remote `/data` fetching.
 
-## Internal Dependency Pattern
+## Key Runtime Features Present
 
-- Render modules depend on `shared.js` and `render/config.js`.
-- Runtime modules depend on `shared.js`, runtime `common.js`, API service, and config helpers.
+- Matrix: virtual block streaming table.
+- Line: windowed fetching, zoom/pan/click-zoom, range controls, panel fullscreen.
+- Heatmap: canvas zoom/pan, high-res progressive loading, plot-mode linked inline line profile.

@@ -5,27 +5,25 @@ Modular action factories used by `old_web/js/state/reducers.js`.
 ## Files
 
 - `utils.js`
-  - Path, shape, dim, and fixed-index normalization and comparison helpers.
+  - Path normalization, dim/index normalization, equality helpers.
 - `filesActions.js`
-  - File list load/refresh, home-view actions, viewer route entry.
+  - Home file list load/refresh and viewer route entry.
 - `treeActions.js`
-  - Tree expand/collapse, children fetch, breadcrumb and node selection behavior.
+  - Tree expand/collapse/load and dataset/group selection behavior.
 - `viewActions.js`
-  - Display vs inspect mode, tab switching, notation/grid/colormap toggles, full-view enable actions.
+  - Display/inspect mode, tab switching, notation/grid/colormap, full-view enables.
 - `displayConfigActions.js`
-  - Staging and applying display dims/fixed indices with debounced preview reload.
+  - Stage/apply/reset display dims and fixed indices.
+  - Debounced preview reload after applied config changes.
 - `dataActions.js`
-  - Metadata and preview loading pipeline, request de-duplication, warm preview strategy.
+  - Metadata and preview loading pipeline.
+  - Request de-duplication and warm-preview behavior (smaller first load, larger steady load).
 
 ## Composition
 
-All factory outputs are merged in `old_web/js/state/reducers.js` into a single `actions` object.
+`old_web/js/state/reducers.js` injects store/api/utils deps and merges all factory outputs into one `actions` object.
 
-## Dependencies
+## Important Behavior
 
-Each factory receives injected dependencies:
-
-- `actions` (for cross-calls)
-- `getState` and `setState`
-- API methods from `old_web/js/api/hdf5Service.js`
-- shared normalization helpers from `utils.js`
+- Any dataset or tab context change resets full-view flags (`matrixFullEnabled`, `lineFullEnabled`, `heatmapFullEnabled`).
+- Preview requests are keyed by selection + mode + display config + etag + max size + detail.

@@ -1,8 +1,17 @@
 import { getFileData } from "../../../api/hdf5Service.js";
 import { cancelPendingRequest } from "../../../api/client.js";
-import { clamp, formatCell } from "../shared.js";
+import { escapeHtml } from "../../../utils/format.js";
+import {
+  clamp,
+  formatCell,
+  LINE_DEFAULT_QUALITY,
+  LINE_DEFAULT_OVERVIEW_MAX_POINTS,
+  LINE_EXACT_MAX_POINTS,
+  LINE_WINDOW_OPTIONS,
+} from "../shared.js";
 import { buildHeatmapSelectionKey } from "../render/config.js";
 import { HEATMAP_RUNTIME_CLEANUPS, setMatrixStatus } from "./common.js";
+import { initializeLineRuntime } from "./lineRuntime.js?v=20260221-13";
 
 const HEATMAP_MAX_SIZE = 1024;
 const HEATMAP_MIN_ZOOM = 1;
@@ -150,6 +159,23 @@ function formatScaleValue(value) {
   return value.toLocaleString(undefined, {
     maximumFractionDigits: Math.abs(value) >= 10 ? 1 : 3,
   });
+}
+
+function toFiniteNumber(value) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return null;
+    }
+    const parsed = Number(trimmed);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  return null;
 }
 
 function toDisplayRow(totalRows, rowIndex) {
@@ -321,6 +347,171 @@ function getLayout(width, height) {
   };
 }
 
+function buildLineWindowOptions(totalPoints) {
+  const safeTotal = Math.max(1, Number(totalPoints) || 1);
+  const options = LINE_WINDOW_OPTIONS.filter((size) => size <= safeTotal);
+  if (!options.includes(safeTotal)) {
+    options.push(safeTotal);
+  }
+  return options.sort((left, right) => left - right);
+}
+
+function renderLineToolIcon(kind) {
+  if (kind === "pan") {
+    return `
+      <svg class="line-tool-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+        <path d="M8 1v14M1 8h14M8 1 6.3 2.7M8 1l1.7 1.7M8 15l-1.7-1.7M8 15l1.7-1.7M1 8l1.7-1.7M1 8l1.7 1.7M15 8l-1.7-1.7M15 8l-1.7 1.7"></path>
+      </svg>
+    `;
+  }
+  if (kind === "zoom-click") {
+    return `
+      <svg class="line-tool-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+        <circle cx="7" cy="7" r="4.5"></circle>
+        <path d="M10.4 10.4 14 14M7 5v4M5 7h4"></path>
+        <path d="M2.2 2.2 4.2 4.2"></path>
+      </svg>
+    `;
+  }
+  if (kind === "zoom-in") {
+    return `
+      <svg class="line-tool-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+        <circle cx="7" cy="7" r="4.5"></circle>
+        <path d="M10.4 10.4 14 14M7 5v4M5 7h4"></path>
+      </svg>
+    `;
+  }
+  if (kind === "zoom-out") {
+    return `
+      <svg class="line-tool-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+        <circle cx="7" cy="7" r="4.5"></circle>
+        <path d="M10.4 10.4 14 14M5 7h4"></path>
+      </svg>
+    `;
+  }
+  if (kind === "reset") {
+    return `
+      <svg class="line-tool-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+        <path d="M3.2 5.4A5 5 0 1 1 3 8M3 3v3h3"></path>
+      </svg>
+    `;
+  }
+  if (kind === "fullscreen") {
+    return `
+      <svg class="line-tool-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+        <path d="M2 6V2h4M14 6V2h-4M2 10v4h4M14 10v4h-4"></path>
+      </svg>
+    `;
+  }
+  return "";
+}
+
+function renderLineIconToolButton(label, dataAttr, kind) {
+  return `
+    <button
+      type="button"
+      class="line-tool-btn line-tool-btn-icon"
+      ${dataAttr}="true"
+      aria-label="${label}"
+      title="${label}"
+    >
+      ${renderLineToolIcon(kind)}
+    </button>
+  `;
+}
+
+function renderLinkedLineShellMarkup(config) {
+  const windowOptions = buildLineWindowOptions(config.totalPoints);
+  const maxIndex = Math.max(0, config.totalPoints - 1);
+
+  return `
+    <div
+      class="line-chart-shell line-chart-shell-full heatmap-inline-line-shell"
+      data-line-shell="true"
+      data-line-file-key="${escapeHtml(config.fileKey || "")}"
+      data-line-file-etag="${escapeHtml(config.fileEtag || "")}"
+      data-line-path="${escapeHtml(config.path || "/")}"
+      data-line-display-dims="${escapeHtml(config.displayDims || "")}"
+      data-line-fixed-indices="${escapeHtml(config.fixedIndices || "")}"
+      data-line-selection-key="${escapeHtml(config.selectionKey || "")}"
+      data-line-total-points="${config.totalPoints}"
+      data-line-index="${config.lineIndex}"
+      data-line-dim="${escapeHtml(config.lineDim || "row")}"
+      data-line-selected-point="${Number.isFinite(config.selectedPointIndex) ? config.selectedPointIndex : ""}"
+      data-line-notation="${escapeHtml(config.notation || "auto")}"
+      data-line-grid="${config.lineGrid ? "1" : "0"}"
+      data-line-aspect="${escapeHtml(config.lineAspect || "line")}"
+      data-line-quality="${LINE_DEFAULT_QUALITY}"
+      data-line-overview-max-points="${LINE_DEFAULT_OVERVIEW_MAX_POINTS}"
+      data-line-exact-max-points="${LINE_EXACT_MAX_POINTS}"
+    >
+      <div class="line-chart-toolbar">
+        <div class="line-tool-group">
+          ${renderLineIconToolButton("Hand", "data-line-pan-toggle", "pan")}
+          ${renderLineIconToolButton("Zoom on click", "data-line-zoom-click-toggle", "zoom-click")}
+          ${renderLineIconToolButton("Zoom in", "data-line-zoom-in", "zoom-in")}
+          ${renderLineIconToolButton("Zoom out", "data-line-zoom-out", "zoom-out")}
+          ${renderLineIconToolButton("Reset view", "data-line-reset-view", "reset")}
+        </div>
+        <div class="line-tool-group">
+          <button type="button" class="line-tool-btn" data-line-jump-start="true">Start</button>
+          <button type="button" class="line-tool-btn" data-line-step-prev="true">Prev</button>
+          <button type="button" class="line-tool-btn" data-line-step-next="true">Next</button>
+          <button type="button" class="line-tool-btn" data-line-jump-end="true">End</button>
+        </div>
+        <div class="line-tool-group line-tool-group-controls line-tool-group-fullscreen-only">
+          <span class="line-tool-label">Quality</span>
+          <select class="line-tool-select" data-line-quality-select="true">
+            <option value="auto">Auto</option>
+            <option value="overview">Overview</option>
+            <option value="exact">Exact Window</option>
+          </select>
+          <span class="line-tool-label">Window</span>
+          <select class="line-tool-select" data-line-window-select="true">
+            ${windowOptions
+              .map((size) => `<option value="${size}">${size.toLocaleString()}</option>`)
+              .join("")}
+          </select>
+          <span class="line-tool-label">Index</span>
+          <input
+            type="number"
+            class="line-tool-input"
+            data-line-jump-input="true"
+            min="0"
+            max="${maxIndex}"
+            step="1"
+            value="0"
+          />
+          <button type="button" class="line-tool-btn" data-line-jump-to-index="true">Go</button>
+        </div>
+        <div class="line-tool-group">
+          <span class="line-zoom-label" data-line-zoom-label="true">100%</span>
+          ${renderLineIconToolButton("Fullscreen", "data-line-fullscreen-toggle", "fullscreen")}
+          <span class="line-zoom-label" data-line-range-label="true">Range: --</span>
+        </div>
+      </div>
+      <div class="line-chart-stage">
+        <div class="line-chart-canvas" data-line-canvas="true" tabindex="0" role="application" aria-label="Line chart">
+          <svg
+            viewBox="0 0 1024 420"
+            width="100%"
+            height="100%"
+            role="img"
+            aria-label="Full line view"
+            data-line-svg="true"
+          ></svg>
+          <div class="line-hover" data-line-hover="true" hidden></div>
+        </div>
+      </div>
+      <div class="line-stats">
+        <span data-line-stat-min="true">min: --</span>
+        <span data-line-stat-max="true">max: --</span>
+        <span data-line-stat-span="true">span: --</span>
+      </div>
+    </div>
+  `;
+}
+
 function initializeHeatmapRuntime(shell) {
   if (!shell || shell.dataset.heatmapBound === "true") {
     return;
@@ -330,6 +521,7 @@ function initializeHeatmapRuntime(shell) {
   const canvas = shell.querySelector("[data-heatmap-surface]");
   const tooltip = shell.querySelector("[data-heatmap-hover]");
   const panToggleButton = shell.querySelector("[data-heatmap-pan-toggle]");
+  const plotToggleButton = shell.querySelector("[data-heatmap-plot-toggle]");
   const zoomInButton = shell.querySelector("[data-heatmap-zoom-in]");
   const zoomOutButton = shell.querySelector("[data-heatmap-zoom-out]");
   const resetButton = shell.querySelector("[data-heatmap-reset-view]");
@@ -339,6 +531,12 @@ function initializeHeatmapRuntime(shell) {
   const minStat = shell.querySelector("[data-heatmap-stat-min]");
   const maxStat = shell.querySelector("[data-heatmap-stat-max]");
   const rangeStat = shell.querySelector("[data-heatmap-stat-range]");
+  let linkedPlotPanel = shell.querySelector("[data-heatmap-linked-plot]");
+  let linkedPlotTitle = shell.querySelector("[data-heatmap-linked-title]");
+  let linkedPlotShellHost = shell.querySelector("[data-heatmap-linked-shell-host]");
+  let linkedPlotRowButton = shell.querySelector('[data-heatmap-plot-axis="row"]');
+  let linkedPlotColButton = shell.querySelector('[data-heatmap-plot-axis="col"]');
+  let linkedPlotCloseButton = shell.querySelector("[data-heatmap-plot-close]");
   const statusElement =
     shell.closest(".data-section")?.querySelector("[data-heatmap-status]") || null;
 
@@ -357,10 +555,53 @@ function initializeHeatmapRuntime(shell) {
   const cacheKey = `${selectionKey}|${fileEtag || "no-etag"}`;
   const colormap = shell.dataset.heatmapColormap || "viridis";
   const showGrid = shell.dataset.heatmapGrid !== "0";
+  const lineNotation = shell.dataset.heatmapLineNotation || "auto";
+  const lineGrid = shell.dataset.heatmapLineGrid !== "0";
+  const lineAspect = shell.dataset.heatmapLineAspect || "line";
 
   if (!fileKey) {
     setMatrixStatus(statusElement, "No heatmap data available.", "error");
     return;
+  }
+
+  if (!linkedPlotPanel || !linkedPlotTitle || !linkedPlotShellHost) {
+    const linkedPanelMarkup = `
+      <div class="heatmap-linked-plot" data-heatmap-linked-plot="true" hidden>
+        <div class="heatmap-linked-plot-header">
+          <div class="heatmap-linked-plot-title" data-heatmap-linked-title="true">
+            Plot mode: click a heatmap cell to inspect row/column profiles.
+          </div>
+          <div class="heatmap-linked-plot-actions">
+            <button type="button" class="line-tool-btn" data-heatmap-plot-axis="row">Row</button>
+            <button type="button" class="line-tool-btn" data-heatmap-plot-axis="col">Column</button>
+            <button
+              type="button"
+              class="line-tool-btn line-tool-btn-icon"
+              data-heatmap-plot-close="true"
+              aria-label="Close plot"
+              title="Close plot"
+            >
+              <svg class="line-tool-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                <path d="M4 4l8 8M12 4l-8 8"></path>
+              </svg>
+            </button>
+          </div>
+        </div>
+        <div class="heatmap-linked-plot-shell-host" data-heatmap-linked-shell-host="true"></div>
+      </div>
+    `;
+    const statsNode = shell.querySelector(".line-stats");
+    if (statsNode) {
+      statsNode.insertAdjacentHTML("beforebegin", linkedPanelMarkup);
+    } else {
+      shell.insertAdjacentHTML("beforeend", linkedPanelMarkup);
+    }
+    linkedPlotPanel = shell.querySelector("[data-heatmap-linked-plot]");
+    linkedPlotTitle = shell.querySelector("[data-heatmap-linked-title]");
+    linkedPlotShellHost = shell.querySelector("[data-heatmap-linked-shell-host]");
+    linkedPlotRowButton = shell.querySelector('[data-heatmap-plot-axis="row"]');
+    linkedPlotColButton = shell.querySelector('[data-heatmap-plot-axis="col"]');
+    linkedPlotCloseButton = shell.querySelector("[data-heatmap-plot-close]");
   }
 
   shell.dataset.heatmapBound = "true";
@@ -379,6 +620,7 @@ function initializeHeatmapRuntime(shell) {
     panX: 0,
     panY: 0,
     panEnabled: false,
+    plottingEnabled: false,
     isPanning: false,
     panPointerId: null,
     panStartX: 0,
@@ -396,6 +638,10 @@ function initializeHeatmapRuntime(shell) {
     layout: null,
     hover: null,
     hoverDisplayRow: null,
+    selectedCell: null,
+    plotAxis: "row",
+    linkedPlotOpen: false,
+    linkedLineCleanup: null,
     activeCancelKeys: new Set(),
     destroyed: false,
     loadedPhase: "preview",
@@ -431,11 +677,24 @@ function initializeHeatmapRuntime(shell) {
   }
 
   function persistViewState() {
+    const persistedCell =
+      runtime.selectedCell &&
+      Number.isFinite(runtime.selectedCell.row) &&
+      Number.isFinite(runtime.selectedCell.col)
+        ? {
+            row: runtime.selectedCell.row,
+            col: runtime.selectedCell.col,
+          }
+        : null;
     HEATMAP_SELECTION_VIEW_CACHE.set(runtime.cacheKey, {
       zoom: runtime.zoom,
       panX: runtime.panX,
       panY: runtime.panY,
       panEnabled: runtime.panEnabled === true,
+      plottingEnabled: runtime.plottingEnabled === true,
+      plotAxis: runtime.plotAxis === "col" ? "col" : "row",
+      linkedPlotOpen: runtime.linkedPlotOpen === true && persistedCell !== null,
+      selectedCell: persistedCell,
     });
     if (HEATMAP_SELECTION_VIEW_CACHE.size > HEATMAP_SELECTION_CACHE_LIMIT) {
       const oldestKey = HEATMAP_SELECTION_VIEW_CACHE.keys().next().value;
@@ -508,10 +767,18 @@ function initializeHeatmapRuntime(shell) {
       runtime.panX = Number(cachedView.panX) || 0;
       runtime.panY = Number(cachedView.panY) || 0;
       runtime.panEnabled = cachedView.panEnabled === true;
+      runtime.plottingEnabled = cachedView.plottingEnabled === true;
+      runtime.plotAxis = cachedView.plotAxis === "col" ? "col" : "row";
+      runtime.selectedCell = normalizeSelectedCell(cachedView.selectedCell);
+      runtime.linkedPlotOpen = cachedView.linkedPlotOpen === true && runtime.selectedCell !== null;
     } else {
       runtime.zoom = HEATMAP_MIN_ZOOM;
       runtime.panX = 0;
       runtime.panY = 0;
+      runtime.plottingEnabled = false;
+      runtime.plotAxis = "row";
+      runtime.selectedCell = null;
+      runtime.linkedPlotOpen = false;
     }
 
     hideTooltip();
@@ -525,18 +792,215 @@ function initializeHeatmapRuntime(shell) {
     renderHeatmap();
     persistViewState();
 
+    if (runtime.linkedPlotOpen && runtime.selectedCell) {
+      renderLinkedPlotLine();
+    }
+
     setMatrixStatus(statusElement, buildLoadedStatusText(runtime.loadedPhase), "info");
     return true;
+  }
+
+  function setLinkedPlotTitle(cell = runtime.selectedCell) {
+    if (!linkedPlotTitle) {
+      return;
+    }
+
+    if (!cell) {
+      linkedPlotTitle.textContent = "Plot mode: click a heatmap cell to inspect row/column profiles.";
+      return;
+    }
+
+    const modeText = runtime.plotAxis === "col" ? "Column profile" : "Row profile";
+    const axisText =
+      runtime.plotAxis === "col"
+        ? `Col ${cell.col} across Y`
+        : `Y ${cell.displayRow} across columns`;
+    linkedPlotTitle.textContent = `${modeText}: ${axisText} | Value ${formatCell(cell.value, "auto")}`;
+  }
+
+  function syncPlotAxisButtons() {
+    if (linkedPlotRowButton) {
+      linkedPlotRowButton.classList.toggle("active", runtime.plotAxis === "row");
+    }
+    if (linkedPlotColButton) {
+      linkedPlotColButton.classList.toggle("active", runtime.plotAxis === "col");
+    }
+  }
+
+  function clearLinkedLineRuntime() {
+    if (typeof runtime.linkedLineCleanup === "function") {
+      try {
+        runtime.linkedLineCleanup();
+      } catch (_error) {
+        // ignore cleanup errors for detached nodes
+      }
+    }
+    runtime.linkedLineCleanup = null;
+    if (linkedPlotShellHost) {
+      linkedPlotShellHost.innerHTML = "";
+    }
+  }
+
+  function closeLinkedPlot() {
+    runtime.selectedCell = null;
+    runtime.linkedPlotOpen = false;
+    clearLinkedLineRuntime();
+    if (linkedPlotPanel) {
+      linkedPlotPanel.hidden = true;
+      linkedPlotPanel.classList.remove("is-visible");
+    }
+    setLinkedPlotTitle(null);
+    syncPlotAxisButtons();
+    renderHeatmap();
+  }
+
+  function openLinkedPlot() {
+    runtime.linkedPlotOpen = true;
+    if (linkedPlotPanel) {
+      linkedPlotPanel.hidden = false;
+      linkedPlotPanel.classList.add("is-visible");
+    }
+  }
+
+  function normalizeSelectedCell(cell) {
+    if (!cell) {
+      return null;
+    }
+    const row = clamp(Number(cell.row), 0, Math.max(0, runtime.rows - 1));
+    const col = clamp(Number(cell.col), 0, Math.max(0, runtime.cols - 1));
+    const value =
+      runtime.values && runtime.rows > 0 && runtime.cols > 0
+        ? runtime.values[row * runtime.cols + col]
+        : cell.value;
+    return {
+      row,
+      col,
+      value,
+      displayRow: toDisplayRow(runtime.rows, row),
+    };
+  }
+
+  function selectCellForPlot(cell) {
+    const normalized = normalizeSelectedCell(cell);
+    if (!normalized) {
+      return false;
+    }
+
+    const isSameSelection =
+      runtime.selectedCell &&
+      runtime.selectedCell.row === normalized.row &&
+      runtime.selectedCell.col === normalized.col &&
+      linkedPlotPanel &&
+      linkedPlotPanel.hidden === false;
+
+    runtime.selectedCell = normalized;
+    runtime.linkedPlotOpen = true;
+    persistViewState();
+    setMatrixStatus(
+      statusElement,
+      `Plot selected at Y ${normalized.displayRow}, Col ${normalized.col}. Loading line profile...`,
+      "info"
+    );
+    renderHeatmap();
+    if (!isSameSelection) {
+      renderLinkedPlotLine();
+    } else {
+      setLinkedPlotTitle(runtime.selectedCell);
+      syncPlotAxisButtons();
+    }
+    return true;
+  }
+
+  function resolveFallbackHoverCell() {
+    if (!runtime.hover) {
+      return null;
+    }
+    return {
+      row: runtime.hover.row,
+      col: runtime.hover.col,
+      value: runtime.hover.value,
+      displayRow: toDisplayRow(runtime.rows, runtime.hover.row),
+    };
+  }
+
+  function renderLinkedPlotLine() {
+    if (!runtime.selectedCell || !linkedPlotShellHost) {
+      return;
+    }
+
+    const lineDim = runtime.plotAxis === "col" ? "col" : "row";
+    const lineIndex = lineDim === "col" ? runtime.selectedCell.col : runtime.selectedCell.row;
+    const selectedPointIndex = lineDim === "col" ? runtime.selectedCell.row : runtime.selectedCell.col;
+    const totalPoints = lineDim === "col" ? runtime.rows : runtime.cols;
+    if (!Number.isFinite(lineIndex) || totalPoints <= 0) {
+      return;
+    }
+
+    const lineSelectionKey = [
+      runtime.selectionKey,
+      "heatmap-plot",
+      lineDim,
+      runtime.selectedCell.row,
+      runtime.selectedCell.col,
+    ].join("|");
+
+    openLinkedPlot();
+    setLinkedPlotTitle(runtime.selectedCell);
+    syncPlotAxisButtons();
+    clearLinkedLineRuntime();
+
+    linkedPlotShellHost.innerHTML = renderLinkedLineShellMarkup({
+      fileKey: runtime.fileKey,
+      fileEtag: runtime.fileEtag,
+      path: runtime.path,
+      displayDims: runtime.displayDims,
+      fixedIndices: runtime.fixedIndices,
+      selectionKey: lineSelectionKey,
+      totalPoints,
+      lineIndex,
+      lineDim,
+      selectedPointIndex,
+      notation: lineNotation,
+      lineGrid,
+      lineAspect,
+    });
+
+    const lineShell = linkedPlotShellHost.querySelector("[data-line-shell]");
+    if (!lineShell) {
+      setMatrixStatus(statusElement, "Failed to mount linked line chart panel.", "error");
+      return;
+    }
+    const cleanup = initializeLineRuntime(lineShell);
+    runtime.linkedLineCleanup =
+      typeof cleanup === "function"
+        ? cleanup
+        : typeof lineShell.__lineRuntimeCleanup === "function"
+        ? lineShell.__lineRuntimeCleanup
+        : null;
+    persistViewState();
   }
 
   function setPanState() {
     canvasHost.classList.toggle("is-pan", runtime.panEnabled);
     canvasHost.classList.toggle("is-grabbing", runtime.isPanning);
-    const cursor = runtime.isPanning ? "grabbing" : runtime.panEnabled ? "grab" : "crosshair";
+    canvasHost.classList.toggle("is-plot", runtime.plottingEnabled);
+    const cursor = runtime.isPanning
+      ? "grabbing"
+      : runtime.panEnabled
+      ? "grab"
+      : runtime.plottingEnabled
+      ? "crosshair"
+      : "default";
     canvasHost.style.cursor = cursor;
     canvas.style.cursor = cursor;
     if (panToggleButton) {
       panToggleButton.classList.toggle("active", runtime.panEnabled);
+    }
+    if (plotToggleButton) {
+      plotToggleButton.classList.toggle("active", runtime.plottingEnabled);
+      const label = runtime.plottingEnabled ? "Disable plotting" : "Plotting";
+      plotToggleButton.setAttribute("aria-label", label);
+      plotToggleButton.setAttribute("title", label);
     }
   }
 
@@ -665,6 +1129,16 @@ function initializeHeatmapRuntime(shell) {
         context.lineWidth = 1.25;
         context.strokeRect(x, y, cellWidth, cellHeight);
       }
+
+      if (runtime.selectedCell && runtime.rows > 0 && runtime.cols > 0) {
+        const cellWidth = (layout.chartWidth / runtime.cols) * runtime.zoom;
+        const cellHeight = (layout.chartHeight / runtime.rows) * runtime.zoom;
+        const x = drawX + runtime.selectedCell.col * cellWidth;
+        const y = drawY + runtime.selectedCell.row * cellHeight;
+        context.strokeStyle = "rgba(217,119,6,0.95)";
+        context.lineWidth = 2;
+        context.strokeRect(x, y, cellWidth, cellHeight);
+      }
       context.restore();
     }
 
@@ -781,19 +1255,16 @@ function initializeHeatmapRuntime(shell) {
     };
   }
 
-  function updateHover(point) {
+  function resolveCellAtPoint(point) {
     const layout = runtime.layout;
     if (!layout || runtime.rows <= 0 || runtime.cols <= 0 || !runtime.values) {
-      hideTooltip();
-      return;
+      return null;
     }
 
     const localX = point.x - layout.chartX;
     const localY = point.y - layout.chartY;
     if (localX < 0 || localX > layout.chartWidth || localY < 0 || localY > layout.chartHeight) {
-      hideTooltip();
-      renderHeatmap();
-      return;
+      return null;
     }
 
     const scaledX = (localX - runtime.panX) / runtime.zoom;
@@ -804,16 +1275,30 @@ function initializeHeatmapRuntime(shell) {
       scaledY < 0 ||
       scaledY > layout.chartHeight
     ) {
-      hideTooltip();
-      renderHeatmap();
-      return;
+      return null;
     }
 
     const col = clamp(Math.floor((scaledX / layout.chartWidth) * runtime.cols), 0, runtime.cols - 1);
     const row = clamp(Math.floor((scaledY / layout.chartHeight) * runtime.rows), 0, runtime.rows - 1);
     const value = runtime.values[row * runtime.cols + col];
-    runtime.hover = { row, col, value };
-    runtime.hoverDisplayRow = toDisplayRow(runtime.rows, row);
+    return {
+      row,
+      col,
+      value,
+      displayRow: toDisplayRow(runtime.rows, row),
+    };
+  }
+
+  function updateHover(point) {
+    const cell = resolveCellAtPoint(point);
+    if (!cell) {
+      hideTooltip();
+      renderHeatmap();
+      return;
+    }
+
+    runtime.hover = { row: cell.row, col: cell.col, value: cell.value };
+    runtime.hoverDisplayRow = cell.displayRow;
 
     if (tooltip) {
       const hostRect = canvasHost.getBoundingClientRect();
@@ -825,8 +1310,8 @@ function initializeHeatmapRuntime(shell) {
       tooltip.hidden = false;
       tooltip.innerHTML = `
         <div>Y: ${runtime.hoverDisplayRow}</div>
-        <div>Col: ${col}</div>
-        <div>Value: ${formatCell(value, "auto")}</div>
+        <div>Col: ${cell.col}</div>
+        <div>Value: ${formatCell(cell.value, "auto")}</div>
       `;
     }
 
@@ -877,11 +1362,11 @@ function initializeHeatmapRuntime(shell) {
         throw new Error("No valid heatmap matrix returned from API");
       }
 
-      const statsMin = Number(response?.stats?.min);
-      const statsMax = Number(response?.stats?.max);
-      const min = Number.isFinite(statsMin) ? statsMin : grid.min;
-      let max = Number.isFinite(statsMax) ? statsMax : grid.max;
-      if (min === max) {
+      const statsMin = toFiniteNumber(response?.stats?.min);
+      const statsMax = toFiniteNumber(response?.stats?.max);
+      const min = statsMin !== null ? statsMin : grid.min;
+      let max = statsMax !== null ? statsMax : grid.max;
+      if (!(max > min)) {
         max = min + 1;
       }
 
@@ -902,6 +1387,18 @@ function initializeHeatmapRuntime(shell) {
       runtime.maxSizeClamped = response?.max_size_clamped === true;
       runtime.effectiveMaxSize = Number(response?.effective_max_size) || requestedMaxSize;
       runtime.loadedPhase = requestedMaxSize >= HEATMAP_MAX_SIZE ? "highres" : "preview";
+
+      if (runtime.selectedCell && runtime.rows > 0 && runtime.cols > 0) {
+        const nextRow = clamp(runtime.selectedCell.row, 0, runtime.rows - 1);
+        const nextCol = clamp(runtime.selectedCell.col, 0, runtime.cols - 1);
+        const nextValue = runtime.values[nextRow * runtime.cols + nextCol];
+        runtime.selectedCell = {
+          row: nextRow,
+          col: nextCol,
+          value: nextValue,
+          displayRow: toDisplayRow(runtime.rows, nextRow),
+        };
+      }
 
       HEATMAP_SELECTION_DATA_CACHE.set(runtime.cacheKey, {
         rows: runtime.rows,
@@ -924,6 +1421,9 @@ function initializeHeatmapRuntime(shell) {
       updateLabels();
       renderHeatmap();
       persistViewState();
+      if (runtime.selectedCell && linkedPlotPanel && !linkedPlotPanel.hidden) {
+        renderLinkedPlotLine();
+      }
 
       setMatrixStatus(statusElement, buildLoadedStatusText(runtime.loadedPhase), "info");
       return { loaded: true };
@@ -979,7 +1479,21 @@ function initializeHeatmapRuntime(shell) {
 
   function onPointerDown(event) {
     const isMousePointer = !event.pointerType || event.pointerType === "mouse";
-    if (!runtime.panEnabled || (isMousePointer && event.button !== 0)) {
+    if (isMousePointer && event.button !== 0) {
+      return;
+    }
+
+    if (runtime.plottingEnabled && !runtime.panEnabled) {
+      const point = getRelativePoint(event);
+      const cell = resolveCellAtPoint(point) || resolveFallbackHoverCell();
+      const selected = selectCellForPlot(cell);
+      if (selected) {
+        event.preventDefault();
+      }
+      return;
+    }
+
+    if (!runtime.panEnabled) {
       return;
     }
     event.preventDefault();
@@ -1030,6 +1544,39 @@ function initializeHeatmapRuntime(shell) {
     }
   }
 
+  function onPointerUp(event) {
+    const wasPanning =
+      runtime.isPanning &&
+      Number.isFinite(runtime.panPointerId) &&
+      runtime.panPointerId === event.pointerId;
+    stopPan(event);
+
+    if (wasPanning || !runtime.plottingEnabled || runtime.panEnabled) {
+      return;
+    }
+    const isMousePointer = !event.pointerType || event.pointerType === "mouse";
+    if (isMousePointer && event.button !== 0) {
+      return;
+    }
+
+    const point = getRelativePoint(event);
+    const cell = resolveCellAtPoint(point) || resolveFallbackHoverCell();
+    selectCellForPlot(cell);
+  }
+
+  function onCanvasClick(event) {
+    if (!runtime.plottingEnabled || runtime.panEnabled || runtime.isPanning) {
+      return;
+    }
+    if (typeof event.button === "number" && event.button !== 0) {
+      return;
+    }
+
+    const point = getRelativePoint(event);
+    const cell = resolveCellAtPoint(point) || resolveFallbackHoverCell();
+    selectCellForPlot(cell);
+  }
+
   function onPointerLeave() {
     if (runtime.isPanning) {
       stopPan();
@@ -1043,10 +1590,81 @@ function initializeHeatmapRuntime(shell) {
     if (!runtime.panEnabled && runtime.isPanning) {
       stopPan();
     }
+    if (runtime.panEnabled) {
+      runtime.plottingEnabled = false;
+    }
     if (runtime.panEnabled && runtime.zoom <= HEATMAP_MIN_ZOOM + 0.001) {
       applyZoom(HEATMAP_PAN_START_ZOOM);
     }
     setPanState();
+    persistViewState();
+  }
+
+  function onTogglePlotMode() {
+    runtime.plottingEnabled = !runtime.plottingEnabled;
+    if (runtime.plottingEnabled) {
+      runtime.panEnabled = false;
+      if (runtime.isPanning) {
+        stopPan();
+      }
+      setMatrixStatus(
+        statusElement,
+        "Plot mode enabled. Click a heatmap cell to show row/column line profiles.",
+        "info"
+      );
+    } else {
+      setMatrixStatus(statusElement, buildLoadedStatusText(runtime.loadedPhase), "info");
+    }
+    setPanState();
+    persistViewState();
+  }
+
+  function onPlotToggleClick(event) {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    onTogglePlotMode();
+  }
+
+  function onShellClick(event) {
+    if (!event || event.defaultPrevented) {
+      return;
+    }
+    const toggleButton = event.target?.closest?.("[data-heatmap-plot-toggle]");
+    if (toggleButton && shell.contains(toggleButton)) {
+      event.preventDefault();
+      onTogglePlotMode();
+    }
+  }
+
+  function onSelectRowAxis() {
+    runtime.plotAxis = "row";
+    syncPlotAxisButtons();
+    persistViewState();
+    if (runtime.selectedCell) {
+      renderLinkedPlotLine();
+    } else {
+      setLinkedPlotTitle(null);
+    }
+  }
+
+  function onSelectColAxis() {
+    runtime.plotAxis = "col";
+    syncPlotAxisButtons();
+    persistViewState();
+    if (runtime.selectedCell) {
+      renderLinkedPlotLine();
+    } else {
+      setLinkedPlotTitle(null);
+    }
+  }
+
+  function onCloseLinkedPlot(event) {
+    if (event) {
+      event.preventDefault();
+    }
+    closeLinkedPlot();
     persistViewState();
   }
 
@@ -1111,6 +1729,12 @@ function initializeHeatmapRuntime(shell) {
     onToggleFullscreen();
   };
 
+  if (linkedPlotPanel) {
+    linkedPlotPanel.hidden = true;
+    linkedPlotPanel.classList.remove("is-visible");
+  }
+  setLinkedPlotTitle(null);
+  syncPlotAxisButtons();
   setPanState();
   syncFullscreenState();
   const restoredFromCache = restoreCachedHeatmapData();
@@ -1123,14 +1747,20 @@ function initializeHeatmapRuntime(shell) {
   canvas.addEventListener("wheel", onWheel, { passive: false });
   canvas.addEventListener("pointerdown", onPointerDown);
   canvas.addEventListener("pointermove", onPointerMove);
-  canvas.addEventListener("pointerup", stopPan);
+  canvas.addEventListener("pointerup", onPointerUp);
   canvas.addEventListener("pointercancel", stopPan);
   canvas.addEventListener("pointerleave", onPointerLeave);
+  canvasHost.addEventListener("click", onCanvasClick);
   if (panToggleButton) panToggleButton.addEventListener("click", onTogglePan);
+  if (plotToggleButton) plotToggleButton.addEventListener("click", onPlotToggleClick);
   if (zoomInButton) zoomInButton.addEventListener("click", onZoomIn);
   if (zoomOutButton) zoomOutButton.addEventListener("click", onZoomOut);
   if (resetButton) resetButton.addEventListener("click", onResetView);
   if (fullscreenButton) fullscreenButton.addEventListener("click", onFullscreenClick);
+  if (linkedPlotRowButton) linkedPlotRowButton.addEventListener("click", onSelectRowAxis);
+  if (linkedPlotColButton) linkedPlotColButton.addEventListener("click", onSelectColAxis);
+  if (linkedPlotCloseButton) linkedPlotCloseButton.addEventListener("click", onCloseLinkedPlot);
+  shell.addEventListener("click", onShellClick);
   document.addEventListener("keydown", onFullscreenEsc);
 
   let resizeObserver = null;
@@ -1148,17 +1778,24 @@ function initializeHeatmapRuntime(shell) {
     persistViewState();
     runtime.destroyed = true;
     cancelInFlightRequests();
+    closeLinkedPlot();
     canvas.removeEventListener("wheel", onWheel);
     canvas.removeEventListener("pointerdown", onPointerDown);
     canvas.removeEventListener("pointermove", onPointerMove);
-    canvas.removeEventListener("pointerup", stopPan);
+    canvas.removeEventListener("pointerup", onPointerUp);
     canvas.removeEventListener("pointercancel", stopPan);
     canvas.removeEventListener("pointerleave", onPointerLeave);
+    canvasHost.removeEventListener("click", onCanvasClick);
     if (panToggleButton) panToggleButton.removeEventListener("click", onTogglePan);
+    if (plotToggleButton) plotToggleButton.removeEventListener("click", onPlotToggleClick);
     if (zoomInButton) zoomInButton.removeEventListener("click", onZoomIn);
     if (zoomOutButton) zoomOutButton.removeEventListener("click", onZoomOut);
     if (resetButton) resetButton.removeEventListener("click", onResetView);
     if (fullscreenButton) fullscreenButton.removeEventListener("click", onFullscreenClick);
+    if (linkedPlotRowButton) linkedPlotRowButton.removeEventListener("click", onSelectRowAxis);
+    if (linkedPlotColButton) linkedPlotColButton.removeEventListener("click", onSelectColAxis);
+    if (linkedPlotCloseButton) linkedPlotCloseButton.removeEventListener("click", onCloseLinkedPlot);
+    shell.removeEventListener("click", onShellClick);
     document.removeEventListener("keydown", onFullscreenEsc);
     if (runtime.fullscreenActive) {
       rememberHeatmapFullscreen(runtime.selectionKey);

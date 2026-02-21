@@ -1,17 +1,22 @@
 # config
 
-Runtime configuration scripts that run before ES modules.
+Runtime configuration scripts that execute before ES modules.
 
 ## Files
 
 - `runtime-config.js`
 
-## What Is Implemented
+## What It Does
 
-- Defines `window.__CONFIG__` if it does not exist.
-- Supports runtime injection of values like `API_BASE_URL` without rebuilding JS bundles.
+- Ensures `window.__CONFIG__` exists.
+- Allows deployment-time injection of values (mainly `API_BASE_URL`) without editing module code.
 
-## Import and Consumption Flow
+## Consumption Flow
 
-- Loaded by `old_web/index.html` using a normal `<script>` tag.
-- Consumed by `old_web/js/config.js`, which reads `window.__CONFIG__.API_BASE_URL`.
+1. `old_web/index.html` loads `config/runtime-config.js`.
+2. `old_web/js/config.js` reads `window.__CONFIG__.API_BASE_URL`.
+3. API modules use `API_BASE_URL` and `API_ENDPOINTS` from `old_web/js/config.js`.
+
+## Notes
+
+- If nothing is injected, `old_web/js/config.js` falls back to default backend URL.

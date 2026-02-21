@@ -11,7 +11,7 @@ import {
   renderViewerView,
   bindViewerViewEvents,
   clearViewerViewBindings,
-} from "./views/viewerView.js?v=20260221-1";
+} from "./views/viewerView.js?v=20260221-13";
 import { clearViewerRuntimeBindings } from "./components/viewerPanel/runtime/common.js";
 
 const root = document.getElementById("app-root");

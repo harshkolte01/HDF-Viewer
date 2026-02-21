@@ -5,22 +5,32 @@ Pure render layer for viewer panel content.
 ## Files
 
 - `sections.js`
-  - Main inspect and display composition.
-  - Renders metadata blocks, preview sections, and full-view shells for matrix, line, and heatmap.
+  - Main display/inspect composition.
+  - Renders matrix, line, and heatmap sections.
+  - Builds full-runtime shells and status text.
 - `previews.js`
-  - Renders preview visuals (table, line preview, heatmap preview).
+  - Preview renderers for table, line chart, and sampled heatmap.
 - `config.js`
-  - Builds runtime selection keys and resolves runtime config for line, matrix, and heatmap.
+  - Resolves runtime configs from state/preview.
+  - Builds stable selection keys (line/matrix/heatmap).
 - `dimensionControls.js`
-  - Renders display-dimension and fixed-index controls.
+  - Renders display dimension selectors and fixed-index controls.
 
-## Imported By
+## Full-Shell Markup Contracts
 
-- `old_web/js/components/viewerPanel/render.js` imports `sections.js`.
-- Runtime modules import key builders and resolvers from `config.js`.
-- `sections.js` imports preview renderers and dimension controls.
+Render layer writes `data-*` attributes consumed by runtime modules, for example:
 
-## Important Behavior
+- Line shell: `data-line-*`
+- Matrix shell: `data-matrix-*`
+- Heatmap shell: `data-heatmap-*`
 
-- Full-view modes are rendered as shell markup with `data-*` attributes.
-- Runtime modules use those attributes to initialize interactive behavior after DOM render.
+## Heatmap Plot-Mode UI (Implemented)
+
+`sections.js` includes:
+
+- Plot-mode toolbar icon (`data-heatmap-plot-toggle`)
+- Inline linked profile panel (`data-heatmap-linked-plot`)
+- Axis switch buttons (`row` / `col`)
+- Close button for linked panel
+
+Runtime owns the interactions and data loading for these controls.

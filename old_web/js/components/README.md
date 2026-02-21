@@ -1,32 +1,34 @@
 # js/components
 
-Reusable UI components and viewer panel facade modules.
+Reusable UI components and viewer-panel facade modules.
 
 ## Active Components
 
 - `topBar.js`
-  - Renders home top navbar and binds refresh button.
-  - Imported by `old_web/js/app.js`.
+  - Home navbar and refresh button binding.
 - `tableView.js`
-  - Renders file table rows for home page.
-  - Imported by `old_web/js/views/homeView.js`.
+  - Home file table renderer.
 - `sidebarTree.js`
-  - Renders lazy sidebar tree and binds select/expand/retry events.
-  - Imported by `old_web/js/views/viewerView.js`.
+  - Viewer tree renderer + expand/select/retry event wiring.
 - `viewerPanel.js`
-  - Facade that re-exports viewer panel renderer and runtime binder.
-  - Imported by `old_web/js/views/viewerView.js`.
+  - Facade re-export for panel render/runtime modules.
 
-## Supporting Stubs
+## Compatibility Helpers (Not in Main Render Path)
 
-- `toolbar.js`: display/inspect toggle helper, not currently wired in active view.
-- `lineChart.js`: renderer marker helper.
-- `heatmap.js`: renderer marker helper.
-- `dimensionControls.js`: minimal display-dims text block helper.
+- `toolbar.js`: old mode toggle helper.
+- `lineChart.js`: renderer marker helper (`svg`).
+- `heatmap.js`: renderer marker helper (`canvas`).
+- `dimensionControls.js`: minimal helper superseded by viewerPanel render module.
 
-## Legacy Placeholder Files
+## Legacy Placeholders
 
 - `Component.js` (empty)
 - `HomePage.js` (empty)
 - `ViewerPage.js` (empty)
-- `viewer/` subfolder contains older component placeholders.
+- `viewer/*` (legacy viewer module placeholders)
+
+## Main Imports
+
+- `old_web/js/app.js` imports `topBar.js`.
+- `old_web/js/views/homeView.js` imports `tableView.js`.
+- `old_web/js/views/viewerView.js` imports `sidebarTree.js` and `viewerPanel.js`.

@@ -5,19 +5,19 @@ Route-level rendering and event binding.
 ## Files
 
 - `homeView.js`
-  - Loads `pages/home.html` template (fallback included in module).
-  - Renders stats, search controls, file list, and empty/error states.
-  - Binds retry/search/open-file events.
+  - Loads `pages/home.html` template (with fallback template string).
+  - Renders stats, controls, file table, loading/error/empty states.
+  - Binds retry, search, and open-file events.
 - `viewerView.js`
-  - Loads `pages/viewer.html` template (fallback included in module).
-  - Renders viewer top bar, breadcrumb, display toolbar, sidebar tree, and viewer panel.
-  - Binds viewer actions (sidebar, mode, tabs, notation, grid/colormap, fullscreen).
+  - Loads `pages/viewer.html` template (with fallback template string).
+  - Renders sidebar, breadcrumb top bar, display toolbar, and viewer panel.
+  - Binds viewer route interactions and delegates to sidebar/panel binders.
+  - Includes global viewer fullscreen button behavior.
 
-## Imported By
+## Event Binding Flow
 
-- `old_web/js/app.js` imports both views for route rendering.
-
-## Dependencies
-
-- Uses `old_web/js/utils/templateLoader.js` for templates.
-- Uses components from `old_web/js/components/*`.
+- `app.js` calls `bindViewerViewEvents()` when route is `viewer`.
+- `bindViewerViewEvents()` wires top-level controls, then calls:
+  - `bindSidebarTreeEvents()`
+  - `bindViewerPanelEvents()`
+- On non-viewer route, cleanup runs through `clearViewerViewBindings()` and runtime cleanup in `app.js`.

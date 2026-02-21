@@ -5,23 +5,27 @@ Interactive runtime layer for full matrix, line, and heatmap views.
 ## Files
 
 - `bindEvents.js`
-  - Central binder for panel-level controls and runtime initialization.
-  - Calls cleanup first, then binds dimension/apply/reset and full-view buttons.
+  - Central post-render binder.
+  - Binds panel controls and initializes matrix/line/heatmap runtimes.
 - `common.js`
-  - Shared cleanup registries and DOM helper utilities.
+  - Cleanup registries and shared helpers.
 - `matrixRuntime.js`
-  - Virtualized matrix runtime with block fetching and scroll-driven rendering.
+  - Virtualized matrix renderer + block queue/pump/fetch.
 - `lineRuntime.js`
-  - Full line runtime with zoom, pan, range/window controls, and fullscreen behavior.
+  - Full line runtime with zoom, pan, click-zoom, quality/window controls, fullscreen.
 - `heatmapRuntime.js`
-  - Canvas heatmap runtime with zoom/pan, tooltip, and high-resolution refinement path.
+  - Full heatmap canvas runtime with progressive high-res loading, zoom/pan, plot mode, linked inline line profile, fullscreen.
 
-## Imported By
+## Key Behaviors Implemented
 
-- `old_web/js/components/viewerPanel/runtime.js` re-exports `bindViewerPanelEvents` from `bindEvents.js`.
-- `bindEvents.js` imports and initializes all runtime modules.
+- Runtime cleanup isolation via `MATRIX_RUNTIME_CLEANUPS`, `LINE_RUNTIME_CLEANUPS`, `HEATMAP_RUNTIME_CLEANUPS`.
+- Selection/view caching for fast re-entry.
+- Fullscreen state restore guards across rerenders (line and heatmap panel shells).
+- Heatmap plot-mode cell selection feeding inline line-profile shell creation.
+- Inline linked line scroll-jump mitigation and scroll-position restoration.
+- Pointer-event flow tuned for pan vs plot selection modes.
 
-## API Dependencies
+## API Usage
 
-- Runtime modules fetch data through `old_web/js/api/hdf5Service.js` (`getFileData`).
-- Some modules use `cancelPendingRequest` from `old_web/js/api/client.js` for request cancellation.
+- Matrix/line/heatmap runtime fetches use `getFileData()` from `js/api/hdf5Service.js`.
+- Runtime cancellation uses cancel channels via `cancelPendingRequest()` where needed.

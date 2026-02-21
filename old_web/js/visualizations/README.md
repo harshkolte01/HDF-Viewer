@@ -4,11 +4,12 @@ Legacy visualization module location.
 
 ## Files
 
-- `VirtualMatrix.js` (empty)
-- `LineChart.js` (empty)
-- `Heatmap.js` (empty)
+- `VirtualMatrix.js` (placeholder)
+- `LineChart.js` (placeholder)
+- `Heatmap.js` (placeholder)
 
 ## Current Status
 
-- Not used by active runtime.
-- Active rendering/runtime logic moved to `old_web/js/components/viewerPanel/`.
+Not used by active runtime.
+
+Active visualization and runtime logic lives in `old_web/js/components/viewerPanel/`.

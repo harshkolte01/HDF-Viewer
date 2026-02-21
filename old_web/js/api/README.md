@@ -1,27 +1,43 @@
 # js/api
 
-Backend communication layer for old_web.
+Backend communication layer for `old_web`.
 
-## Files and Responsibilities
+## Files
 
 - `client.js`
-  - Base request wrapper around `fetch`.
-  - Handles query serialization, abort linking, in-flight cancellation, and normalized `ApiError` objects.
+  - Fetch wrapper, query serialization, cancel channels, `ApiError` normalization.
 - `contracts.js`
-  - Normalizes backend payloads for files, children, metadata, preview, and data endpoints.
-  - Provides `assertSuccess(...)` for consistent failure handling.
+  - Normalizers for `/files`, `/children`, `/meta`, `/preview`, `/data` payloads.
 - `hdf5Service.js`
-  - High-level API used by state/actions and runtimes.
-  - Adds frontend cache strategy (Map + LRU), stale-while-refresh preview behavior, and mode-based data fetchers.
+  - High-level API used by actions/runtimes.
+  - Adds frontend caches, in-flight de-duplication, and stale-while-refresh preview support.
 - `config.js`
-  - Re-exports base API config from `old_web/js/config.js` for compatibility.
+  - Compatibility re-export of app config.
 
-## Imported By
+## Main Exports Used by App
 
-- `old_web/js/state/reducers.js` imports `getFiles`, `refreshFiles`, `getFileChildren`, `getFileMeta`, `getFilePreview` from `hdf5Service.js`.
-- Runtime modules import `getFileData` from `hdf5Service.js`.
-- Runtime modules import `cancelPendingRequest` from `client.js` when cancel channels are needed.
+- `getFiles`, `refreshFiles`
+- `getFileChildren`
+- `getFileMeta`
+- `getFilePreview`
+- `getFileData`
+- `clearFrontendCaches`
 
-## External Dependency
+## Cache Strategy Implemented (`hdf5Service.js`)
 
-- Depends on `old_web/js/config.js` for `API_BASE_URL` and endpoint paths.
+- Files: singleton cache.
+- Tree children: per-file map.
+- Preview: per selection key map + optional background refresh.
+- Matrix blocks: LRU cache.
+- Line windows: LRU cache.
+- Heatmap payloads: LRU cache.
+- Metadata: LRU cache.
+- In-flight request maps for de-dup and cancellation.
+
+## Routing to `/data`
+
+`getFileData()` dispatches by `params.mode`:
+
+- `matrix` -> block window request
+- `line` -> line window request
+- `heatmap` -> heatmap request
