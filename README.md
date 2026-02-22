@@ -1,325 +1,197 @@
 # HDF Viewer
 
-A full-stack application for browsing, inspecting, and visualising HDF5 files stored in MinIO / S3-compatible object storage.
+HDF Viewer is a full-stack system for browsing, inspecting, and visualizing HDF5 files stored in MinIO or S3-compatible storage.
 
-The stack is split into two independently runnable layers:
+The current production UI is `old_web/` (vanilla ES modules).  
+The API server is `backend/` (Flask).
 
-| Layer | Directory | Technology |
-|---|---|---|
-| REST API | `backend/` | Python · Flask · h5py · s3fs |
-| Static SPA | `old_web/` | Plain ES Modules · no bundler |
+## Current Stack
 
----
+| Layer | Directory | Status | Core Tech |
+|---|---|---|---|
+| Backend API | `backend/` | Active | Flask, boto3, s3fs, h5py, numpy |
+| Frontend UI | `old_web/` | Active | HTML, CSS, vanilla JS (ES modules), SVG/Canvas |
+| Next UI | `frontend/` | In development | Not primary runtime |
+
+## Required Libraries
+
+Backend dependencies (from `backend/requirements.txt`):
+
+- `flask==3.0.0`
+- `flask-cors==4.0.0`
+- `python-dotenv==1.0.0`
+- `boto3==1.34.34`
+- `numpy==1.26.4`
+- `h5py==3.10.0`
+- `s3fs==2024.2.0`
+
+Frontend (`old_web`) has no npm/build dependency. It runs directly in browser as static files.
+
+## Architecture Diagram
+
+```mermaid
+flowchart LR
+    User[User Browser<br/>old_web] -->|HTTP| Flask[Flask App<br/>backend/app.py]
+    Flask --> Routes[src/routes/files.py<br/>src/routes/hdf5.py]
+    Routes --> Cache[src/utils/cache.py<br/>TTL caches]
+    Routes --> MinIO[src/storage/minio_client.py<br/>list/head/range]
+    Routes --> Reader[src/readers/hdf5_reader.py]
+    Reader --> S3FS[s3fs + h5py + numpy]
+    S3FS --> ObjectStore[(MinIO / S3 Bucket)]
+```
+
+## Workflow Diagrams
+
+### 1. Browse and render data
+
+```mermaid
+sequenceDiagram
+    participant UI as old_web
+    participant API as backend routes
+    participant C as cache
+    participant R as HDF5Reader
+    participant S as S3/MinIO
+
+    UI->>API: GET /files/<key>/preview?path=...
+    API->>C: preview cache lookup
+    alt cache hit
+        C-->>API: cached payload
+    else cache miss
+        API->>R: get_preview(...)
+        R->>S: read dataset slices
+        S-->>R: bytes/data
+        R-->>API: preview payload
+        API->>C: store payload
+    end
+    API-->>UI: JSON preview
+
+    UI->>API: GET /files/<key>/data?mode=matrix|line|heatmap
+    API-->>UI: bounded windowed data
+```
+
+### 2. Full CSV export
+
+```mermaid
+sequenceDiagram
+    participant UI as old_web export menu
+    participant API as /files/<key>/export/csv
+    participant R as HDF5Reader
+    participant S as S3/MinIO
+
+    UI->>API: GET export/csv?mode=...
+    API->>R: chunked get_matrix/get_line reads
+    R->>S: range-backed HDF5 access
+    S-->>R: data blocks
+    R-->>API: row chunks
+    API-->>UI: streamed CSV response
+```
 
 ## Repository Layout
 
-```
+```text
 HDF Viewer/
-├── backend/                  # Flask REST API
-│   ├── app.py                # App bootstrap, CORS, blueprints
-│   ├── requirements.txt
-│   ├── templates/
-│   │   └── index.html        # Root dashboard UI  (GET /)
-│   ├── src/
-│   │   ├── routes/           # API route blueprints
-│   │   ├── readers/          # HDF5 data & metadata extraction
-│   │   ├── storage/          # MinIO / S3 wrapper
-│   │   └── utils/            # Shared helpers (TTL cache)
-│   ├── tests/                # Route-level unit tests
-│   └── scripts/              # Stand-alone benchmark scripts
-│
-├── old_web/                  # Static frontend SPA
-│   ├── index.html            # App shell & entry point
-│   ├── config/
-│   │   └── runtime-config.js # Runtime API URL injection
-│   ├── css/                  # Design tokens + view/component styles
-│   ├── js/
-│   │   ├── app.js            # Bootstrap, state, routing
-│   │   ├── config.js         # API_BASE_URL fallback
-│   │   ├── state/            # Global store + reducers
-│   │   ├── api/              # Fetch client + HDF5 service
-│   │   ├── views/            # Home & viewer page render
-│   │   └── components/       # Sidebar tree, toolbar, chart runtimes
-│   ├── pages/                # HTML templates loaded by views
-│   └── assets/               # Static assets (logo, icons)
-│
-├── frontend/                 # Next-generation frontend (in development)
-├── docs/                     # Cross-cutting agent context & change logs
-└── AGENTS.md                 # AI agent conventions for this repo
+  backend/      # Flask API
+  old_web/      # Active frontend (static SPA)
+  frontend/     # Next frontend (WIP)
+  docs/         # Agent context and project notes
+  AGENTS.md
+  README.md
 ```
 
----
+## End-to-End Setup (Short)
 
-## Quick Start
-
-### 1 — Backend
+### 1) Start backend
 
 ```bash
 cd backend
-
-# Create and activate virtual environment
 python -m venv venv
-venv\Scripts\activate          # Windows
-# source venv/bin/activate     # macOS / Linux
-
+venv\Scripts\activate
 pip install -r requirements.txt
-
-# Copy and fill in your MinIO / S3 credentials
-cp .env.example .env           # edit S3_ENDPOINT, S3_ACCESS_KEY, S3_SECRET_KEY, S3_BUCKET
-
 python app.py
-# → http://localhost:5000
 ```
 
-The root route `GET /` renders an interactive dashboard listing all API endpoints with live health status and curl examples.
+Backend default URL: `http://localhost:5000`
 
-### 2 — Frontend (old_web)
+### 2) Start frontend (old_web)
 
-No build step required.
+From repository root:
 
 ```bash
-# From repository root
 python -m http.server 8080
 ```
 
-Open `http://localhost:8080/old_web/index.html`.
+Open:
 
-The API base URL is resolved from `old_web/config/runtime-config.js` (set `window.__RUNTIME_CONFIG__.API_BASE_URL`) or falls back to `old_web/js/config.js`.
+- `http://localhost:8080/old_web/index.html`
 
----
+### 3) Configure frontend API URL
 
-## Backend
+Set API base via:
 
-### Architecture
+- `old_web/config/runtime-config.js` using `window.__CONFIG__.API_BASE_URL`, or
+- fallback in `old_web/js/config.js`
 
-```
-Request
-  └─▶ Flask route  (src/routes/)
-        ├── validates query params
-        ├── checks TTL cache  (src/utils/cache.py)
-        └── on miss → storage / reader layer
-              ├── src/storage/minio_client.py   list · head · range
-              └── src/readers/hdf5_reader.py    h5py · s3fs · numpy
-                    └── JSON-safe payload → cache → response
-```
+## Backend Configuration
 
-### API Endpoints
+Required environment variables:
 
-| Method | Path | Description |
-|---|---|---|
-| `GET` | `/` | Dashboard UI — endpoint cards, health status, runtime info |
-| `GET` | `/health` | Service status + UTC timestamp |
-| `GET` | `/files/` | List bucket objects (30 s cache) |
-| `POST` | `/files/refresh` | Invalidate files cache |
-| `GET` | `/files/<key>/children` | Immediate HDF5 group children for `?path=` |
-| `GET` | `/files/<key>/meta` | Full metadata for one HDF5 object |
-| `GET` | `/files/<key>/preview` | Lightweight preview payload (stats · table · plot) |
-| `GET` | `/files/<key>/data` | Bounded data slice — `?mode=matrix\|heatmap\|line` |
+- `S3_ENDPOINT`
+- `S3_ACCESS_KEY`
+- `S3_SECRET_KEY`
+- `S3_BUCKET`
 
-#### Preview query parameters
+Optional:
 
-| Parameter | Default | Purpose |
-|---|---|---|
-| `path` | `/` | HDF5 path inside file |
-| `mode` | auto | `matrix`, `heatmap`, `line` |
-| `display_dims` | | Axes to display |
-| `fixed_indices` | | Fixed-axis index values |
-| `detail` | `false` | Include full profile data |
-| `max_size` | 512 | Maximum preview resolution |
-| `include_stats` | `true` | Attach statistical summary |
-| `etag` | | Cache-validation token |
+- `S3_REGION` (default `us-east-1`)
+- `HOST` (default `0.0.0.0`)
+- `PORT` (default `5000`)
+- `DEBUG` (`true`/`false`)
+- `BACKEND_PUBLIC_URL` or `PUBLIC_BASE_URL` or `API_BASE_URL` or `BACKEND_URL`
 
-### Caching Model
+## API Surface (Current)
 
-| Cache | Module | Default TTL | Covers |
-|---|---|---:|---|
-| Files | `_files_cache` | 30 s | `/files` listing |
-| HDF5 | `_hdf5_cache` | 300 s | `/children`, `/meta`, `/preview` |
-| Dataset info | `_dataset_cache` | 300 s | Dataset shape/dtype reuse in `/data` |
-| Data | `_data_cache` | 120 s | Full `/data` response |
+- `GET /`
+- `GET /health`
+- `GET /files/`
+- `POST /files/refresh`
+- `GET /files/<key>/children`
+- `GET /files/<key>/meta`
+- `GET /files/<key>/preview`
+- `GET /files/<key>/data`
+- `GET /files/<key>/export/csv`
 
-### Configuration
+## Key Implemented Product Features
 
-**Required environment variables**
+- HDF5 tree browsing with lazy children loading.
+- Metadata inspection and raw type/filter info.
+- Multi-mode preview and full data windows for matrix, line, and heatmap.
+- Line compare mode in `old_web` with compatibility checks.
+- Export features in `old_web`:
+- Matrix: CSV displayed + CSV full
+- Line: CSV displayed + CSV full + PNG
+- Heatmap: CSV displayed + CSV full + PNG
+- Backend streamed full CSV export endpoint with chunked reads.
 
-| Variable | Description |
-|---|---|
-| `S3_ENDPOINT` | MinIO / S3 endpoint URL |
-| `S3_ACCESS_KEY` | Access key ID |
-| `S3_SECRET_KEY` | Secret access key |
-| `S3_BUCKET` | Target bucket name |
+## Testing
 
-**Optional environment variables**
-
-| Variable | Default | Description |
-|---|---|---|
-| `S3_REGION` | `us-east-1` | Storage region |
-| `HOST` | `0.0.0.0` | Flask bind host |
-| `PORT` | `5000` | Flask bind port |
-| `DEBUG` | `False` | Flask debug mode |
-| `PUBLIC_BASE_URL` / `BACKEND_PUBLIC_URL` / `API_BASE_URL` / `BACKEND_URL` | — | Public URL shown in dashboard |
-
-Dashboard base URL resolution order: `BACKEND_PUBLIC_URL` → `PUBLIC_BASE_URL` → `API_BASE_URL` → `BACKEND_URL` → `request.url_root`.
-
-### Running Tests
+Backend route tests:
 
 ```bash
 cd backend
 python -m unittest tests/test_hdf5_routes.py
 ```
 
-### Source Map
+## Documentation Map
 
-| Path | Responsibility |
-|---|---|
-| `app.py` | Flask app factory, CORS (`origins="*"`), blueprint registration |
-| `src/routes/files.py` | `/files` listing + cache refresh |
-| `src/routes/hdf5.py` | `/children`, `/meta`, `/preview`, `/data` |
-| `src/readers/hdf5_reader.py` | HDF5 path traversal, data slicing, stats |
-| `src/storage/minio_client.py` | S3 list, head, byte-range fetch |
-| `src/utils/cache.py` | Generic TTL cache singleton accessors |
-| `templates/index.html` | Root dashboard page template |
+- Backend guide: `backend/README.md`
+- Frontend guide: `old_web/README.md`
+- Backend module docs:
+- `backend/src/routes/README.md`
+- `backend/src/readers/README.md`
+- `backend/src/storage/README.md`
+- `backend/src/utils/README.md`
+- Frontend module docs:
+- `old_web/js/README.md`
+- `old_web/js/components/viewerPanel/runtime/README.md`
+- Agent change logs: `docs/AGENT_CONTEXT_*.md`
 
-Detailed folder-level docs live at `backend/src/routes/README.md`, `backend/src/readers/README.md`, `backend/src/storage/README.md`, `backend/src/utils/README.md`.
-
----
-
-## old_web Frontend
-
-### Architecture
-
-```
-index.html
-  └─▶ config/runtime-config.js   (API URL injection)
-  └─▶ js/app.js                  (bootstrap + render loop)
-        ├── state/store.js        global state + subscriptions
-        ├── state/reducers.js     actions → state mutations
-        ├── api/client.js         fetch wrapper, abort, errors
-        ├── api/hdf5Service.js    typed API calls + client-side cache
-        ├── views/homeView.js     file list page
-        └── views/viewerView.js   viewer layout + panel switching
-              └── components/viewerPanel/
-                    ├── render/sections.js     panel HTML assembly
-                    ├── runtime/bindEvents.js  event delegation
-                    ├── runtime/lineRuntime.js line chart interactions
-                    └── runtime/heatmapRuntime.js heatmap interactions
-```
-
-### Feature Set
-
-**Home view**
-- File list with search filtering and cache refresh.
-- Open file action navigates to viewer.
-
-**Viewer — sidebar**
-- Lazy-loading tree with expand / collapse, loading and retry states.
-- Breadcrumb navigation between paths.
-- Display / Inspect mode toggle.
-
-**Viewer — display mode tabs**
-
-| Tab | Preview | Full Runtime |
-|---|---|---|
-| Matrix | Paginated stats + sample table | Virtualized block streaming |
-| Line | Single-pass SVG preview | Wheel zoom · pan · click-zoom · range nav · quality controls · panel fullscreen |
-| Heatmap | Progressive high-res canvas | Pan/zoom · tooltip · crosshair · cell selection · linked line-profile panel · row/col axis switch · fullscreen isolation |
-
-**N-dimensional controls**
-- Display-dims and fixed-indices selectors with staged / apply flow.
-
-**Inspect mode**
-- Metadata summary card + raw JSON viewer.
-
-### Key Modules
-
-| Module | Path |
-|---|---|
-| App shell | `old_web/js/app.js` |
-| Global state | `old_web/js/state/store.js` |
-| Actions | `old_web/js/state/reducers.js` |
-| API client | `old_web/js/api/client.js` |
-| HDF5 service | `old_web/js/api/hdf5Service.js` |
-| Home view | `old_web/js/views/homeView.js` |
-| Viewer view | `old_web/js/views/viewerView.js` |
-| Viewer panel render | `old_web/js/components/viewerPanel/render/sections.js` |
-| Event binding | `old_web/js/components/viewerPanel/runtime/bindEvents.js` |
-| Line runtime | `old_web/js/components/viewerPanel/runtime/lineRuntime.js` |
-| Heatmap runtime | `old_web/js/components/viewerPanel/runtime/heatmapRuntime.js` |
-
-### Recommended Reading Order
-
-1. `old_web/js/app.js`
-2. `old_web/js/state/store.js`
-3. `old_web/js/state/reducers.js`
-4. `old_web/js/views/viewerView.js`
-5. `old_web/js/components/viewerPanel/render/sections.js`
-6. `old_web/js/components/viewerPanel/runtime/bindEvents.js`
-7. `old_web/js/components/viewerPanel/runtime/lineRuntime.js`
-
-### UI Design Tokens
-
-All colours live in `old_web/css/tokens.css`.
-
-| Role | Hex |
-|---|---|
-| Background | `#F8FAFF` |
-| Surface / Card | `#FFFFFF` |
-| Surface Alt | `#F2F6FF` |
-| Border | `#D9E2F2` |
-| Text Primary | `#0F172A` |
-| Text Secondary | `#475569` |
-| Primary Blue | `#2563EB` |
-| Primary Hover | `#1D4ED8` |
-| Accent Sky | `#38BDF8` |
-| Success | `#16A34A` |
-| Warning | `#D97706` |
-| Error | `#DC2626` |
-| Info | `#0EA5E9` |
-
----
-
-## End-to-End Data Flow
-
-```
-Browser (old_web)
-  │
-  │  GET /files/<key>/preview?path=/dataset&mode=heatmap
-  │
-  ▼
-Flask route  hdf5.py
-  │  cache hit? → return cached JSON
-  │  cache miss ↓
-  ▼
-HDF5Reader  (src/readers/hdf5_reader.py)
-  │  open file via s3fs + h5py
-  │  slice numpy array to preview window
-  │  compute stats (min/max/mean/std)
-  ▼
-MinioClient  (src/storage/minio_client.py)
-  │  HEAD + byte-range GET from MinIO bucket
-  ▼
-JSON response  →  store in _hdf5_cache  →  return to browser
-  │
-  ▼
-old_web hdf5Service.js  (client-side LRU cache)
-  ▼
-viewerPanel render  →  canvas heatmap / SVG line / table
-```
-
----
-
-## Development Notes
-
-- **CORS**: currently `origins="*"` in `app.py`. Restrict before production deployment.
-- **No build step**: `old_web` is pure ES modules served from the file system. No npm, no bundler.
-- **Benchmark scripts**: `backend/scripts/` contains stand-alone benchmarking utilities; none are registered as Flask routes.
-- **Agent context docs**: cross-cutting change logs are stored in `docs/`. Per-layer docs are in `backend/docs/` and `old_web/docs/`.
-- **frontend/**: a next-generation React frontend is in active development in the `frontend/` directory and is not yet production-ready.
-
----
-
-## Contributing
-
-1. Backend changes: read `backend/README.md` and the relevant `src/*/README.md` folder guide first.
-2. Frontend (old_web) changes: read `old_web/README.md`.
-3. Document significant changes in `docs/` using the `AGENT_CONTEXT_<DATE>_<TOPIC>.md` naming convention.

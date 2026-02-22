@@ -1,79 +1,74 @@
-# Readers Folder README
+# backend/src/readers
+
+Reader layer for HDF5 traversal and data extraction.
+
+## File
+
+- `hdf5_reader.py`
 
 ## Purpose
-This folder contains the data access layer that opens HDF5 files from MinIO/S3 and converts them into API-safe payloads.
 
-## File In This Folder
+- Open HDF5 objects from S3/MinIO through `s3fs`.
+- Extract children, metadata, preview, and data slices.
+- Return JSON-safe payloads for Flask routes.
 
-### `hdf5_reader.py`
+## Main class
 
-#### What is imported
-- Standard library: `os`, `math`, `logging`
-- Typing: `List`, `Dict`, `Any`, `Optional`, `Tuple`
-- Data stack:
-  - `h5py`
-  - `s3fs`
-  - `numpy as np`
-
-#### Main class implemented
 - `HDF5Reader`
-  - Initializes an `s3fs.S3FileSystem` client using:
-    - `S3_ENDPOINT`
-    - `S3_ACCESS_KEY`
-    - `S3_SECRET_KEY`
-    - `S3_BUCKET`
 
-#### Methods implemented
+Initialization reads:
+- `S3_ENDPOINT`
+- `S3_ACCESS_KEY`
+- `S3_SECRET_KEY`
+- `S3_BUCKET`
 
-##### Dataset info and axis normalization
-- `_get_s3_path(key)`
+## Core read APIs
+
 - `get_dataset_info(key, path)`
-- `normalize_preview_axes(shape, display_dims_param, fixed_indices_param)`
-- `_parse_display_dims(param, ndim)`
-- `_parse_fixed_indices(param, ndim)`
-- `_default_index(shape, dim)`
-- `_clamp_index(shape, dim, index)`
+- Returns lightweight metadata: `shape`, `ndim`, `dtype`.
 
-##### Preview generation (`/preview`)
-- `get_preview(...)`
-- `_compute_stats(dataset, shape, numeric)`
-- `_preview_1d(...)`
-- `_preview_2d(...)`
-- `_compute_strides(shape, target)`
-- `_total_elements(shape)`
-- `_is_numeric_dtype(dtype)`
-
-##### Data extraction (`/data`)
-- `get_matrix(...)`
-- `get_line(...)`
-- `get_heatmap(...)`
-- `_build_indexer(ndim, display_dims, fixed_indices, dim_slices)`
-
-##### Metadata and tree browsing
 - `get_children(key, path='/')`
+- Returns immediate child nodes for groups/datasets.
+
 - `get_metadata(key, path)`
-- `_get_type_info(dtype)`
-- `_get_raw_type_info(dtype)`
-- `_get_filters_info(dataset)`
+- Returns metadata details including dtype info, attributes, chunk/compression/filter info.
 
-##### JSON sanitization
-- `_safe_number(value)`
-- `_sanitize_numpy_array(array)`
-- `_sanitize(data)`
+- `get_preview(...)`
+- Produces lightweight preview payload for 1D/2D/ND datasets.
+- Supports `mode` and `detail` filtering (`fast` and `full`).
+- Supports axis normalization with `display_dims` and `fixed_indices`.
 
-##### Singleton accessor
-- Global instance: `_hdf5_reader`
-- Factory/accessor: `get_hdf5_reader()`
+- `get_matrix(...)`
+- Extracts bounded 2D matrix window.
 
-## What this reader returns to routes
-- For `children`:
-  - Group/dataset node lists with shape/dtype/chunks/compression/attribute previews
-- For `meta`:
-  - Type info, raw dtype info, filters, attributes, size, shape, chunk/compression metadata
-- For `preview`:
-  - `stats`, `table`, `plot`, `profile`, and limit metadata for fast UI rendering
-- For `data`:
-  - Strictly bounded `matrix`, `heatmap`, and `line` payloads with downsample info
+- `get_line(...)`
+- Extracts bounded line profile with optional downsampling step.
 
-## Who imports this module
-- `backend/src/routes/hdf5.py` imports `get_hdf5_reader()`.
+- `get_heatmap(...)`
+- Extracts downsampled 2D heatmap plane with optional stats.
+
+## Reader limits/constants
+
+Key constants in `hdf5_reader.py`:
+- `MAX_PREVIEW_ELEMENTS`
+- `MAX_HEATMAP_SIZE`
+- `MAX_HEATMAP_ELEMENTS`
+- `MAX_LINE_POINTS`
+- `TABLE_1D_MAX`
+- `TABLE_2D_MAX`
+- `MAX_STATS_SAMPLE`
+
+## Sanitization guarantees
+
+- Converts numpy arrays/scalars into JSON-safe Python values.
+- Converts non-finite floats to `None`.
+- Converts complex values to strings.
+- Converts bytes to UTF-8 (best effort).
+
+## Singleton accessor
+
+- `get_hdf5_reader()` returns a global singleton reader instance.
+
+## Imported by
+
+- `backend/src/routes/hdf5.py`

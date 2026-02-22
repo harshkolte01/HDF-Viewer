@@ -4,15 +4,10 @@ Backend communication layer for `old_web`.
 
 ## Files
 
-- `client.js`
-- Fetch wrapper, query serialization, cancel channels, `ApiError` normalization.
-- `contracts.js`
-- Normalizers for `/files`, `/children`, `/meta`, `/preview`, `/data` payloads.
-- `hdf5Service.js`
-- High-level API used by state actions and runtimes.
-- Includes frontend caches, in-flight de-dup, and stale-while-refresh preview support.
-- `config.js`
-- Compatibility re-export of app config.
+- `client.js`: fetch wrapper, query serialization, `ApiError` normalization, cancel channels.
+- `contracts.js`: payload normalizers for files/tree/meta/preview/data APIs.
+- `hdf5Service.js`: high-level API consumed by state actions and viewer runtimes.
+- `config.js`: compatibility re-export of app config.
 
 ## Main Exports Used by App
 
@@ -25,25 +20,31 @@ Backend communication layer for `old_web`.
 
 ## Cache Strategy (`hdf5Service.js`)
 
-- Files: singleton cache
-- Tree children: per-file map
-- Preview: per-selection cache (+ optional background refresh)
-- Matrix blocks: LRU cache
-- Line windows: LRU cache
-- Heatmap payloads: LRU cache
-- Metadata: LRU cache
-- In-flight request maps for de-dup + cancellation
+- Files list: singleton cache
+- Tree children: per-file map cache
+- Preview payloads: keyed map with optional stale-while-refresh
+- Matrix blocks: LRU
+- Line ranges: LRU
+- Heatmap payloads: LRU
+- Metadata: LRU
+- In-flight request maps for de-dup and cancellation
 
-## `/data` Routing
+## `/data` Mode Routing
 
-`getFileData()` dispatches by `params.mode`:
+`getFileData()` routes by `params.mode`:
+- `matrix` -> matrix block payload
+- `line` -> line series payload
+- `heatmap` -> heatmap matrix payload
 
-- `matrix` -> block window request
-- `line` -> line window request
-- `heatmap` -> heatmap request
+## Line Compare and API Usage
 
-## Line Compare Integration
+- Compare mode reuses existing line `/data` requests for per-window plotting.
+- Line runtime issues base and compare requests in parallel and handles partial failures.
 
-- No new backend endpoint was added for compare V1.
-- `lineRuntime.js` issues multiple `getFileData(... mode=line ...)` requests in parallel for base + compare datasets.
-- Responses are handled via `Promise.allSettled` so partial failures do not break base rendering.
+## Export and API Usage
+
+- Displayed exports are built client-side from runtime memory/cache.
+- Full CSV export is not a `hdf5Service` method.
+- Full CSV uses direct URL generation in `old_web/js/utils/export.js`:
+- `GET /files/<key>/export/csv`
+- Runtime modules attach mode-specific query params (`mode`, `display_dims`, `fixed_indices`, `line_dim`, `line_index`, `compare_paths`, etc.).

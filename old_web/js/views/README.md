@@ -4,25 +4,30 @@ Route-level rendering and event binding.
 
 ## Files
 
-- `homeView.js`
-- Loads `pages/home.html` template (with fallback string).
-- Renders stats, controls, and file list states.
-- Binds retry/search/open-file interactions.
-- `viewerView.js`
-- Loads `pages/viewer.html` template (with fallback string).
-- Renders sidebar, breadcrumb/top bars, toolbar, and viewer panel.
-- Binds viewer route interactions and delegates to sidebar/panel binders.
-- Includes global viewer fullscreen button behavior.
+- `homeView.js`: home route rendering and interactions.
+- `viewerView.js`: viewer route layout, top/sub bars, and route-level wiring.
 
-## Event Binding Flow
+## Viewer Binding Flow (`viewerView.js`)
 
-- `app.js` calls `bindViewerViewEvents()` when route is `viewer`.
-- `bindViewerViewEvents()` wires top-level controls, then calls:
+`bindViewerViewEvents()` wires:
+- sidebar open/close and backdrop controls
+- breadcrumb navigation and mode/tab changes
+- line/heatmap toolbar toggles in subbar
+- export menu open/close and action dispatch
+- delegation to:
 - `bindSidebarTreeEvents()`
 - `bindViewerPanelEvents()`
-- On non-viewer route, cleanup runs via `clearViewerViewBindings()` and runtime cleanup in `app.js`.
 
-## Compare Mode Integration
+## Export UI Ownership
 
-- Compare UX is rendered through sidebar/panel components.
-- Views do not own compare validation logic; they delegate to state actions and runtime modules.
+`viewerView.js` owns:
+- tab-specific export menu options
+- open/close menu state (`.is-open` class)
+- action routing to runtime `shell.__exportApi`
+- status fallback when full runtime is not loaded
+
+## Compare Integration
+
+- Compare validation is not implemented in views.
+- Views delegate compare actions to state reducers and runtime modules.
+- Compare chips/status in panel are rendered by viewerPanel render modules.

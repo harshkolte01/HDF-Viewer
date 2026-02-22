@@ -1,22 +1,32 @@
 # pages
 
-HTML templates loaded at runtime by `old_web/js/utils/templateLoader.js`.
+HTML templates loaded by `old_web/js/utils/templateLoader.js`.
 
 ## Files
 
 - `home.html`
-- Slots: `{{HOME_STATS}}`, `{{HOME_CONTROLS}}`, `{{HOME_FILE_LIST}}`
-- Used by `old_web/js/views/homeView.js`
 - `viewer.html`
-- Slots: `{{VIEWER_SIDEBAR}}`, `{{VIEWER_TOPBAR}}`, `{{VIEWER_SUBBAR}}`, `{{VIEWER_PANEL}}`
-- Used by `old_web/js/views/viewerView.js`
+
+## Template Slots
+
+`home.html`:
+- `{{HOME_STATS}}`
+- `{{HOME_CONTROLS}}`
+- `{{HOME_FILE_LIST}}`
+
+`viewer.html`:
+- `{{VIEWER_SIDEBAR}}`
+- `{{VIEWER_TOPBAR}}`
+- `{{VIEWER_SUBBAR}}`
+- `{{VIEWER_PANEL}}`
 
 ## Runtime Behavior
 
-- Templates are fetched with `cache: "no-store"` and memoized in-memory by `templateLoader.js`.
-- Both views keep fallback inline template strings if fetch fails.
+- Templates are fetched with `cache: "no-store"` and memoized in-memory.
+- `homeView.js` and `viewerView.js` both include inline fallback templates.
 
-## Compare UI Placement
+## Compare and Export Placement
 
-- Line compare controls are injected inside `{{VIEWER_PANEL}}` by `viewerPanel/render/sections.js`.
-- Tree compare buttons are injected inside `{{VIEWER_SIDEBAR}}` by `components/sidebarTree.js`.
+- Tree compare controls are rendered inside `{{VIEWER_SIDEBAR}}` by `js/components/sidebarTree.js`.
+- Line compare chips/status and full chart shells are rendered inside `{{VIEWER_PANEL}}` by `js/components/viewerPanel/render/sections.js`.
+- Export menu is rendered in the subbar by `js/views/viewerView.js` (not stored in static HTML templates).

@@ -8,6 +8,7 @@ Legacy viewer route shim.
 
 ## Current Behavior
 
-- `index.html` immediately redirects to `../index.html`.
-- Active viewer runtime (including line compare mode) is rendered by SPA flow:
+- `viewer/index.html` redirects to `../index.html`.
+- Active viewer runtime is served by SPA routing in:
+- `old_web/js/app.js`
 - `old_web/js/views/viewerView.js`

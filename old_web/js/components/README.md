@@ -4,35 +4,32 @@ Reusable UI components and viewer-panel facade modules.
 
 ## Active Components
 
-- `topBar.js`
-- Home navbar and refresh button binding.
-- `tableView.js`
-- Home file table renderer.
-- `sidebarTree.js`
-- Viewer tree renderer + expand/select/retry wiring.
-- Line-compare tree integration:
-- compare button rendering on compatible datasets only
-- base/added/compare states
-- compare-mode horizontal tree scroll class
-- `viewerPanel.js`
-- Facade re-export for panel render/runtime modules.
+- `topBar.js`: home top bar controls.
+- `tableView.js`: home file table renderer.
+- `sidebarTree.js`: viewer tree render and interactions.
+- `viewerPanel.js`: facade re-export for viewer panel render/runtime entrypoints.
+
+## `sidebarTree.js` Current Responsibilities
+
+- Lazy tree rendering for groups/datasets.
+- Expand/collapse and select wiring.
+- Compare mode tree behavior:
+- shows compare button only for compatible datasets
+- marks base as `Base` and selected compare items as `Added`
+- enables horizontal scroll mode for long names while compare is active
 
 ## Compatibility Helpers (Not Main Render Path)
 
-- `toolbar.js`: old mode toggle helper.
-- `lineChart.js`: renderer marker helper (`svg`).
-- `heatmap.js`: renderer marker helper (`canvas`).
-- `dimensionControls.js`: minimal helper superseded by viewerPanel render module.
+- `toolbar.js`: old helper module.
+- `lineChart.js`: legacy renderer marker helper.
+- `heatmap.js`: legacy renderer marker helper.
+- `dimensionControls.js`: superseded by viewerPanel render modules.
 
 ## Legacy Placeholders
 
-- `Component.js` (empty)
-- `HomePage.js` (empty)
-- `ViewerPage.js` (empty)
-- `viewer/*` (legacy viewer module placeholders)
+- `Component.js`
+- `HomePage.js`
+- `ViewerPage.js`
+- `viewer/*` modules
 
-## Main Imports
-
-- `old_web/js/app.js` imports `topBar.js`.
-- `old_web/js/views/homeView.js` imports `tableView.js`.
-- `old_web/js/views/viewerView.js` imports `sidebarTree.js` and `viewerPanel.js`.
+These are retained for compatibility and are not part of the active route runtime.

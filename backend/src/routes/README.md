@@ -1,91 +1,121 @@
-# Routes Folder README
+# backend/src/routes
 
-## Purpose
-This folder contains the HTTP API layer for the backend.  
-Each route validates request input, calls storage/reader services, applies caching, and returns JSON responses.
+HTTP route layer for the backend.
 
-## Files In This Folder
+## Files
 
-### `files.py`
+- `files.py`
+- `hdf5.py`
 
-#### What is implemented
-- Blueprint: `files_bp`
-- Endpoint: `GET /files/`
-  - Lists bucket objects via `MinIOClient.list_objects()`
-  - Uses files cache (`get_files_cache()`) with key `files_list`
-  - Returns `{ success, count, files, cached }`
-- Endpoint: `POST /files/refresh`
-  - Clears files cache (`cache.clear()`)
-  - Returns `{ success, message }`
+## `files.py`
 
-#### What is imported
-- `logging`
-- `Blueprint`, `jsonify` from `flask`
+Implemented endpoints:
+- `GET /files/`
+- Returns object list from MinIO/S3 and caches result under `files_list`.
+
+- `POST /files/refresh`
+- Clears files cache.
+
+Imports:
 - `get_minio_client` from `src.storage.minio_client`
 - `get_files_cache` from `src.utils.cache`
 
----
+## `hdf5.py`
 
-### `hdf5.py`
+Blueprint:
+- `hdf5_bp`
 
-#### What is implemented
-- Blueprint: `hdf5_bp`
-- Parsing/validation helpers for:
-  - integer params (`_parse_int_param`)
-  - display dimensions (`_parse_display_dims`)
-  - fixed indices (`_parse_fixed_indices`, `_fill_fixed_indices`)
-  - line settings (`_parse_line_dim`, `_parse_line_quality`)
-  - preview options (`_parse_preview_detail`, `_parse_bool_param`)
-- Cache helpers:
-  - `_resolve_cache_version_tag`
-  - `_serialize_request_args`
-  - `_get_cached_dataset_info`
-- Guard helpers:
-  - `_normalize_selection`
-  - `_compute_safe_heatmap_size`
-  - `_enforce_element_limits`
-  - `_is_not_found_error`
-
-#### Endpoints implemented
+Implemented endpoints:
 - `GET /files/<key>/children`
-  - Reads `path` (default `/`)
-  - Uses object metadata (`etag`) for cache key invalidation
-  - Calls `HDF5Reader.get_children()`
 - `GET /files/<key>/meta`
-  - Requires `path`
-  - Uses object metadata (`etag`) for cache key invalidation
-  - Calls `HDF5Reader.get_metadata()`
 - `GET /files/<key>/preview`
-  - Requires `path`
-  - Supports `mode`, `detail`, `include_stats`, `display_dims`, `fixed_indices`, `max_size`, `etag`
-  - Calls `HDF5Reader.get_preview()`
 - `GET /files/<key>/data`
-  - Requires `path`, `mode` (`matrix|heatmap|line`)
-  - Supports display/fixed indexing, pagination, sampling, quality flags, and caching
-  - Calls:
-    - `HDF5Reader.get_dataset_info()`
-    - `HDF5Reader.get_matrix()` or `get_heatmap()` or `get_line()`
+- `GET /files/<key>/export/csv`
 
-#### What is imported
-- Standard library: `logging`, `math`, `time`
-- Flask: `Blueprint`, `request`, `jsonify`
-- `get_minio_client` from `src.storage.minio_client`
-- `get_hdf5_reader` from `src.readers.hdf5_reader`
-- Caches from `src.utils.cache`:
-  - `get_hdf5_cache`
-  - `get_dataset_cache`
-  - `get_data_cache`
-  - `make_cache_key`
+Core responsibilities:
+- Parse and validate query params.
+- Normalize `display_dims` and `fixed_indices`.
+- Apply request-level hard limits before heavy reads.
+- Build deterministic cache keys for preview/data routes.
+- Return consistent JSON errors for validation and not-found cases.
 
-## Cache Usage In This Folder
-- `files.py`:
-  - Files list cache: `get_files_cache()`
-- `hdf5.py`:
-  - Preview/meta/children cache: `get_hdf5_cache()`
-  - Dataset shape/dtype cache: `get_dataset_cache()`
-  - `/data` response cache: `get_data_cache()`
+## `/preview` contract
 
-## Registered By
-- `backend/app.py`:
-  - `app.register_blueprint(files_bp, url_prefix='/files')`
-  - `app.register_blueprint(hdf5_bp, url_prefix='/files')`
+Required:
+- `path`
+
+Supported params:
+- `mode=auto|line|table|heatmap`
+- `detail=fast|full`
+- `include_stats`
+- `display_dims`
+- `fixed_indices`
+- `max_size`
+- `etag`
+
+Behavior:
+- Uses preview cache (`get_hdf5_cache`) keyed by file + normalized request shape.
+- Passes normalized options to `HDF5Reader.get_preview()`.
+
+## `/data` contract
+
+Required:
+- `path`
+- `mode=matrix|heatmap|line`
+
+Shared params:
+- `display_dims`
+- `fixed_indices`
+- `etag`
+
+Mode-specific params:
+- matrix: `row_offset`, `row_limit`, `col_offset`, `col_limit`, `row_step`, `col_step`
+- heatmap: `max_size`, `include_stats`
+- line: `line_dim`, `line_index`, `line_offset`, `line_limit`, `quality`, `max_points`
+
+Behavior:
+- Uses dataset cache for shape/dtype metadata.
+- Uses data cache for finalized response payloads.
+- Enforces line exact window rules and heatmap size clamp rules.
+
+## `/export/csv` contract
+
+Required:
+- `path`
+- `mode=matrix|heatmap|line`
+
+Matrix and heatmap export behavior:
+- Streams CSV with BOM.
+- Uses matrix reader calls in chunks.
+- Supports window params and chunk params (`chunk_rows`, `chunk_cols`).
+- Enforces `MAX_EXPORT_CSV_CELLS`.
+
+Line export behavior:
+- Streams CSV with columns `index,base,...compare`.
+- Supports `line_dim`, `line_index`, `line_offset`, `line_limit`, `chunk_points`.
+- Supports `compare_paths` (up to 4).
+- Validates compare dtype numeric and compare shape equal to base shape.
+- Enforces `MAX_EXPORT_LINE_POINTS`.
+
+## Route-level limits and defaults
+
+Key constants in `hdf5.py`:
+- `MAX_JSON_ELEMENTS`, `MAX_ELEMENTS`
+- `MAX_MATRIX_ROWS`, `MAX_MATRIX_COLS`
+- `MAX_LINE_POINTS`, `MAX_LINE_EXACT_POINTS`
+- `MAX_HEATMAP_SIZE`, `DEFAULT_MAX_SIZE`
+- `MAX_EXPORT_CSV_CELLS`, `MAX_EXPORT_LINE_POINTS`
+- export chunk defaults for matrix and line
+
+## Cache usage in routes
+
+- files cache: list file objects
+- hdf5 cache: children, metadata, preview payloads
+- dataset cache: dataset shape/ndim/dtype metadata
+- data cache: finalized `/data` response payloads
+
+## Registered by
+
+`backend/app.py`:
+- `app.register_blueprint(files_bp, url_prefix='/files')`
+- `app.register_blueprint(hdf5_bp, url_prefix='/files')`

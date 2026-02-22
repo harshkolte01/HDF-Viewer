@@ -4,10 +4,10 @@ Static assets used by `old_web`.
 
 ## Files
 
-- `logo.svg`: optional branding/logo asset for headers or docs.
+- `logo.svg`: optional logo/branding asset.
 
-## Runtime Usage
+## Runtime Notes
 
-- No direct JS imports currently.
-- Assets are referenced by HTML/CSS when needed.
-- Compare mode and runtime logic do not load anything from this folder.
+- No direct JS module imports currently point to this folder.
+- Assets are consumed by HTML/CSS when needed.
+- Compare and export features do not require additional asset files.

@@ -4,23 +4,31 @@ Shared utility modules.
 
 ## Active Files
 
-- `format.js`
-- `escapeHtml`, `formatBytes`.
-- `debounce.js`
-- Generic debounce helper.
-- `lru.js`
-- Simple LRU cache used by API/runtime caching.
-- `templateLoader.js`
-- Loads `old_web/pages/*.html`, caches templates, applies placeholders.
+- `format.js`: formatting and `escapeHtml` helpers.
+- `debounce.js`: generic debounce utility.
+- `lru.js`: LRU cache implementation.
+- `templateLoader.js`: runtime HTML template loader with in-memory cache.
+- `export.js`: shared CSV/PNG export utilities.
 
-## Placeholder Files
+## `export.js` Responsibilities
 
-- `cache.js` (empty)
-- `dom.js` (empty)
-- `formatters.js` (empty)
+- CSV helpers:
+- filename generation with timestamp
+- CSV cell escaping and row creation
+- BOM-enabled CSV blob creation
+- Blob/url download triggers
 
-## Import Notes
+- Full export URL helper:
+- `buildCsvExportUrl(fileKey, params)` for backend `/files/<key>/export/csv`
 
-- `templateLoader.js` is used by `homeView.js` and `viewerView.js`.
-- `lru.js` is used by `js/api/hdf5Service.js` and runtime caches.
-- Compare mode relies on shared helpers (`escapeHtml`, caching) but adds no utility-module specific APIs.
+- PNG helpers:
+- line SVG to PNG rasterization (`svgElementToPngBlob`)
+- heatmap canvas to PNG conversion (`canvasElementToPngBlob`)
+
+## Placeholder Files (Inactive)
+
+- `cache.js`
+- `dom.js`
+- `formatters.js`
+
+These files are retained for compatibility and are not used by active runtime.

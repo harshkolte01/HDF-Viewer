@@ -4,30 +4,29 @@ Viewer panel implementation split into render and runtime layers.
 
 ## Files
 
-- `render.js`
-- Entrypoint for panel HTML generation.
-- Switches display/inspect content and exports selection-key helpers.
-- `runtime.js`
-- Entrypoint re-export for runtime event binder.
-- `shared.js`
-- Shared constants/helpers for matrix, line, and heatmap behavior.
-- `render/`
-- Pure HTML render modules (shell markup + controls).
-- `runtime/`
-- Interactive runtime engines and cleanup utilities.
+- `render.js`: panel render entrypoint.
+- `runtime.js`: runtime binder entrypoint.
+- `shared.js`: shared constants/helpers for matrix, line, heatmap.
+- `render/`: HTML render modules.
+- `runtime/`: interactive runtime engines.
 
 ## Architecture Pattern
 
-1. Render modules output shell markup with `data-*` attributes.
-2. Runtime binder scans shells and initializes matching runtime module.
-3. Runtime modules own interactive behavior and `/data` fetching.
+1. Render modules create shell markup with `data-*` contracts.
+2. Runtime binder discovers shell nodes and initializes matching runtime.
+3. Runtime modules own interaction state and `/data` fetching.
 
-## Key Runtime Features
+## Current Runtime Feature Set
 
-- Matrix: virtual block streaming table.
-- Line: windowed fetching, zoom/pan/click-zoom, range controls, panel fullscreen.
-- Line compare V1:
-- compare toggle/clear/remove controls in panel
-- shared-axes overlay of base + compare datasets
-- legend entries for loaded and skipped compare series
-- Heatmap: canvas zoom/pan, high-res progressive loading, plot-mode linked inline line profile.
+- Matrix: virtualized block table.
+- Line: zoom/pan/click-zoom, window controls, fullscreen, compare overlays.
+- Heatmap: canvas zoom/pan, progressive loading, plot-mode linked line profile, fullscreen.
+
+## Runtime Export Contract
+
+Each full runtime shell may attach `shell.__exportApi`:
+- matrix: `exportCsvDisplayed`, `exportCsvFull`
+- line: `exportCsvDisplayed`, `exportCsvFull`, `exportPng`
+- heatmap: `exportCsvDisplayed`, `exportCsvFull`, `exportPng`
+
+`viewerView.js` uses this runtime contract to execute export menu actions.

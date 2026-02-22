@@ -1,50 +1,43 @@
-# Storage Folder README
+# backend/src/storage
 
-## Purpose
-This folder contains the S3/MinIO integration used by route handlers and HDF5 workflows.
+Storage integration layer for S3/MinIO operations.
 
-## File In This Folder
+## File
 
-### `minio_client.py`
+- `minio_client.py`
 
-#### What is imported
-- Standard library: `os`, `logging`
-- Typing: `List`, `Dict`, `Optional`, `BinaryIO`
-- AWS SDK:
-  - `boto3`
-  - `Config` from `botocore.client`
-  - `ClientError` from `botocore.exceptions`
+## Class
 
-#### Class implemented
 - `MinIOClient`
-  - Reads env vars:
-    - `S3_ENDPOINT`
-    - `S3_REGION` (default `us-east-1`)
-    - `S3_ACCESS_KEY`
-    - `S3_SECRET_KEY`
-    - `S3_BUCKET`
-  - Validates required values and creates an S3-compatible boto3 client.
 
-#### Methods implemented
+Reads environment config:
+- `S3_ENDPOINT`
+- `S3_REGION` (default `us-east-1`)
+- `S3_ACCESS_KEY`
+- `S3_SECRET_KEY`
+- `S3_BUCKET`
+
+## Implemented operations
+
 - `list_objects(prefix='')`
-  - Uses `list_objects_v2` paginator.
-  - Returns object entries with `key`, `size`, `last_modified`, `etag`.
+- Lists objects using paginator (`list_objects_v2`).
+- Returns `key`, `size`, `last_modified`, `etag`.
+
 - `get_object_metadata(key)`
-  - Uses `head_object`.
-  - Returns `key`, `size`, `last_modified`, `etag`, `content_type`.
+- Uses `head_object`.
+- Returns object metadata including `etag` used for cache-version semantics.
+
 - `open_object_stream(key)`
-  - Uses `get_object`.
-  - Returns full object stream (`Body`).
+- Opens full object stream with `get_object`.
+
 - `get_object_range(key, start, end)`
-  - Uses HTTP `Range` header with `get_object`.
-  - Returns byte slice for random access scenarios.
+- Performs byte-range GET using HTTP `Range` header.
 
-#### Singleton implemented
-- Global instance: `_minio_client`
-- Factory/accessor: `get_minio_client()`
+## Singleton accessor
 
-## Who imports this module
+- `get_minio_client()` returns global `MinIOClient` instance.
+
+## Imported by
+
 - `backend/src/routes/files.py`
-  - Uses `list_objects()` for `/files`.
 - `backend/src/routes/hdf5.py`
-  - Uses `get_object_metadata()` for etag-based cache invalidation.

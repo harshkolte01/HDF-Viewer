@@ -4,46 +4,34 @@ Pure render layer for viewer panel content.
 
 ## Files
 
-- `sections.js`
-- Main display/inspect composition.
-- Renders matrix, line, and heatmap sections.
-- Builds full-runtime shells and status text.
-- `previews.js`
-- Preview renderers for table, line chart, and sampled heatmap.
-- `config.js`
-- Resolves runtime configs from state/preview.
-- Builds stable selection keys (line/matrix/heatmap).
-- `dimensionControls.js`
-- Renders display dimension selectors and fixed-index controls.
+- `sections.js`: main display/inspect composition and shell markup.
+- `previews.js`: preview renderers for matrix, line, and heatmap.
+- `config.js`: derives runtime config and stable selection keys.
+- `dimensionControls.js`: display dimension selectors and fixed-index controls.
 
-## Full-Shell Markup Contracts
+## Render Contract
 
-Render layer writes `data-*` attributes consumed by runtime modules.
+Render modules output `data-*` attributes consumed by runtime modules:
+- matrix shell: `data-matrix-*`
+- line shell: `data-line-*`
+- heatmap shell: `data-heatmap-*`
 
-- Line shell: `data-line-*`
-- Matrix shell: `data-matrix-*`
-- Heatmap shell: `data-heatmap-*`
+## Line Compare Render Contract
 
-## Line Compare Render Contract (`sections.js`)
-
-- Compare controls:
-- `data-line-compare-toggle`
-- `data-line-compare-clear`
-- `data-line-compare-remove`
-- `data-line-compare-dismiss`
-- Compare payload hints on line shell:
+`sections.js` includes compare-specific attributes and controls:
 - `data-line-compare-items`
 - `data-line-base-shape`
 - `data-line-base-ndim`
 - `data-line-base-dtype`
+- `data-line-compare-toggle`
+- `data-line-compare-clear`
+- `data-line-compare-remove`
+- `data-line-compare-dismiss`
 
-## Heatmap Plot-Mode UI
+## Status Anchors Used by Runtime and Export
 
-`sections.js` includes:
+- matrix status: `data-matrix-status`
+- line status: `data-line-status`
+- heatmap status: `data-heatmap-status`
 
-- plot-mode toolbar icon (`data-heatmap-plot-toggle`)
-- inline linked profile panel (`data-heatmap-linked-plot`)
-- axis switch buttons (`row` / `col`)
-- close button for linked panel
-
-Runtime owns interactions and data loading for these controls.
+Export UI itself is rendered by `views/viewerView.js`, while these status anchors are updated by runtime/export operations.

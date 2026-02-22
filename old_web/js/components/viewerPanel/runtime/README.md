@@ -4,40 +4,52 @@ Interactive runtime layer for full matrix, line, and heatmap views.
 
 ## Files
 
-- `bindEvents.js`
-- Central post-render binder.
-- Binds panel controls and initializes matrix/line/heatmap runtimes.
-- Includes line compare control bindings.
-- `common.js`
-- Cleanup registries and shared helpers.
+- `bindEvents.js`: central post-render binder.
+- `common.js`: cleanup registries and shared status helpers.
+- `matrixRuntime.js`: virtualized matrix table and block streaming.
+- `lineRuntime.js`: line chart interaction engine and compare overlay.
+- `heatmapRuntime.js`: heatmap interaction engine and linked line profile.
+
+## Shared Runtime Guarantees
+
+- Cleanup isolation per runtime type via registry sets.
+- Selection-key based view persistence where applicable.
+- Explicit teardown of event listeners, timers, and pending requests.
+
+## Line Runtime Highlights
+
+- Windowed fetch and render (`viewStart`, `viewSpan`).
+- Pan, wheel zoom, click-to-zoom, keyboard navigation.
+- Fullscreen shell state handling.
+- Compare overlays with shared axes and legend/status reporting.
+
+## Heatmap Runtime Highlights
+
+- Progressive loading (preview then higher resolution).
+- Canvas zoom/pan and tooltip.
+- Plot mode for row/column linked line profiles.
+- Fullscreen shell state handling.
+
+## Matrix Runtime Highlights
+
+- Virtualized matrix viewport.
+- Block queue with bounded parallel requests.
+- On-demand cache hydration for export-visible ranges.
+
+## Export Implementation by Runtime
+
 - `matrixRuntime.js`
-- Virtualized matrix renderer + block queue/pump/fetch.
+- `exportCsvDisplayed()`: exports currently visible viewport.
+- `exportCsvFull()`: starts backend streamed CSV export for full selected matrix slice.
+
 - `lineRuntime.js`
-- Full line runtime with zoom, pan, click-zoom, quality/window controls, fullscreen, and compare overlays.
+- `exportCsvDisplayed()`: exports current plotted base points plus loaded compare series.
+- `exportCsvFull()`: starts backend streamed line CSV export and includes `compare_paths` when present.
+- `exportPng()`: rasterizes active line SVG to PNG.
+
 - `heatmapRuntime.js`
-- Full heatmap runtime with progressive hi-res loading, zoom/pan, plot mode, linked inline line profile, fullscreen.
+- `exportCsvDisplayed()`: exports currently loaded heatmap grid.
+- `exportCsvFull()`: starts backend streamed CSV export for full selected heatmap slice.
+- `exportPng()`: exports rendered heatmap canvas to PNG.
 
-## Key Behaviors Implemented
-
-- Runtime cleanup isolation via:
-- `MATRIX_RUNTIME_CLEANUPS`
-- `LINE_RUNTIME_CLEANUPS`
-- `HEATMAP_RUNTIME_CLEANUPS`
-- Selection/view caching for faster re-entry.
-- Fullscreen state restore guards across rerenders.
-- Heatmap plot-mode cell selection feeding inline linked line shell creation.
-- Inline linked line scroll-position protection.
-
-## Line Compare Runtime Sequence (`lineRuntime.js`)
-
-1. Parse compare items + base hints from shell dataset attrs.
-2. Pre-check compare items (dtype/ndim/shape).
-3. Fetch base + compare windows in parallel using `getFileData(... mode=line ...)`.
-4. Keep base-series zoom/pan logic as source of viewport truth.
-5. Render base + compare series on shared axes.
-6. Show legend entries for loaded series and skipped/failing series reasons.
-
-## API Usage
-
-- Matrix/line/heatmap runtimes fetch via `getFileData()` from `js/api/hdf5Service.js`.
-- Runtime cancellation uses cancel channels via `cancelPendingRequest()` where required.
+Each runtime registers these handlers via `shell.__exportApi` for the top-level export menu.

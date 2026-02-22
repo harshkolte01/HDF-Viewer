@@ -1,57 +1,45 @@
-# Utils Folder README
+# backend/src/utils
 
-## Purpose
-This folder contains shared utility code used across route modules.
+Shared utilities used by backend routes.
 
-## File In This Folder
+## File
 
-### `cache.py`
+- `cache.py`
 
-#### What is imported
-- Standard library: `time`, `logging`
-- Typing: `Any`, `Optional`, `Tuple`
-- Threading: `Lock`
+## `SimpleCache`
 
-#### Class implemented
-- `SimpleCache`
-  - Thread-safe in-memory TTL cache.
-  - Internal storage:
-    - `value`
-    - `expires_at`
-    - `created_at`
+Thread-safe in-memory TTL cache backed by `OrderedDict` + `Lock`.
 
-#### Methods implemented
+Implemented methods:
 - `get(key)`
-  - Returns cached value if key exists and TTL is valid.
 - `set(key, value, ttl=None)`
-  - Stores value with default or custom TTL.
 - `delete(key)`
-  - Removes one key.
 - `clear()`
-  - Removes all keys.
 - `clear_pattern(pattern)`
-  - Removes keys containing substring `pattern`.
 - `stats()`
-  - Returns `total_entries`, `active_entries`, `expired_entries`.
 
-#### Global cache instances implemented
-- `_files_cache = SimpleCache(default_ttl=30)`
-- `_hdf5_cache = SimpleCache(default_ttl=300)`
-- `_dataset_cache = SimpleCache(default_ttl=300)`
-- `_data_cache = SimpleCache(default_ttl=120)`
+Behavior notes:
+- Expired entries are dropped on read.
+- Entry order is updated on hit/set.
+- Oldest entries are evicted when `max_entries` is exceeded.
 
-#### Public accessor functions
+## Global cache instances
+
+- `_files_cache = SimpleCache(default_ttl=30, max_entries=200)`
+- `_hdf5_cache = SimpleCache(default_ttl=300, max_entries=3000)`
+- `_dataset_cache = SimpleCache(default_ttl=300, max_entries=3000)`
+- `_data_cache = SimpleCache(default_ttl=120, max_entries=1200)`
+
+Public accessors:
 - `get_files_cache()`
 - `get_hdf5_cache()`
 - `get_dataset_cache()`
 - `get_data_cache()`
-- `make_cache_key(*parts)` (joins with `:`)
 
-## Who imports this module
-- `backend/src/routes/files.py`:
-  - `get_files_cache`
-- `backend/src/routes/hdf5.py`:
-  - `get_hdf5_cache`
-  - `get_dataset_cache`
-  - `get_data_cache`
-  - `make_cache_key`
+Helper:
+- `make_cache_key(*parts)` joins key segments with `:`.
+
+## Imported by
+
+- `backend/src/routes/files.py`
+- `backend/src/routes/hdf5.py`

@@ -4,24 +4,19 @@ Global state container and action composition for `old_web`.
 
 ## Files
 
-- `store.js`
-- Mutable singleton `state` object.
-- Exposes `getState`, `setState`, `subscribe`.
-- `reducers.js`
-- Dependency-injection root.
-- Composes all reducer factories into exported `actions` object.
-- `reducers/`
-- Feature-specific action factory modules.
+- `store.js`: singleton state, `getState`, `setState`, `subscribe`.
+- `reducers.js`: dependency-injected action composition root.
+- `reducers/`: feature action factory modules.
 
 ## Runtime Responsibilities
 
 - Route state (`home` / `viewer`).
-- File list + refresh status.
+- File list load/refresh status.
 - Tree expansion/loading/error maps.
-- Selection and metadata lifecycle.
-- Preview lifecycle + full-view enable flags.
-- Display config staging/applied values (dims + fixed indices).
-- Viewer settings (notation, line/heatmap grid/aspect/colormap, sidebar open).
+- Selected file/path/node metadata.
+- Preview lifecycle and full-view enable flags.
+- Display config (`displayDims`, `fixedIndices`) staging and apply.
+- Viewer preferences (notation, grid/aspect/colormap, sidebar open).
 - Line compare state:
 - `lineCompareEnabled`
 - `lineCompareItems`
@@ -29,11 +24,12 @@ Global state container and action composition for `old_web`.
 
 ## Compare State Lifecycle
 
-- Compare state resets when entering viewer/home from file actions.
-- Compare list/status is pruned or cleared when tree selection context no longer matches base dataset.
-- Add/remove/clear/dismiss operations are handled by `reducers/compareActions.js`.
+- Compare state resets on route/file transitions where base context changes.
+- Compare list can be pruned when selected context becomes invalid.
+- Add/remove/clear/dismiss actions are managed in `reducers/compareActions.js`.
 
-## How It Is Used
+## Export State Note
 
-- `old_web/js/app.js` subscribes to state changes and triggers rerender.
-- View and runtime modules call `actions.*` methods for all mutations.
+- Export has no dedicated persistent store keys.
+- Export execution is runtime-local and triggered from viewer view events.
+- User feedback is written to existing status fields in panel sections.

@@ -1,6 +1,6 @@
 # js/components/viewer
 
-Legacy viewer namespace kept for compatibility.
+Legacy viewer namespace retained for compatibility.
 
 ## Files
 
@@ -9,12 +9,13 @@ Legacy viewer namespace kept for compatibility.
 - `PreviewToolbar.js`
 - `ViewerPanel.js`
 
-All files here are placeholders and are not used by the active runtime.
+## Status
 
-## Active Viewer Modules
+All files in this folder are placeholders and are not used by active runtime.
 
-Use these instead:
+## Active Viewer Stack
 
+Use these modules instead:
 - `old_web/js/views/viewerView.js`
 - `old_web/js/components/sidebarTree.js`
 - `old_web/js/components/viewerPanel/*`

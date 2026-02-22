@@ -13,49 +13,62 @@ Style system for `old_web`.
 7. `components/table.css`
 8. `components/charts.css`
 
-## Active Ownership
+## File Ownership
 
 - `tokens.css`: design tokens (color, spacing, radii, shadows).
-- `app.css`: global shell + home baseline.
+- `app.css`: global shell and home baseline styles.
 - `home.css`: home-specific extensions.
-- `viewer.css`: viewer layout, sidebar, breadcrumb, toolbar, responsive behavior.
-- `viewer-panel.css`: matrix/line/heatmap panel styling and runtime states.
-- `components/table.css`: home table styling.
-- `components/charts.css`: generic chart surface utility.
+- `viewer.css`: viewer layout, sidebar tree, top/sub bars, compare tree UX, export menu UX, responsive layout.
+- `viewer-panel.css`: matrix, line, and heatmap panel visuals and runtime interaction states.
+- `components/table.css`: home file table styles.
+- `components/charts.css`: shared chart-surface utility.
 
 ## Compare-Related Classes
 
-### Tree compare controls (`viewer.css`)
-
+Tree compare controls in `viewer.css`:
 - `.tree-compare-btn`
 - `.tree-compare-btn.is-disabled`
 - `.sidebar-tree.is-compare-mode`
-- Compare mode enables horizontal tree scrolling for long labels:
-- `overflow-x: auto`
-- max-content widths on tree wrappers/rows
-- no label ellipsis clipping while compare mode is active
 
-### Line compare panel and legend (`viewer-panel.css`)
+Compare mode tree behavior:
+- enables horizontal scrolling for long labels
+- relaxes text truncation for dataset names
+- keeps compare button visible on wide rows
 
+Line compare panel in `viewer-panel.css`:
 - `.line-compare-panel`
 - `.line-compare-chip*`
 - `.line-compare-status*`
+- `.line-legend*`
 - `.line-path-base`
 - `.line-path-compare`
 
-## Important Runtime Classes
+## Export-Related Classes
 
-- Viewer fullscreen shell: `.viewer-page:fullscreen`
-- Panel fullscreen lock: `body.line-panel-fullscreen-active`
-- Line panel fullscreen: `.line-chart-shell.is-fullscreen`
-- Heatmap plot mode: `.heatmap-chart-canvas.is-plot`
-- Heatmap pan mode: `.heatmap-chart-canvas.is-pan`
-- Inline linked line shell: `.heatmap-inline-line-shell`
+Subbar export menu in `viewer.css`:
+- `.subbar-export-wrap`
+- `.subbar-export`
+- `.subbar-export-menu`
+- `.subbar-export-item`
+- `.subbar-export-wrap.is-open .subbar-export-menu`
 
-## Files Not Loaded by `index.html`
+Current visibility model:
+- menu is hidden by default (`display: none`)
+- menu appears when wrapper has `.is-open`
+- `viewer-subbar` has explicit stacking context for reliable overlay rendering
+
+## Important Runtime State Classes
+
+- Global fullscreen: `.viewer-page:fullscreen`
+- Line panel fullscreen lock: `body.line-panel-fullscreen-active`
+- Line panel fullscreen shell: `.line-chart-shell.is-fullscreen`
+- Heatmap pan/plot modes: `.heatmap-chart-canvas.is-pan`, `.heatmap-chart-canvas.is-plot`
+- Inline linked plot shell: `.heatmap-inline-line-shell`
+
+## Not Loaded by `index.html`
 
 - `reset.css`
 - `theme.css`
 - `common.css`
 
-These are retained for compatibility/history and can be removed only after confirming no external dependency.
+These files are retained for compatibility/history.
