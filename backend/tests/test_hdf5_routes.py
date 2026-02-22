@@ -450,6 +450,129 @@ class Hdf5RoutesTestCase(unittest.TestCase):
         self.assertFalse(payload['success'])
         self.assertIn('detail', payload['error'])
 
+    def test_export_csv_matrix_streams_requested_window(self):
+        reader = Mock()
+        reader.get_dataset_info.return_value = {
+            'shape': [4, 5],
+            'ndim': 2,
+            'dtype': 'float32'
+        }
+
+        def matrix_side_effect(_key, _path, _display_dims, _fixed_indices, row_offset, row_limit, col_offset, col_limit, row_step=1, col_step=1):
+            data = []
+            for row in range(row_limit):
+                data.append([
+                    float((row_offset + row) * 10 + (col_offset + col))
+                    for col in range(col_limit)
+                ])
+            return {
+                'dtype': 'float32',
+                'data': data,
+                'shape': [row_limit, col_limit],
+                'row_offset': row_offset,
+                'col_offset': col_offset,
+                'downsample_info': {'row_step': row_step, 'col_step': col_step}
+            }
+
+        reader.get_matrix.side_effect = matrix_side_effect
+
+        with patch('src.routes.hdf5.get_hdf5_reader', return_value=reader), \
+             patch('src.routes.hdf5.get_dataset_cache', return_value=_MemoryCache()):
+            response = self.client.get(
+                '/files/sample.h5/export/csv'
+                '?path=/array_2d'
+                '&mode=matrix'
+                '&row_limit=2'
+                '&col_limit=3'
+                '&chunk_rows=1'
+                '&chunk_cols=2'
+            )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.get_data(as_text=True)
+        self.assertIn('row\\col,0,1,2', body)
+        self.assertIn('0,0.0,1.0,2.0', body)
+        self.assertIn('1,10.0,11.0,12.0', body)
+        self.assertGreaterEqual(reader.get_matrix.call_count, 2)
+
+    def test_export_csv_line_supports_compare_paths(self):
+        reader = Mock()
+
+        def dataset_info_side_effect(_key, path):
+            if path == '/cmp':
+                return {'shape': [10], 'ndim': 1, 'dtype': 'float32'}
+            return {'shape': [10], 'ndim': 1, 'dtype': 'float32'}
+
+        reader.get_dataset_info.side_effect = dataset_info_side_effect
+
+        def line_side_effect(_key, path, _display_dims, _fixed_indices, _line_dim, _line_index, line_offset, line_limit, _line_step):
+            base = 100 if path == '/cmp' else 0
+            data = [base + line_offset + idx for idx in range(line_limit)]
+            return {
+                'dtype': 'float32',
+                'data': data,
+                'shape': [line_limit],
+                'axis': 'dim',
+                'index': None,
+                'downsample_info': {'step': 1}
+            }
+
+        reader.get_line.side_effect = line_side_effect
+
+        with patch('src.routes.hdf5.get_hdf5_reader', return_value=reader), \
+             patch('src.routes.hdf5.get_dataset_cache', return_value=_MemoryCache()):
+            response = self.client.get(
+                '/files/sample.h5/export/csv'
+                '?path=/base'
+                '&mode=line'
+                '&line_limit=4'
+                '&chunk_points=2'
+                '&compare_paths=/cmp'
+            )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.get_data(as_text=True)
+        self.assertIn('index,base,cmp', body)
+        self.assertIn('0,0,100', body)
+        self.assertIn('3,3,103', body)
+        # two chunks, base + compare each chunk
+        self.assertEqual(reader.get_line.call_count, 4)
+
+    def test_export_csv_heatmap_mode_uses_full_matrix_slice(self):
+        reader = Mock()
+        reader.get_dataset_info.return_value = {
+            'shape': [3, 3],
+            'ndim': 2,
+            'dtype': 'float32'
+        }
+        reader.get_heatmap = Mock()
+        reader.get_matrix.return_value = {
+            'dtype': 'float32',
+            'data': [[1.0, 2.0], [3.0, 4.0]],
+            'shape': [2, 2],
+            'row_offset': 0,
+            'col_offset': 0,
+            'downsample_info': {'row_step': 1, 'col_step': 1}
+        }
+
+        with patch('src.routes.hdf5.get_hdf5_reader', return_value=reader), \
+             patch('src.routes.hdf5.get_dataset_cache', return_value=_MemoryCache()):
+            response = self.client.get(
+                '/files/sample.h5/export/csv'
+                '?path=/array_2d'
+                '&mode=heatmap'
+                '&row_limit=2'
+                '&col_limit=2'
+            )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.get_data(as_text=True)
+        self.assertIn('row\\col,0,1', body)
+        self.assertIn('0,1.0,2.0', body)
+        self.assertIn('1,3.0,4.0', body)
+        reader.get_matrix.assert_called()
+        reader.get_heatmap.assert_not_called()
+
 
 if __name__ == '__main__':
     unittest.main()

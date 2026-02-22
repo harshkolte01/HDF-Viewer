@@ -4,7 +4,7 @@ HDF5 file navigation and metadata routes
 import logging
 import math
 import time
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, Response, stream_with_context
 from src.storage.minio_client import get_minio_client
 from src.readers.hdf5_reader import get_hdf5_reader
 from src.utils.cache import (
@@ -30,6 +30,11 @@ MAX_HEATMAP_SIZE = 1024
 DEFAULT_ROW_LIMIT = 100
 DEFAULT_COL_LIMIT = 100
 DEFAULT_MAX_SIZE = 512
+MAX_EXPORT_CSV_CELLS = 10_000_000
+MAX_EXPORT_LINE_POINTS = 5_000_000
+DEFAULT_EXPORT_MATRIX_CHUNK_ROWS = 256
+DEFAULT_EXPORT_MATRIX_CHUNK_COLS = 256
+DEFAULT_EXPORT_LINE_CHUNK_POINTS = 50_000
 
 
 def _parse_int_param(name, default=None, min_value=None):
@@ -217,6 +222,69 @@ def _enforce_element_limits(count):
         raise ValueError(
             f"Selection exceeds max_elements ({count} > {MAX_ELEMENTS} elements)"
         )
+
+
+def _csv_escape(value):
+    if value is None:
+        text = ""
+    else:
+        text = str(value)
+    if any(marker in text for marker in (",", '"', "\r", "\n")):
+        text = '"' + text.replace('"', '""') + '"'
+    return text
+
+
+def _csv_row(values):
+    return ",".join(_csv_escape(value) for value in values) + "\r\n"
+
+
+def _sanitize_filename_segment(value, fallback):
+    text = str(value or "").strip()
+    if not text:
+        return fallback
+    sanitized = "".join(char if char.isalnum() or char in ("-", "_", ".") else "_" for char in text)
+    sanitized = sanitized.strip("_")
+    return sanitized or fallback
+
+
+def _build_export_filename(key, path, mode):
+    file_part = _sanitize_filename_segment(key, "file")
+    path_part = _sanitize_filename_segment(str(path).replace("/", "_"), "root")
+    mode_part = _sanitize_filename_segment(mode, "data")
+    return f"{file_part}_{path_part}_{mode_part}_full.csv"
+
+
+def _is_numeric_dtype_string(dtype_value):
+    text = str(dtype_value or "").strip().lower()
+    if not text:
+        return False
+    if "complex" in text:
+        return False
+    return (
+        "float" in text or
+        "int" in text or
+        "uint" in text or
+        "bool" in text
+    )
+
+
+def _parse_compare_paths(param, base_path):
+    if not param:
+        return []
+    base = str(base_path or "").strip()
+    seen = set()
+    normalized = []
+    for entry in str(param).split(","):
+        path = entry.strip()
+        if not path or path == base:
+            continue
+        if not path.startswith("/"):
+            path = f"/{path.lstrip('/')}"
+        if path in seen:
+            continue
+        seen.add(path)
+        normalized.append(path)
+    return normalized
 
 
 def _resolve_cache_version_tag():
@@ -803,6 +871,285 @@ def get_data(key):
         }), 400
     except Exception as e:
         logger.error(f"Error validating /data for '{key}' at '{hdf_path}': {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@hdf5_bp.route('/<path:key>/export/csv', methods=['GET'])
+def export_csv(key):
+    """Stream CSV export for matrix, heatmap (full slice), and line modes."""
+    try:
+        request_started = time.perf_counter()
+        hdf_path = request.args.get('path')
+        mode = str(request.args.get('mode', '')).strip().lower()
+
+        if not hdf_path:
+            return jsonify({
+                'success': False,
+                'error': 'Missing required parameter: path'
+            }), 400
+
+        if mode not in ('matrix', 'heatmap', 'line'):
+            return jsonify({
+                'success': False,
+                'error': 'Invalid mode parameter'
+            }), 400
+
+        reader = get_hdf5_reader()
+        cache_version = _resolve_cache_version_tag()
+        dataset_info = _get_cached_dataset_info(reader, key, hdf_path, cache_version)
+        shape = dataset_info['shape']
+        ndim = dataset_info['ndim']
+        dtype = dataset_info.get('dtype')
+
+        display_dims, fixed_indices = _normalize_selection(
+            shape,
+            request.args.get('display_dims'),
+            request.args.get('fixed_indices')
+        )
+
+        if mode in ('matrix', 'heatmap') and (display_dims is None or ndim < 2):
+            return jsonify({
+                'success': False,
+                'error': 'Mode requires a 2D or higher dataset'
+            }), 400
+
+        if mode == 'line' and not _is_numeric_dtype_string(dtype):
+            return jsonify({
+                'success': False,
+                'error': 'Line CSV export requires numeric dataset dtype.'
+            }), 400
+
+        response_headers = {
+            'Content-Type': 'text/csv; charset=utf-8',
+            'Cache-Control': 'no-store',
+            'X-Accel-Buffering': 'no',
+            'Content-Disposition': f'attachment; filename=\"{_build_export_filename(key, hdf_path, mode)}\"'
+        }
+
+        if mode in ('matrix', 'heatmap'):
+            row_dim, col_dim = display_dims
+            rows = shape[row_dim]
+            cols = shape[col_dim]
+
+            row_offset = _parse_int_param('row_offset', 0, 0)
+            col_offset = _parse_int_param('col_offset', 0, 0)
+            row_limit_param = request.args.get('row_limit')
+            col_limit_param = request.args.get('col_limit')
+
+            max_rows = max(0, rows - row_offset)
+            max_cols = max(0, cols - col_offset)
+            row_limit = max_rows if row_limit_param is None else min(_parse_int_param('row_limit', max_rows, 1), max_rows)
+            col_limit = max_cols if col_limit_param is None else min(_parse_int_param('col_limit', max_cols, 1), max_cols)
+
+            if row_limit <= 0 or col_limit <= 0:
+                return jsonify({
+                    'success': False,
+                    'error': 'Requested export window is empty.'
+                }), 400
+
+            total_cells = row_limit * col_limit
+            if total_cells > MAX_EXPORT_CSV_CELLS:
+                return jsonify({
+                    'success': False,
+                    'error': f'CSV export exceeds limit ({total_cells} > {MAX_EXPORT_CSV_CELLS} cells).'
+                }), 400
+
+            chunk_rows = min(
+                max(1, _parse_int_param('chunk_rows', DEFAULT_EXPORT_MATRIX_CHUNK_ROWS, 1)),
+                row_limit
+            )
+            chunk_cols = min(
+                max(1, _parse_int_param('chunk_cols', DEFAULT_EXPORT_MATRIX_CHUNK_COLS, 1)),
+                col_limit
+            )
+
+            def generate_matrix_csv():
+                yield "\ufeff"
+                header = ["row\\col"] + list(range(col_offset, col_offset + col_limit))
+                yield _csv_row(header)
+
+                row_end = row_offset + row_limit
+                col_end = col_offset + col_limit
+
+                for row_cursor in range(row_offset, row_end, chunk_rows):
+                    current_rows = min(chunk_rows, row_end - row_cursor)
+                    row_buffers = [[row_cursor + row_index] for row_index in range(current_rows)]
+
+                    for col_cursor in range(col_offset, col_end, chunk_cols):
+                        current_cols = min(chunk_cols, col_end - col_cursor)
+                        block = reader.get_matrix(
+                            key,
+                            hdf_path,
+                            display_dims,
+                            fixed_indices,
+                            row_cursor,
+                            current_rows,
+                            col_cursor,
+                            current_cols,
+                            row_step=1,
+                            col_step=1
+                        )
+                        block_data = block.get('data')
+                        safe_block_rows = block_data if isinstance(block_data, list) else []
+
+                        for row_index in range(current_rows):
+                            safe_row = safe_block_rows[row_index] if row_index < len(safe_block_rows) and isinstance(
+                                safe_block_rows[row_index], list
+                            ) else []
+                            for col_index in range(current_cols):
+                                value = safe_row[col_index] if col_index < len(safe_row) else ""
+                                row_buffers[row_index].append(value)
+
+                    for row_values in row_buffers:
+                        yield _csv_row(row_values)
+
+            elapsed_ms = (time.perf_counter() - request_started) * 1000
+            logger.info(
+                f"HDF5 CSV export started for '{key}' at '{hdf_path}' ({mode}) in {elapsed_ms:.1f}ms "
+                f"[{row_limit}x{col_limit}]"
+            )
+            return Response(stream_with_context(generate_matrix_csv()), headers=response_headers)
+
+        line_dim_param = request.args.get('line_dim')
+        line_dim = _parse_line_dim(line_dim_param, ndim) if line_dim_param else None
+        line_index = _parse_int_param('line_index', None, 0)
+        line_offset = _parse_int_param('line_offset', 0, 0)
+        line_limit_param = request.args.get('line_limit')
+        line_limit = _parse_int_param('line_limit', None, 1) if line_limit_param else None
+        chunk_points = max(1, _parse_int_param('chunk_points', DEFAULT_EXPORT_LINE_CHUNK_POINTS, 1))
+
+        if isinstance(line_dim, int):
+            for dim in range(ndim):
+                if dim == line_dim:
+                    continue
+                if dim not in fixed_indices:
+                    size = shape[dim]
+                    fixed_indices[dim] = size // 2 if size > 0 else 0
+
+        if ndim == 1:
+            line_length = shape[0]
+        elif isinstance(line_dim, int):
+            line_length = shape[line_dim]
+        else:
+            if display_dims is None:
+                display_dims = (ndim - 2, ndim - 1)
+            row_dim, col_dim = display_dims
+            rows = shape[row_dim]
+            cols = shape[col_dim]
+            axis = line_dim or 'row'
+            if axis == 'row':
+                line_length = cols
+                if line_index is None:
+                    line_index = rows // 2 if rows > 0 else 0
+                if line_index < 0 or line_index >= rows:
+                    raise ValueError("line_index out of range")
+            else:
+                line_length = rows
+                if line_index is None:
+                    line_index = cols // 2 if cols > 0 else 0
+                if line_index < 0 or line_index >= cols:
+                    raise ValueError("line_index out of range")
+
+        if line_limit is None:
+            line_limit = max(0, line_length - line_offset)
+        else:
+            line_limit = min(line_limit, max(0, line_length - line_offset))
+
+        if line_limit <= 0:
+            return jsonify({
+                'success': False,
+                'error': 'Requested export window is empty.'
+            }), 400
+
+        if line_limit > MAX_EXPORT_LINE_POINTS:
+            return jsonify({
+                'success': False,
+                'error': f'Line CSV export exceeds limit ({line_limit} > {MAX_EXPORT_LINE_POINTS} points).'
+            }), 400
+
+        compare_paths = _parse_compare_paths(request.args.get('compare_paths'), hdf_path)
+        if len(compare_paths) > 4:
+            raise ValueError("Up to 4 compare_paths are supported per line export.")
+        compare_targets = []
+        for compare_path in compare_paths:
+            compare_info = _get_cached_dataset_info(reader, key, compare_path, cache_version)
+            compare_shape = compare_info.get('shape') or []
+            compare_dtype = compare_info.get('dtype')
+            if list(compare_shape) != list(shape):
+                raise ValueError(f"Compare dataset '{compare_path}' shape does not match base dataset.")
+            if not _is_numeric_dtype_string(compare_dtype):
+                raise ValueError(f"Compare dataset '{compare_path}' is not numeric.")
+            compare_targets.append({
+                'path': compare_path,
+                'label': compare_path.split('/')[-1] or compare_path
+            })
+
+        def generate_line_csv():
+            yield "\ufeff"
+            header = ["index", "base"] + [target['label'] for target in compare_targets]
+            yield _csv_row(header)
+
+            line_end = line_offset + line_limit
+            for cursor in range(line_offset, line_end, chunk_points):
+                current_limit = min(chunk_points, line_end - cursor)
+                base_line = reader.get_line(
+                    key,
+                    hdf_path,
+                    display_dims,
+                    fixed_indices,
+                    line_dim,
+                    line_index,
+                    cursor,
+                    current_limit,
+                    1
+                )
+                base_values = base_line.get('data') if isinstance(base_line.get('data'), list) else []
+
+                compare_value_sets = []
+                for target in compare_targets:
+                    compare_line = reader.get_line(
+                        key,
+                        target['path'],
+                        display_dims,
+                        fixed_indices,
+                        line_dim,
+                        line_index,
+                        cursor,
+                        current_limit,
+                        1
+                    )
+                    compare_values = compare_line.get('data') if isinstance(compare_line.get('data'), list) else []
+                    compare_value_sets.append(compare_values)
+
+                for index, base_value in enumerate(base_values):
+                    row_values = [cursor + index, base_value]
+                    for compare_values in compare_value_sets:
+                        row_values.append(compare_values[index] if index < len(compare_values) else "")
+                    yield _csv_row(row_values)
+
+        elapsed_ms = (time.perf_counter() - request_started) * 1000
+        logger.info(
+            f"HDF5 CSV export started for '{key}' at '{hdf_path}' (line) in {elapsed_ms:.1f}ms "
+            f"[points={line_limit}, compare={len(compare_targets)}]"
+        )
+        return Response(stream_with_context(generate_line_csv()), headers=response_headers)
+
+    except ValueError as e:
+        status_code = 404 if _is_not_found_error(e) else 400
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), status_code
+    except TypeError as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 400
+    except Exception as e:
+        logger.error(f"Error exporting CSV for '{key}': {e}")
         return jsonify({
             'success': False,
             'error': str(e)

@@ -18,6 +18,15 @@ import {
 } from "../shared.js";
 import { buildLineSelectionKey } from "../render/config.js";
 import { LINE_RUNTIME_CLEANUPS, setMatrixStatus } from "./common.js";
+import {
+  buildCsvExportUrl,
+  buildExportFilename,
+  createCsvBlob,
+  svgElementToPngBlob,
+  toCsvRow,
+  triggerBlobDownload,
+  triggerUrlDownload,
+} from "../../../utils/export.js";
 
 const LINE_FULLSCREEN_RESTORE_TTL_MS = 1200;
 const LINE_COMPARE_COLORS = ["#DC2626", "#16A34A", "#D97706", "#0EA5E9", "#334155"];
@@ -1230,6 +1239,134 @@ function initializeLineRuntime(shell) {
     }
   }
 
+  function getComparePathsForExport() {
+    const seen = new Set();
+    const comparePaths = [];
+    runtime.compareItems.forEach((item) => {
+      const pathValue = String(item?.path || "").trim();
+      if (!pathValue || pathValue === runtime.path || seen.has(pathValue)) {
+        return;
+      }
+      seen.add(pathValue);
+      comparePaths.push(pathValue);
+    });
+    return comparePaths;
+  }
+
+  async function exportCsvDisplayed() {
+    if (runtime.destroyed) {
+      throw new Error("Line runtime is no longer active.");
+    }
+
+    if (!Array.isArray(runtime.points) || runtime.points.length < 1) {
+      await fetchLineRange();
+    }
+
+    const basePoints = Array.isArray(runtime.points) ? runtime.points : [];
+    if (basePoints.length < 1) {
+      throw new Error("No line points available for CSV export.");
+    }
+
+    const compareSeries = Array.isArray(runtime.compareSeries) ? runtime.compareSeries : [];
+    const compareValueMaps = compareSeries.map((series) => {
+      const map = new Map();
+      (Array.isArray(series?.points) ? series.points : []).forEach((point) => {
+        if (Number.isFinite(point?.x) && Number.isFinite(point?.y)) {
+          map.set(point.x, point.y);
+        }
+      });
+      return map;
+    });
+
+    const header = ["index", "base", ...compareSeries.map((series, index) => series?.label || `compare_${index + 1}`)];
+    const rows = [toCsvRow(header)];
+    basePoints.forEach((point) => {
+      const rowValues = [point.x, point.y];
+      compareValueMaps.forEach((map) => {
+        rowValues.push(map.has(point.x) ? map.get(point.x) : "");
+      });
+      rows.push(toCsvRow(rowValues));
+    });
+
+    const filename = buildExportFilename({
+      fileKey: runtime.fileKey,
+      path: runtime.path,
+      tab: "line",
+      scope: "displayed",
+      extension: "csv",
+    });
+    const blob = createCsvBlob(rows, true);
+    triggerBlobDownload(blob, filename);
+    setMatrixStatus(
+      statusElement,
+      `Displayed line CSV exported (${basePoints.length.toLocaleString()} rows).`,
+      "info"
+    );
+  }
+
+  async function exportCsvFull() {
+    if (runtime.destroyed) {
+      throw new Error("Line runtime is no longer active.");
+    }
+
+    const query = {
+      path: runtime.path,
+      mode: "line",
+    };
+    if (runtime.displayDims) {
+      query.display_dims = runtime.displayDims;
+    }
+    if (runtime.fixedIndices) {
+      query.fixed_indices = runtime.fixedIndices;
+    }
+    if (runtime.fileEtag) {
+      query.etag = runtime.fileEtag;
+    }
+    if (runtime.lineDim === "row" || runtime.lineDim === "col") {
+      query.line_dim = runtime.lineDim;
+    }
+    if (runtime.lineIndex !== null && runtime.lineIndex !== undefined) {
+      query.line_index = runtime.lineIndex;
+    }
+
+    const comparePaths = getComparePathsForExport();
+    if (comparePaths.length > 0) {
+      query.compare_paths = comparePaths.join(",");
+    }
+
+    const url = buildCsvExportUrl(runtime.fileKey, query);
+    triggerUrlDownload(url);
+    setMatrixStatus(statusElement, "Full line CSV download started.", "info");
+  }
+
+  async function exportPng() {
+    if (runtime.destroyed) {
+      throw new Error("Line runtime is no longer active.");
+    }
+    if (!svg) {
+      throw new Error("Line chart SVG not available for PNG export.");
+    }
+    const pngBlob = await svgElementToPngBlob(svg, {
+      background: "#FFFFFF",
+      scale: 2,
+    });
+    const filename = buildExportFilename({
+      fileKey: runtime.fileKey,
+      path: runtime.path,
+      tab: "line",
+      scope: "current",
+      extension: "png",
+    });
+    triggerBlobDownload(pngBlob, filename);
+    setMatrixStatus(statusElement, "Line PNG exported.", "info");
+  }
+
+  shell.__exportApi = {
+    exportCsvDisplayed,
+    exportCsvFull,
+    exportPng,
+  };
+
   function updateViewport(start, span, immediate = false) {
     const next = clampViewport(start, span);
     const changed = next.start !== runtime.viewStart || next.span !== runtime.viewSpan;
@@ -1759,6 +1896,9 @@ function initializeLineRuntime(shell) {
       if (shell.__lineRuntimeCleanup === cleanup) {
         delete shell.__lineRuntimeCleanup;
       }
+      if (shell.__exportApi) {
+        delete shell.__exportApi;
+      }
       delete shell.dataset.lineBound;
       return;
     }
@@ -1850,6 +1990,9 @@ function initializeLineRuntime(shell) {
     LINE_RUNTIME_CLEANUPS.delete(cleanup);
     if (shell.__lineRuntimeCleanup === cleanup) {
       delete shell.__lineRuntimeCleanup;
+    }
+    if (shell.__exportApi) {
+      delete shell.__exportApi;
     }
     delete shell.dataset.lineBound;
   };

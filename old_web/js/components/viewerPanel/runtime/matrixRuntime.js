@@ -17,6 +17,14 @@ import {
   ensureNodePool,
   setMatrixStatus,
 } from "./common.js";
+import {
+  buildCsvExportUrl,
+  buildExportFilename,
+  createCsvBlob,
+  toCsvRow,
+  triggerBlobDownload,
+  triggerUrlDownload,
+} from "../../../utils/export.js";
 
 const MATRIX_MAX_PARALLEL_REQUESTS = 4;
 
@@ -117,6 +125,8 @@ function initializeMatrixRuntime(shell) {
     colStart: 0,
     colEnd: 0,
   };
+
+  const clampIndex = (value, min, max) => Math.max(min, Math.min(max, value));
 
   function queueRender() {
     if (runtime.destroyed || runtime.rafToken !== null) {
@@ -374,6 +384,185 @@ function initializeMatrixRuntime(shell) {
     });
   }
 
+  function getViewportBounds() {
+    if (runtime.rows <= 0 || runtime.cols <= 0) {
+      return null;
+    }
+
+    const viewportWidth = table.clientWidth;
+    const viewportHeight = table.clientHeight;
+    const scrollTop = table.scrollTop;
+    const scrollLeft = table.scrollLeft;
+
+    const contentScrollTop = Math.max(0, scrollTop - MATRIX_HEADER_HEIGHT);
+    const contentScrollLeft = Math.max(0, scrollLeft - MATRIX_INDEX_WIDTH);
+    const contentHeight = Math.max(0, viewportHeight - MATRIX_HEADER_HEIGHT);
+    const contentWidth = Math.max(0, viewportWidth - MATRIX_INDEX_WIDTH);
+
+    const rowStart = clampIndex(Math.floor(contentScrollTop / MATRIX_ROW_HEIGHT), 0, runtime.rows - 1);
+    const rowEnd = clampIndex(
+      Math.floor((contentScrollTop + Math.max(1, contentHeight) - 1) / MATRIX_ROW_HEIGHT),
+      rowStart,
+      runtime.rows - 1
+    );
+    const colStart = clampIndex(Math.floor(contentScrollLeft / MATRIX_COL_WIDTH), 0, runtime.cols - 1);
+    const colEnd = clampIndex(
+      Math.floor((contentScrollLeft + Math.max(1, contentWidth) - 1) / MATRIX_COL_WIDTH),
+      colStart,
+      runtime.cols - 1
+    );
+
+    return {
+      rowStart,
+      rowEnd,
+      colStart,
+      colEnd,
+    };
+  }
+
+  async function ensureBlocksForRange(rowStart, rowEnd, colStart, colEnd) {
+    if (!Number.isFinite(rowStart) || !Number.isFinite(rowEnd) || !Number.isFinite(colStart) || !Number.isFinite(colEnd)) {
+      return;
+    }
+
+    const requests = [];
+    const paramsBase = {
+      mode: "matrix",
+    };
+    if (runtime.displayDims) {
+      paramsBase.display_dims = runtime.displayDims;
+    }
+    if (runtime.fixedIndices) {
+      paramsBase.fixed_indices = runtime.fixedIndices;
+    }
+    if (runtime.fileEtag) {
+      paramsBase.etag = runtime.fileEtag;
+    }
+
+    const startRowBlock = Math.floor(rowStart / runtime.blockRows) * runtime.blockRows;
+    const endRowBlock = Math.floor(rowEnd / runtime.blockRows) * runtime.blockRows;
+    const startColBlock = Math.floor(colStart / runtime.blockCols) * runtime.blockCols;
+    const endColBlock = Math.floor(colEnd / runtime.blockCols) * runtime.blockCols;
+
+    for (let rowOffset = startRowBlock; rowOffset <= endRowBlock; rowOffset += runtime.blockRows) {
+      const rowLimit = Math.min(runtime.blockRows, runtime.rows - rowOffset);
+      for (let colOffset = startColBlock; colOffset <= endColBlock; colOffset += runtime.blockCols) {
+        const colLimit = Math.min(runtime.blockCols, runtime.cols - colOffset);
+        if (rowLimit <= 0 || colLimit <= 0) {
+          continue;
+        }
+
+        const blockKey = buildMatrixBlockKey(
+          runtime.selectionKey,
+          rowOffset,
+          colOffset,
+          rowLimit,
+          colLimit
+        );
+
+        if (MATRIX_BLOCK_CACHE.get(blockKey)) {
+          continue;
+        }
+
+        const params = {
+          ...paramsBase,
+          row_offset: rowOffset,
+          row_limit: rowLimit,
+          col_offset: colOffset,
+          col_limit: colLimit,
+        };
+        const cancelKey = `matrix-export:${runtime.selectionKey}:${rowOffset}:${colOffset}:${rowLimit}:${colLimit}`;
+        requests.push(
+          getFileData(runtime.fileKey, runtime.path, params, {
+            cancelPrevious: false,
+            cancelKey,
+          }).then((payload) => {
+            MATRIX_BLOCK_CACHE.set(blockKey, payload);
+          })
+        );
+      }
+    }
+
+    if (requests.length > 0) {
+      await Promise.all(requests);
+    }
+  }
+
+  async function exportCsvDisplayed() {
+    if (runtime.destroyed) {
+      throw new Error("Matrix runtime is no longer active.");
+    }
+
+    const bounds = getViewportBounds();
+    if (!bounds) {
+      throw new Error("No matrix viewport available for export.");
+    }
+
+    setMatrixStatus(statusElement, "Preparing displayed matrix CSV...", "info");
+    await ensureBlocksForRange(bounds.rowStart, bounds.rowEnd, bounds.colStart, bounds.colEnd);
+
+    const header = ["row\\col"];
+    for (let col = bounds.colStart; col <= bounds.colEnd; col += 1) {
+      header.push(col);
+    }
+
+    const rows = [toCsvRow(header)];
+    for (let row = bounds.rowStart; row <= bounds.rowEnd; row += 1) {
+      const values = [row];
+      for (let col = bounds.colStart; col <= bounds.colEnd; col += 1) {
+        const value = getMatrixCellValue(runtime, row, col);
+        values.push(value === null ? "" : value);
+      }
+      rows.push(toCsvRow(values));
+    }
+
+    const filename = buildExportFilename({
+      fileKey: runtime.fileKey,
+      path: runtime.path,
+      tab: "matrix",
+      scope: "displayed",
+      extension: "csv",
+    });
+    const blob = createCsvBlob(rows, true);
+    triggerBlobDownload(blob, filename);
+    setMatrixStatus(
+      statusElement,
+      `Exported displayed matrix CSV (${(bounds.rowEnd - bounds.rowStart + 1).toLocaleString()} x ${(
+        bounds.colEnd - bounds.colStart + 1
+      ).toLocaleString()}).`,
+      "info"
+    );
+  }
+
+  async function exportCsvFull() {
+    if (runtime.destroyed) {
+      throw new Error("Matrix runtime is no longer active.");
+    }
+
+    const query = {
+      path: runtime.path,
+      mode: "matrix",
+    };
+    if (runtime.displayDims) {
+      query.display_dims = runtime.displayDims;
+    }
+    if (runtime.fixedIndices) {
+      query.fixed_indices = runtime.fixedIndices;
+    }
+    if (runtime.fileEtag) {
+      query.etag = runtime.fileEtag;
+    }
+
+    const url = buildCsvExportUrl(runtime.fileKey, query);
+    triggerUrlDownload(url);
+    setMatrixStatus(statusElement, "Full matrix CSV download started.", "info");
+  }
+
+  shell.__exportApi = {
+    exportCsvDisplayed,
+    exportCsvFull,
+  };
+
   const onScroll = () => {
     queueRender();
   };
@@ -411,6 +600,9 @@ function initializeMatrixRuntime(shell) {
     if (runtime.rafToken !== null) {
       cancelAnimationFrame(runtime.rafToken);
       runtime.rafToken = null;
+    }
+    if (shell.__exportApi) {
+      delete shell.__exportApi;
     }
   };
 

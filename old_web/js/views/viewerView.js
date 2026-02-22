@@ -127,6 +127,54 @@ function renderViewerTopBar(state) {
   `;
 }
 
+function renderExportMenu(target, disabled) {
+  const targetKey = String(target || "").trim().toLowerCase();
+  const options =
+    targetKey === "line" || targetKey === "heatmap"
+      ? [
+          { action: "csv-displayed", label: "CSV (Displayed)" },
+          { action: "csv-full", label: "CSV (Full)" },
+          { action: "png-current", label: "PNG (Current View)" },
+        ]
+      : [
+          { action: "csv-displayed", label: "CSV (Displayed)" },
+          { action: "csv-full", label: "CSV (Full)" },
+        ];
+
+  return `
+    <div class="subbar-export-wrap" data-export-root="true">
+      <button
+        type="button"
+        class="subbar-export"
+        data-export-toggle="true"
+        aria-haspopup="menu"
+        aria-expanded="false"
+        ${disabled ? "disabled" : ""}
+      >
+        Export
+      </button>
+      <div class="subbar-export-menu" data-export-menu="true" role="menu" hidden>
+        ${options
+          .map(
+            (option) => `
+              <button
+                type="button"
+                class="subbar-export-item"
+                data-export-target="${escapeHtml(targetKey || "matrix")}"
+                data-export-action="${escapeHtml(option.action)}"
+                role="menuitem"
+                ${disabled ? "disabled" : ""}
+              >
+                ${escapeHtml(option.label)}
+              </button>
+            `
+          )
+          .join("")}
+      </div>
+    </div>
+  `;
+}
+
 function renderPreviewToolbar(state) {
   const activeTab = state.displayTab || "line";
   const disabled = state.selectedNodeType !== "dataset" || state.previewLoading;
@@ -175,7 +223,7 @@ function renderPreviewToolbar(state) {
                      .join("")}
                  </div>
                </div>
-               <button type="button" class="subbar-export" ${disabled ? "disabled" : ""}>Export</button>
+               ${renderExportMenu("line", disabled)}
              </div>`
           : activeTab === "heatmap"
           ? `<div class="subbar-actions">
@@ -197,7 +245,7 @@ function renderPreviewToolbar(state) {
                      .join("")}
                  </div>
                </div>
-               <button type="button" class="subbar-export" ${disabled ? "disabled" : ""}>Export</button>
+               ${renderExportMenu("heatmap", disabled)}
              </div>`
           : `<div class="subbar-actions">
                <div class="notation-group">
@@ -215,7 +263,7 @@ function renderPreviewToolbar(state) {
                      .join("")}
                  </div>
                </div>
-               <button type="button" class="subbar-export" ${disabled ? "disabled" : ""}>Export</button>
+               ${renderExportMenu("matrix", disabled)}
              </div>`
       }
     </div>
@@ -351,6 +399,191 @@ export function bindViewerViewEvents(root, actions) {
     button.addEventListener("click", () => {
       actions.setHeatmapColormap(button.dataset.heatmapColormap || "viridis");
     });
+  });
+
+  const exportRoots = Array.from(root.querySelectorAll("[data-export-root]"));
+  const exportActionButtons = Array.from(root.querySelectorAll("[data-export-action]"));
+  exportActionButtons.forEach((button) => {
+    button.dataset.exportBaseDisabled = button.disabled ? "1" : "0";
+  });
+
+  let exportRunning = false;
+  const setExportRunning = (running) => {
+    exportRunning = running === true;
+    exportActionButtons.forEach((button) => {
+      const baseDisabled = button.dataset.exportBaseDisabled === "1";
+      button.disabled = exportRunning || baseDisabled;
+    });
+  };
+
+  const closeAllExportMenus = () => {
+    exportRoots.forEach((menuRoot) => {
+      const menu = menuRoot.querySelector("[data-export-menu]");
+      const toggle = menuRoot.querySelector("[data-export-toggle]");
+      if (menu) {
+        menu.hidden = true;
+      }
+      if (toggle) {
+        toggle.setAttribute("aria-expanded", "false");
+      }
+      menuRoot.classList.remove("is-open");
+    });
+  };
+
+  const resolveExportShell = (target) => {
+    const targetKey = String(target || "").toLowerCase();
+    if (targetKey === "matrix") {
+      return root.querySelector("[data-matrix-shell]");
+    }
+    if (targetKey === "line") {
+      return root.querySelector("[data-line-shell]");
+    }
+    if (targetKey === "heatmap") {
+      return root.querySelector("[data-heatmap-shell]");
+    }
+    return null;
+  };
+
+  const resolveStatusElement = (target) => {
+    const targetKey = String(target || "").toLowerCase();
+    if (targetKey === "matrix") {
+      return root.querySelector("[data-matrix-status]");
+    }
+    if (targetKey === "line") {
+      return root.querySelector("[data-line-status]");
+    }
+    if (targetKey === "heatmap") {
+      return root.querySelector("[data-heatmap-status]");
+    }
+    return null;
+  };
+
+  const setExportStatus = (target, message, tone = "info") => {
+    const statusElement = resolveStatusElement(target);
+    if (!statusElement) {
+      return;
+    }
+    statusElement.textContent = message;
+    statusElement.classList.remove("error", "info");
+    if (tone === "error") {
+      statusElement.classList.add("error");
+    } else {
+      statusElement.classList.add("info");
+    }
+  };
+
+  const resolveExportHandler = (exportApi, action) => {
+    if (!exportApi || typeof exportApi !== "object") {
+      return null;
+    }
+    const normalizedAction = String(action || "");
+    if (normalizedAction === "csv-displayed") {
+      return exportApi.exportCsvDisplayed;
+    }
+    if (normalizedAction === "csv-full") {
+      return exportApi.exportCsvFull;
+    }
+    if (normalizedAction === "png-current") {
+      return exportApi.exportPng;
+    }
+    return null;
+  };
+
+  const runExportAction = async (target, action) => {
+    const shell = resolveExportShell(target);
+    const targetLabel =
+      target === "matrix" ? "matrix view" : target === "line" ? "line chart" : "heatmap";
+    if (!shell || !shell.__exportApi) {
+      setExportStatus(target, `Load full ${targetLabel} before exporting.`, "error");
+      return;
+    }
+
+    const handler = resolveExportHandler(shell.__exportApi, action);
+    if (typeof handler !== "function") {
+      setExportStatus(target, `Export option not available for ${targetLabel}.`, "error");
+      return;
+    }
+
+    setExportStatus(target, "Preparing export...", "info");
+    setExportRunning(true);
+    try {
+      await handler();
+    } catch (error) {
+      setExportStatus(target, error?.message || "Export failed.", "error");
+    } finally {
+      setExportRunning(false);
+    }
+  };
+
+  exportRoots.forEach((menuRoot) => {
+    const toggle = menuRoot.querySelector("[data-export-toggle]");
+    const menu = menuRoot.querySelector("[data-export-menu]");
+    if (!toggle || !menu) {
+      return;
+    }
+
+    const setOpen = (open) => {
+      const isOpen = open === true;
+      menu.hidden = !isOpen;
+      toggle.setAttribute("aria-expanded", isOpen ? "true" : "false");
+      menuRoot.classList.toggle("is-open", isOpen);
+    };
+
+    const onToggle = (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const nextOpen = menu.hidden;
+      closeAllExportMenus();
+      setOpen(nextOpen);
+    };
+
+    toggle.addEventListener("click", onToggle);
+    cleanupFns.push(() => {
+      toggle.removeEventListener("click", onToggle);
+    });
+  });
+
+  root.querySelectorAll("[data-export-action]").forEach((button) => {
+    const onExportClick = async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (exportRunning) {
+        return;
+      }
+      closeAllExportMenus();
+      const target = String(button.dataset.exportTarget || "");
+      const action = String(button.dataset.exportAction || "");
+      if (!target || !action) {
+        return;
+      }
+      await runExportAction(target, action);
+    };
+
+    button.addEventListener("click", onExportClick);
+    cleanupFns.push(() => {
+      button.removeEventListener("click", onExportClick);
+    });
+  });
+
+  const onDocumentClick = (event) => {
+    if (!event.target || !(event.target instanceof Element)) {
+      closeAllExportMenus();
+      return;
+    }
+    if (!event.target.closest("[data-export-root]")) {
+      closeAllExportMenus();
+    }
+  };
+  const onDocumentKeyDown = (event) => {
+    if (event.key === "Escape") {
+      closeAllExportMenus();
+    }
+  };
+  document.addEventListener("click", onDocumentClick);
+  document.addEventListener("keydown", onDocumentKeyDown);
+  cleanupFns.push(() => {
+    document.removeEventListener("click", onDocumentClick);
+    document.removeEventListener("keydown", onDocumentKeyDown);
   });
 
   bindSidebarTreeEvents(root, actions);

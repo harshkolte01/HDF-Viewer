@@ -12,6 +12,15 @@ import {
 import { buildHeatmapSelectionKey } from "../render/config.js";
 import { HEATMAP_RUNTIME_CLEANUPS, setMatrixStatus } from "./common.js";
 import { initializeLineRuntime } from "./lineRuntime.js?v=20260221-13";
+import {
+  buildCsvExportUrl,
+  buildExportFilename,
+  canvasElementToPngBlob,
+  createCsvBlob,
+  toCsvRow,
+  triggerBlobDownload,
+  triggerUrlDownload,
+} from "../../../utils/export.js";
 
 const HEATMAP_MAX_SIZE = 1024;
 const HEATMAP_MIN_ZOOM = 1;
@@ -1457,6 +1466,92 @@ function initializeHeatmapRuntime(shell) {
     }
   }
 
+  async function exportCsvDisplayed() {
+    if (runtime.destroyed) {
+      throw new Error("Heatmap runtime is no longer active.");
+    }
+    if (!(runtime.values instanceof Float64Array) || runtime.rows <= 0 || runtime.cols <= 0) {
+      throw new Error("No rendered heatmap grid available for CSV export.");
+    }
+
+    setMatrixStatus(statusElement, "Preparing displayed heatmap CSV...", "info");
+    const header = ["row\\col"];
+    for (let col = 0; col < runtime.cols; col += 1) {
+      header.push(col);
+    }
+    const rows = [toCsvRow(header)];
+
+    for (let row = 0; row < runtime.rows; row += 1) {
+      const values = [row];
+      const offset = row * runtime.cols;
+      for (let col = 0; col < runtime.cols; col += 1) {
+        values.push(runtime.values[offset + col]);
+      }
+      rows.push(toCsvRow(values));
+    }
+
+    const filename = buildExportFilename({
+      fileKey: runtime.fileKey,
+      path: runtime.path,
+      tab: "heatmap",
+      scope: "displayed",
+      extension: "csv",
+    });
+    const blob = createCsvBlob(rows, true);
+    triggerBlobDownload(blob, filename);
+    setMatrixStatus(
+      statusElement,
+      `Displayed heatmap CSV exported (${runtime.rows.toLocaleString()} x ${runtime.cols.toLocaleString()}).`,
+      "info"
+    );
+  }
+
+  async function exportCsvFull() {
+    if (runtime.destroyed) {
+      throw new Error("Heatmap runtime is no longer active.");
+    }
+
+    const query = {
+      path: runtime.path,
+      mode: "heatmap",
+    };
+    if (runtime.displayDims) {
+      query.display_dims = runtime.displayDims;
+    }
+    if (runtime.fixedIndices) {
+      query.fixed_indices = runtime.fixedIndices;
+    }
+    if (runtime.fileEtag) {
+      query.etag = runtime.fileEtag;
+    }
+
+    const url = buildCsvExportUrl(runtime.fileKey, query);
+    triggerUrlDownload(url);
+    setMatrixStatus(statusElement, "Full heatmap CSV download started.", "info");
+  }
+
+  async function exportPng() {
+    if (runtime.destroyed) {
+      throw new Error("Heatmap runtime is no longer active.");
+    }
+    const pngBlob = await canvasElementToPngBlob(canvas);
+    const filename = buildExportFilename({
+      fileKey: runtime.fileKey,
+      path: runtime.path,
+      tab: "heatmap",
+      scope: "current",
+      extension: "png",
+    });
+    triggerBlobDownload(pngBlob, filename);
+    setMatrixStatus(statusElement, "Heatmap PNG exported.", "info");
+  }
+
+  shell.__exportApi = {
+    exportCsvDisplayed,
+    exportCsvFull,
+    exportPng,
+  };
+
   function cancelInFlightRequests() {
     runtime.activeCancelKeys.forEach((cancelKey) => {
       cancelPendingRequest(cancelKey, "heatmap-runtime-disposed");
@@ -1777,6 +1872,9 @@ function initializeHeatmapRuntime(shell) {
   const cleanup = () => {
     persistViewState();
     runtime.destroyed = true;
+    if (shell.__exportApi) {
+      delete shell.__exportApi;
+    }
     cancelInFlightRequests();
     closeLinkedPlot();
     canvas.removeEventListener("wheel", onWheel);
