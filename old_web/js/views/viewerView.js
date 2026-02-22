@@ -153,7 +153,7 @@ function renderExportMenu(target, disabled) {
       >
         Export
       </button>
-      <div class="subbar-export-menu" data-export-menu="true" role="menu" hidden>
+      <div class="subbar-export-menu" data-export-menu="true" role="menu" aria-hidden="true">
         ${options
           .map(
             (option) => `
@@ -421,7 +421,7 @@ export function bindViewerViewEvents(root, actions) {
       const menu = menuRoot.querySelector("[data-export-menu]");
       const toggle = menuRoot.querySelector("[data-export-toggle]");
       if (menu) {
-        menu.hidden = true;
+        menu.setAttribute("aria-hidden", "true");
       }
       if (toggle) {
         toggle.setAttribute("aria-expanded", "false");
@@ -524,7 +524,7 @@ export function bindViewerViewEvents(root, actions) {
 
     const setOpen = (open) => {
       const isOpen = open === true;
-      menu.hidden = !isOpen;
+      menu.setAttribute("aria-hidden", isOpen ? "false" : "true");
       toggle.setAttribute("aria-expanded", isOpen ? "true" : "false");
       menuRoot.classList.toggle("is-open", isOpen);
     };
@@ -532,7 +532,7 @@ export function bindViewerViewEvents(root, actions) {
     const onToggle = (event) => {
       event.preventDefault();
       event.stopPropagation();
-      const nextOpen = menu.hidden;
+      const nextOpen = !menuRoot.classList.contains("is-open");
       closeAllExportMenus();
       setOpen(nextOpen);
     };
