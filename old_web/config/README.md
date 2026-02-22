@@ -1,6 +1,6 @@
 # config
 
-Runtime configuration scripts that execute before ES modules.
+Runtime config scripts that execute before ES modules.
 
 ## Files
 
@@ -15,8 +15,9 @@ Runtime configuration scripts that execute before ES modules.
 
 1. `old_web/index.html` loads `config/runtime-config.js`.
 2. `old_web/js/config.js` reads `window.__CONFIG__.API_BASE_URL`.
-3. API modules use `API_BASE_URL` and `API_ENDPOINTS` from `old_web/js/config.js`.
+3. API modules consume `API_BASE_URL` + `API_ENDPOINTS` from `old_web/js/config.js`.
 
-## Notes
+## Compare Mode Note
 
-- If nothing is injected, `old_web/js/config.js` falls back to default backend URL.
+- No compare-specific config keys are required.
+- Line compare uses the same existing backend endpoints and base URL.
