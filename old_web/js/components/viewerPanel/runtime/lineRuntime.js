@@ -20,7 +20,72 @@ import { buildLineSelectionKey } from "../render/config.js";
 import { LINE_RUNTIME_CLEANUPS, setMatrixStatus } from "./common.js";
 
 const LINE_FULLSCREEN_RESTORE_TTL_MS = 1200;
+const LINE_COMPARE_COLORS = ["#DC2626", "#16A34A", "#D97706", "#0EA5E9", "#334155"];
 let lineFullscreenRestore = null;
+
+function isNumericDtype(dtype) {
+  const normalized = String(dtype || "").trim().toLowerCase();
+  if (!normalized || normalized.includes("complex")) {
+    return false;
+  }
+  return (
+    normalized.includes("float") ||
+    normalized.includes("int") ||
+    normalized.includes("uint") ||
+    normalized.includes("bool")
+  );
+}
+
+function parseShapeParam(value) {
+  return String(value || "")
+    .split(",")
+    .map((entry) => Number(entry))
+    .filter((entry) => Number.isFinite(entry) && entry >= 0);
+}
+
+function parseCompareItemsPayload(rawValue, currentPath) {
+  if (!rawValue) {
+    return [];
+  }
+
+  try {
+    const decoded = decodeURIComponent(String(rawValue));
+    const parsed = JSON.parse(decoded);
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    const seen = new Set();
+    const normalized = [];
+    parsed.forEach((entry) => {
+      if (!entry || typeof entry !== "object") {
+        return;
+      }
+
+      const path = String(entry.path || "").trim();
+      if (!path || path === currentPath || seen.has(path)) {
+        return;
+      }
+
+      seen.add(path);
+      normalized.push({
+        path,
+        name: String(entry.name || path),
+        dtype: String(entry.dtype || ""),
+        ndim: Number(entry.ndim),
+        shape: Array.isArray(entry.shape)
+          ? entry.shape
+              .map((value) => Number(value))
+              .filter((value) => Number.isFinite(value) && value >= 0)
+          : [],
+      });
+    });
+
+    return normalized;
+  } catch (_error) {
+    return [];
+  }
+}
 
 function rememberLineFullscreen(selectionKey) {
   if (!selectionKey) {
@@ -73,6 +138,7 @@ function initializeLineRuntime(shell) {
   const jumpInput = shell.querySelector("[data-line-jump-input]");
   const jumpToIndexButton = shell.querySelector("[data-line-jump-to-index]");
   const fullscreenButton = shell.querySelector("[data-line-fullscreen-toggle]");
+  const legendElement = shell.querySelector("[data-line-legend]");
   const statusElement =
     shell.closest(".data-section")?.querySelector("[data-line-status]") || null;
 
@@ -108,6 +174,13 @@ function initializeLineRuntime(shell) {
     lineIndex === null ? null : parsedLineDim === "col" ? "col" : "row";
   const parsedSelectedPoint = toSafeInteger(shell.dataset.lineSelectedPoint, null);
   const selectedPointX = Number.isFinite(parsedSelectedPoint) ? parsedSelectedPoint : null;
+  const compareItems = parseCompareItemsPayload(shell.dataset.lineCompareItems || "", path);
+  const baseShape = parseShapeParam(shell.dataset.lineBaseShape || "");
+  const baseNdim = Math.max(
+    0,
+    toSafeInteger(shell.dataset.lineBaseNdim, baseShape.length || 0)
+  );
+  const baseDtype = String(shell.dataset.lineBaseDtype || "").trim();
   const inlineHeatmapLinked = shell.classList.contains("heatmap-inline-line-shell");
 
   if (!fileKey || totalPoints <= 0) {
@@ -156,6 +229,13 @@ function initializeLineRuntime(shell) {
     clickZoomMoved: false,
     pendingZoomFocusX: null,
     points: [],
+    compareSeries: [],
+    renderedSeries: [],
+    compareItems,
+    failedCompareTargets: [],
+    baseShape,
+    baseNdim,
+    baseDtype,
     frame: null,
     hoverDot: null,
     zoomFocusX: null,
@@ -488,7 +568,7 @@ function initializeLineRuntime(shell) {
       return;
     }
     if (runtime.points && runtime.points.length >= 2) {
-      requestAnimationFrame(() => renderSeries(runtime.points));
+      requestAnimationFrame(() => renderSeries(runtime.points, runtime.compareSeries));
     }
   }
 
@@ -514,6 +594,63 @@ function initializeLineRuntime(shell) {
     if (spanStat) {
       spanStat.textContent = `span: ${formatCell(maxValue - minValue, runtime.notation)}`;
     }
+  }
+
+  function getCompareColor(index) {
+    return LINE_COMPARE_COLORS[index % LINE_COMPARE_COLORS.length];
+  }
+
+  function shapesMatch(left, right) {
+    if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) {
+      return false;
+    }
+    return left.every((entry, index) => Number(entry) === Number(right[index]));
+  }
+
+  function updateLegend(seriesList = [], failedTargets = []) {
+    if (!legendElement) {
+      return;
+    }
+
+    const normalizedSeries = Array.isArray(seriesList) ? seriesList : [];
+    const normalizedFailures = Array.isArray(failedTargets) ? failedTargets : [];
+
+    if (normalizedSeries.length <= 1 && normalizedFailures.length < 1) {
+      legendElement.hidden = true;
+      legendElement.innerHTML = "";
+      return;
+    }
+
+    const seriesMarkup = normalizedSeries
+      .map((series) => {
+        const path = String(series.path || "");
+        const label = String(series.label || path || "Series");
+        const color = String(series.color || "#2563EB");
+        const suffix = series.isBase ? " (base)" : "";
+        return `
+          <span class="line-legend-item" title="${escapeHtml(path || label)}">
+            <span class="line-legend-swatch" style="background:${escapeHtml(color)}"></span>
+            <span class="line-legend-text">${escapeHtml(label + suffix)}</span>
+          </span>
+        `;
+      })
+      .join("");
+
+    const failedMarkup = normalizedFailures
+      .map((entry) => {
+        const label = String(entry?.label || entry?.path || "Series");
+        const reason = String(entry?.reason || "Failed to load");
+        return `
+          <span class="line-legend-item line-legend-item-failed" title="${escapeHtml(reason)}">
+            <span class="line-legend-swatch line-legend-swatch-failed"></span>
+            <span class="line-legend-text">${escapeHtml(label)} (${escapeHtml(reason)})</span>
+          </span>
+        `;
+      })
+      .join("");
+
+    legendElement.hidden = false;
+    legendElement.innerHTML = `${seriesMarkup}${failedMarkup}`;
   }
 
   function getSvgDimensions() {
@@ -561,18 +698,38 @@ function initializeLineRuntime(shell) {
     return nearestPoint;
   }
 
-  function renderSeries(points) {
+  function renderSeries(basePoints, compareSeries = []) {
     const { width, height } = getSvgDimensions();
     svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
     const basePadding = { top: 20, right: 18, bottom: 34, left: 48 };
     const baseChartWidth = width - basePadding.left - basePadding.right;
     const baseChartHeight = height - basePadding.top - basePadding.bottom;
 
-    runtime.points = points;
+    const safeBasePoints = Array.isArray(basePoints) ? basePoints : [];
+    const safeCompareSeries = Array.isArray(compareSeries)
+      ? compareSeries.filter((entry) => entry && Array.isArray(entry.points) && entry.points.length > 0)
+      : [];
+
+    runtime.points = safeBasePoints;
+    runtime.compareSeries = safeCompareSeries;
+    runtime.renderedSeries = [
+      {
+        isBase: true,
+        path: runtime.path,
+        label: "Base",
+        color: "#2563EB",
+        points: safeBasePoints,
+      },
+      ...safeCompareSeries,
+    ];
     runtime.frame = null;
     runtime.hoverDot = null;
 
-    if (!Array.isArray(points) || points.length < 2) {
+    const domainPoints = runtime.renderedSeries.flatMap((entry) =>
+      Array.isArray(entry.points) ? entry.points : []
+    );
+
+    if (!Array.isArray(safeBasePoints) || safeBasePoints.length < 2 || domainPoints.length < 2) {
       if (minStat) minStat.textContent = "min: --";
       if (maxStat) maxStat.textContent = "max: --";
       if (spanStat) spanStat.textContent = "span: --";
@@ -590,12 +747,13 @@ function initializeLineRuntime(shell) {
         basePadding.top + 18
       }" class="line-empty-msg">No numeric points in this range.</text>
       `;
+      updateLegend(runtime.renderedSeries, runtime.failedCompareTargets);
       hideHover();
       return;
     }
 
-    const xValues = points.map((point) => point.x);
-    const yValues = points.map((point) => point.y);
+    const xValues = domainPoints.map((point) => point.x);
+    const yValues = domainPoints.map((point) => point.y);
     const rawMinX = Math.min(...xValues);
     const rawMaxX = Math.max(...xValues);
     const rawMinY = Math.min(...yValues);
@@ -620,12 +778,8 @@ function initializeLineRuntime(shell) {
         yValue: maxY - ratio * spanY,
       };
     });
-    const xTickLabelsText = tickValues.map((tick) =>
-      formatCell(tick.xValue, runtime.notation)
-    );
-    const yTickLabelsText = tickValues.map((tick) =>
-      formatCell(tick.yValue, runtime.notation)
-    );
+    const xTickLabelsText = tickValues.map((tick) => formatCell(tick.xValue, runtime.notation));
+    const yTickLabelsText = tickValues.map((tick) => formatCell(tick.yValue, runtime.notation));
     const maxYLabelWidth = yTickLabelsText.reduce(
       (maxWidth, label) => Math.max(maxWidth, measureAxisLabelWidth(label)),
       0
@@ -669,16 +823,6 @@ function initializeLineRuntime(shell) {
     const toX = (value) => padding.left + ((value - minX) / spanX) * chartWidth;
     const toY = (value) => padding.top + chartHeight - ((value - minY) / spanY) * chartHeight;
 
-    const path = points
-      .map((point, index) => `${index === 0 ? "M" : "L"}${toX(point.x).toFixed(2)},${toY(point.y).toFixed(2)}`)
-      .join(" ");
-
-    const sampleEvery = Math.max(1, Math.ceil(points.length / 450));
-    const markers = points
-      .filter((_, index) => index % sampleEvery === 0)
-      .map((point) => `<circle cx="${toX(point.x).toFixed(2)}" cy="${toY(point.y).toFixed(2)}" r="1.8"></circle>`)
-      .join("");
-
     const ticks = tickValues.map((tick) => {
       const x = padding.left + tick.ratio * chartWidth;
       const y = padding.top + tick.ratio * chartHeight;
@@ -719,8 +863,49 @@ function initializeLineRuntime(shell) {
 
     const showLine = runtime.lineAspect !== "point";
     const showPoints = runtime.lineAspect !== "line";
-    const focusPoint = resolveZoomFocusPoint(points);
-    const selectedPoint = resolveSelectedPoint(points);
+    const focusPoint = resolveZoomFocusPoint(safeBasePoints);
+    const selectedPoint = resolveSelectedPoint(safeBasePoints);
+
+    const seriesMarkup = runtime.renderedSeries
+      .map((series, index) => {
+        const points = Array.isArray(series.points) ? series.points : [];
+        if (points.length < 2) {
+          return "";
+        }
+
+        const color = String(series.color || (series.isBase ? "#2563EB" : getCompareColor(index)));
+        const path = points
+          .map(
+            (point, pointIndex) =>
+              `${pointIndex === 0 ? "M" : "L"}${toX(point.x).toFixed(2)},${toY(point.y).toFixed(2)}`
+          )
+          .join(" ");
+        const sampleEvery = Math.max(1, Math.ceil(points.length / 450));
+        const markers = points
+          .filter((_, pointIndex) => pointIndex % sampleEvery === 0)
+          .map(
+            (point) =>
+              `<circle cx="${toX(point.x).toFixed(2)}" cy="${toY(point.y).toFixed(
+                2
+              )}" r="${series.isBase ? 1.9 : 1.5}" style="fill:${escapeHtml(color)}"></circle>`
+          )
+          .join("");
+
+        return `
+          <g class="line-series ${series.isBase ? "line-series-base" : "line-series-compare"}">
+            ${
+              showLine
+                ? `<path class="line-path ${series.isBase ? "line-path-base" : "line-path-compare"}" style="stroke:${escapeHtml(
+                    color
+                  )}" d="${path}"></path>`
+                : ""
+            }
+            ${showPoints ? `<g class="line-points">${markers}</g>` : ""}
+          </g>
+        `;
+      })
+      .join("");
+
     const focusMarkup = focusPoint
       ? `<g class="line-zoom-focus" data-line-zoom-focus="true">
       <line class="line-zoom-focus-line" x1="${toX(focusPoint.x).toFixed(2)}" y1="${padding.top}" x2="${toX(
@@ -767,13 +952,13 @@ function initializeLineRuntime(shell) {
           padding.top + chartHeight / 2
         })">Value</text>
       </g>
-      ${showLine ? `<path class="line-path" d="${path}"></path>` : ""}
-      ${showPoints ? `<g class="line-points">${markers}</g>` : ""}
+      ${seriesMarkup}
       ${selectedMarkup}
       ${focusMarkup}
       <circle class="line-hover-dot" data-line-hover-dot="true" cx="-9999" cy="-9999" r="4"></circle>
     `;
     runtime.hoverDot = svg.querySelector("[data-line-hover-dot]");
+    updateLegend(runtime.renderedSeries, runtime.failedCompareTargets);
     hideHover();
   }
 
@@ -831,57 +1016,202 @@ function initializeLineRuntime(shell) {
     }
 
     try {
-      const response = await getFileData(runtime.fileKey, runtime.path, params, {
-        cancelPrevious: true,
+      const comparePrecheckFailures = [];
+      const compareTargets = [];
+      const baseNumericKnown = runtime.baseDtype ? isNumericDtype(runtime.baseDtype) : true;
+      runtime.compareItems.forEach((item) => {
+        const comparePath = String(item?.path || "").trim();
+        if (!comparePath || comparePath === runtime.path) {
+          return;
+        }
+
+        const compareLabel = String(item?.name || comparePath);
+        const compareDtype = String(item?.dtype || "");
+        const compareShape = Array.isArray(item?.shape)
+          ? item.shape
+              .map((entry) => Number(entry))
+              .filter((entry) => Number.isFinite(entry) && entry >= 0)
+          : [];
+        const compareNdim = Number(item?.ndim);
+
+        if (!baseNumericKnown) {
+          comparePrecheckFailures.push({
+            path: comparePath,
+            label: compareLabel,
+            reason: "base non-numeric",
+          });
+          return;
+        }
+
+        if (compareDtype && !isNumericDtype(compareDtype)) {
+          comparePrecheckFailures.push({
+            path: comparePath,
+            label: compareLabel,
+            reason: "non-numeric",
+          });
+          return;
+        }
+
+        if (
+          runtime.baseNdim > 0 &&
+          Number.isFinite(compareNdim) &&
+          compareNdim !== runtime.baseNdim
+        ) {
+          comparePrecheckFailures.push({
+            path: comparePath,
+            label: compareLabel,
+            reason: "ndim mismatch",
+          });
+          return;
+        }
+
+        if (
+          runtime.baseShape.length > 0 &&
+          compareShape.length > 0 &&
+          !shapesMatch(runtime.baseShape, compareShape)
+        ) {
+          comparePrecheckFailures.push({
+            path: comparePath,
+            label: compareLabel,
+            reason: "shape mismatch",
+          });
+          return;
+        }
+
+        compareTargets.push({
+          path: comparePath,
+          label: compareLabel,
+          isBase: false,
+          color: getCompareColor(compareTargets.length),
+        });
       });
+
+      const requestTargets = [
+        {
+          path: runtime.path,
+          label: "Base",
+          isBase: true,
+          color: "#2563EB",
+        },
+        ...compareTargets,
+      ];
+
+      const settledResponses = await Promise.allSettled(
+        requestTargets.map((target) =>
+          getFileData(runtime.fileKey, target.path, params, {
+            cancelPrevious: true,
+          })
+        )
+      );
 
       if (runtime.destroyed || requestId !== runtime.requestSeq) {
         return;
       }
 
-      runtime.qualityApplied = normalizeLineQuality(
-        response?.quality_applied || runtime.qualityRequested
-      );
+      const baseOutcome = settledResponses[0];
+      if (!baseOutcome || baseOutcome.status !== "fulfilled") {
+        const baseError = baseOutcome?.reason;
+        if (baseError?.isAbort || baseError?.code === "ABORTED") {
+          return;
+        }
+        throw baseError || new Error("Failed to load base line dataset.");
+      }
+
+      const response = baseOutcome.value;
+      runtime.qualityApplied = normalizeLineQuality(response?.quality_applied || runtime.qualityRequested);
       runtime.requestedPoints = Math.max(0, toSafeInteger(response?.requested_points, limit));
       runtime.returnedPoints = Math.max(
         0,
-        toSafeInteger(
-          response?.returned_points,
-          Array.isArray(response?.data) ? response.data.length : 0
-        )
+        toSafeInteger(response?.returned_points, Array.isArray(response?.data) ? response.data.length : 0)
       );
-      const step = Math.max(
-        1,
-        toSafeInteger(response?.line_step, toSafeInteger(response?.downsample_info?.step, 1))
-      );
-      runtime.lineStep = step;
-      const responseOffset = Math.max(0, toSafeInteger(response?.line_offset, offset));
-      const values = Array.isArray(response?.data) ? response.data : [];
 
-      const points = values
-        .map((value, index) => ({
-          x: responseOffset + index * step,
-          y: Number(value),
-        }))
-        .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y));
+      const toPoints = (payload, fallbackOffset = offset) => {
+        const step = Math.max(
+          1,
+          toSafeInteger(payload?.line_step, toSafeInteger(payload?.downsample_info?.step, 1))
+        );
+        const responseOffset = Math.max(0, toSafeInteger(payload?.line_offset, fallbackOffset));
+        const values = Array.isArray(payload?.data) ? payload.data : [];
+        const points = values
+          .map((value, index) => ({
+            x: responseOffset + index * step,
+            y: Number(value),
+          }))
+          .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y));
+
+        return { step, points };
+      };
+
+      const baseSeries = toPoints(response, offset);
+      runtime.lineStep = baseSeries.step;
+
+      const failedTargets = [...comparePrecheckFailures];
+      const compareSeries = [];
+      settledResponses.slice(1).forEach((outcome, index) => {
+        const target = requestTargets[index + 1];
+        if (!target) {
+          return;
+        }
+
+        if (!outcome || outcome.status !== "fulfilled") {
+          const reason = outcome?.reason;
+          if (reason?.isAbort || reason?.code === "ABORTED") {
+            return;
+          }
+          failedTargets.push({
+            path: target.path,
+            label: target.label,
+            reason: reason?.message || "request failed",
+          });
+          return;
+        }
+
+        const comparePayload = outcome.value;
+        const comparePoints = toPoints(comparePayload, offset).points;
+        if (comparePoints.length < 2) {
+          failedTargets.push({
+            path: target.path,
+            label: target.label,
+            reason: "insufficient points",
+          });
+          return;
+        }
+
+        compareSeries.push({
+          isBase: false,
+          path: target.path,
+          label: target.label,
+          color: target.color,
+          points: comparePoints,
+        });
+      });
+
+      runtime.failedCompareTargets = failedTargets;
+      runtime.compareSeries = compareSeries;
 
       if (Number.isFinite(runtime.pendingZoomFocusX)) {
         runtime.zoomFocusX = runtime.pendingZoomFocusX;
       }
       runtime.pendingZoomFocusX = null;
 
-      updateRangeLabel(points.length);
+      updateRangeLabel(baseSeries.points.length);
       updateZoomLabel();
-      renderSeries(points);
+      renderSeries(baseSeries.points, compareSeries);
       if (inlineHeatmapLinked) {
         const snapshot = getActiveInlineScrollSnapshot();
         if (snapshot) {
           scheduleInlineScrollRestore(snapshot);
         }
       }
+
+      const compareCount = requestTargets.length - 1;
+      const compareLoadedText =
+        compareCount > 0
+          ? ` | compare ${compareSeries.length}/${compareCount}${failedTargets.length > 0 ? ` (${failedTargets.length} skipped)` : ""}`
+          : "";
       setMatrixStatus(
         statusElement,
-        `${runtime.qualityApplied === "exact" ? "Exact" : "Overview"} loaded ${points.length.toLocaleString()} points (step ${step}).`,
+        `${runtime.qualityApplied === "exact" ? "Exact" : "Overview"} loaded ${baseSeries.points.length.toLocaleString()} points (step ${runtime.lineStep}).${compareLoadedText}`,
         "info"
       );
     } catch (error) {
@@ -893,6 +1223,9 @@ function initializeLineRuntime(shell) {
         return;
       }
 
+      runtime.failedCompareTargets = [];
+      runtime.compareSeries = [];
+      updateLegend([], []);
       setMatrixStatus(statusElement, error?.message || "Failed to load line range.", "error");
     }
   }
@@ -980,7 +1313,7 @@ function initializeLineRuntime(shell) {
     const nextStart = point.x - Math.floor(targetSpan / 2);
     const changed = updateViewport(nextStart, targetSpan, true);
     if (!changed) {
-      renderSeries(runtime.points);
+      renderSeries(runtime.points, runtime.compareSeries);
     }
   }
 
@@ -1287,7 +1620,7 @@ function initializeLineRuntime(shell) {
     const maxSpan = getMaxSpanForQuality();
     const changed = updateViewport(0, maxSpan, true);
     if (!changed) {
-      renderSeries(runtime.points);
+      renderSeries(runtime.points, runtime.compareSeries);
     }
   };
 
@@ -1408,7 +1741,7 @@ function initializeLineRuntime(shell) {
     clearTimeout(resizeTimer);
     resizeTimer = setTimeout(() => {
       if (!runtime.destroyed && runtime.points && runtime.points.length >= 2) {
-        renderSeries(runtime.points);
+        renderSeries(runtime.points, runtime.compareSeries);
       }
     }, 150);
   };

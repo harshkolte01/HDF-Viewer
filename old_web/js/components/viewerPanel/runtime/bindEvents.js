@@ -84,6 +84,30 @@ export function bindViewerPanelEvents(root, actions) {
     });
   });
 
+  root.querySelectorAll("[data-line-compare-toggle]").forEach((button) => {
+    button.addEventListener("click", () => {
+      actions.toggleLineCompare();
+    });
+  });
+
+  root.querySelectorAll("[data-line-compare-remove]").forEach((button) => {
+    button.addEventListener("click", () => {
+      actions.removeLineCompareDataset(button.dataset.lineCompareRemove || "/");
+    });
+  });
+
+  root.querySelectorAll("[data-line-compare-clear]").forEach((button) => {
+    button.addEventListener("click", () => {
+      actions.clearLineCompare();
+    });
+  });
+
+  root.querySelectorAll("[data-line-compare-dismiss]").forEach((button) => {
+    button.addEventListener("click", () => {
+      actions.dismissLineCompareStatus();
+    });
+  });
+
   root.querySelectorAll("[data-heatmap-enable]").forEach((button) => {
     button.addEventListener("click", () => {
       actions.enableHeatmapFullView();

@@ -100,7 +100,32 @@ function renderIconToolButton(label, dataAttr, kind) {
   `;
 }
 
-function renderVirtualLineShell(state, config) {
+function renderVirtualLineShell(state, config, preview) {
+  const compareItems = Array.isArray(state.lineCompareItems)
+    ? state.lineCompareItems
+        .filter(
+          (entry) =>
+            entry &&
+            typeof entry === "object" &&
+            String(entry.path || "") &&
+            String(entry.path || "") !== String(state.selectedPath || "")
+        )
+        .map((entry) => ({
+          path: String(entry.path || ""),
+          name: String(entry.name || entry.path || ""),
+          dtype: String(entry.dtype || ""),
+          ndim: Number(entry.ndim),
+          shape: Array.isArray(entry.shape) ? entry.shape : [],
+        }))
+    : [];
+  const compareItemsPayload = encodeURIComponent(JSON.stringify(compareItems));
+  const baseShape = Array.isArray(preview?.shape) ? preview.shape.join(",") : "";
+  const baseNdim = Number.isFinite(Number(preview?.ndim))
+    ? Number(preview.ndim)
+    : Array.isArray(preview?.shape)
+    ? preview.shape.length
+    : 0;
+  const baseDtype = preview?.dtype || "";
   const windowOptions = LINE_WINDOW_OPTIONS.filter((size) => size <= config.totalPoints);
   if (!windowOptions.includes(config.totalPoints)) {
     windowOptions.push(config.totalPoints);
@@ -118,6 +143,10 @@ function renderVirtualLineShell(state, config) {
       data-line-selection-key="${escapeHtml(config.selectionKey || "")}"
       data-line-total-points="${config.totalPoints}"
       data-line-index="${config.lineIndex ?? ""}"
+      data-line-compare-items="${escapeHtml(compareItemsPayload)}"
+      data-line-base-shape="${escapeHtml(baseShape)}"
+      data-line-base-ndim="${baseNdim}"
+      data-line-base-dtype="${escapeHtml(baseDtype)}"
       data-line-notation="${escapeHtml(state.notation || "auto")}"
       data-line-grid="${state.lineGrid ? "1" : "0"}"
       data-line-aspect="${escapeHtml(state.lineAspect || "line")}"
@@ -188,6 +217,7 @@ function renderVirtualLineShell(state, config) {
         <span data-line-stat-max="true">max: --</span>
         <span data-line-stat-span="true">span: --</span>
       </div>
+      <div class="line-legend" data-line-legend="true" hidden></div>
     </div>
   `;
 }
@@ -208,9 +238,25 @@ function renderLineSection(state, preview) {
     : "Preview mode. Click Load full line.";
   const statusTone = !config.supported || config.totalPoints <= 0 ? "error" : "info";
   const statusClass = `data-status ${statusTone === "error" ? "error" : "info"}`;
+  const compareEnabled = state.lineCompareEnabled === true;
+  const compareItems = Array.isArray(state.lineCompareItems)
+    ? state.lineCompareItems.filter(
+        (entry) => String(entry?.path || "") && String(entry?.path || "") !== String(state.selectedPath || "")
+      )
+    : [];
+  const compareStatus =
+    state.lineCompareStatus &&
+    typeof state.lineCompareStatus === "object" &&
+    state.lineCompareStatus.message
+      ? state.lineCompareStatus
+      : null;
+  const compareStatusClass = compareStatus
+    ? `line-compare-status ${compareStatus.tone === "error" ? "error" : "info"}`
+    : "";
+  const canUseCompare = canLoadFull;
 
   const content = isEnabled
-    ? renderVirtualLineShell(state, config)
+    ? renderVirtualLineShell(state, config, preview)
     : renderLinePreview(preview, {
         lineGrid: state.lineGrid,
         lineAspect: state.lineAspect,
@@ -227,7 +273,66 @@ function renderLineSection(state, preview) {
         >
           Load full line
         </button>
+        <button
+          type="button"
+          class="data-btn ${compareEnabled ? "active" : ""}"
+          data-line-compare-toggle="true"
+          ${canUseCompare ? "" : "disabled"}
+        >
+          Compare ${compareEnabled ? "On" : "Off"}
+        </button>
+        <button
+          type="button"
+          class="data-btn"
+          data-line-compare-clear="true"
+          ${compareItems.length > 0 ? "" : "disabled"}
+        >
+          Clear compare
+        </button>
         <span class="${statusClass}" data-line-status="true">${escapeHtml(statusText)}</span>
+      </div>
+      <div class="line-compare-panel">
+        <div class="line-compare-panel-label">
+          ${
+            compareEnabled
+              ? "Compare mode enabled. Use dataset row Compare buttons in the tree."
+              : "Enable compare mode to select extra datasets from the tree."
+          }
+        </div>
+        <div class="line-compare-chip-list">
+          ${
+            compareItems.length > 0
+              ? compareItems
+                  .map(
+                    (entry) => `
+                <span class="line-compare-chip">
+                  <span class="line-compare-chip-label" title="${escapeHtml(
+                    String(entry.path || "")
+                  )}">${escapeHtml(String(entry.name || entry.path || ""))}</span>
+                  <button
+                    type="button"
+                    class="line-compare-chip-remove"
+                    data-line-compare-remove="${escapeHtml(String(entry.path || ""))}"
+                    aria-label="Remove ${escapeHtml(String(entry.name || entry.path || ""))} from compare"
+                    title="Remove"
+                  >
+                    x
+                  </button>
+                </span>
+              `
+                  )
+                  .join("")
+              : `<span class="line-compare-empty">No comparison datasets selected.</span>`
+          }
+        </div>
+        ${
+          compareStatus
+            ? `<div class="${compareStatusClass}">
+                <span>${escapeHtml(String(compareStatus.message || ""))}</span>
+                <button type="button" class="line-compare-status-dismiss" data-line-compare-dismiss="true">Dismiss</button>
+              </div>`
+            : ""
+        }
       </div>
       ${content}
     </div>
@@ -582,3 +687,5 @@ function renderInspectContent(state) {
 }
 
 export { renderDisplayContent, renderInspectContent };
+
+

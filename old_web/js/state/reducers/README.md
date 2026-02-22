@@ -18,6 +18,9 @@ Modular action factories used by `old_web/js/state/reducers.js`.
 - `dataActions.js`
   - Metadata and preview loading pipeline.
   - Request de-duplication and warm-preview behavior (smaller first load, larger steady load).
+- `compareActions.js`
+  - Line compare mode toggle and selected comparison dataset management.
+  - Eligibility validation (dataset type, numeric dtype, ndim/shape compatibility).
 
 ## Composition
 

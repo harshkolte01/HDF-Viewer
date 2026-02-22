@@ -12,6 +12,7 @@ import { createTreeActions } from "./reducers/treeActions.js";
 import { createViewActions } from "./reducers/viewActions.js";
 import { createDisplayConfigActions } from "./reducers/displayConfigActions.js";
 import { createDataActions } from "./reducers/dataActions.js";
+import { createCompareActions } from "./reducers/compareActions.js";
 
 export const actions = {};
 
@@ -35,5 +36,6 @@ Object.assign(
   createTreeActions(deps),
   createViewActions(deps),
   createDisplayConfigActions(deps),
-  createDataActions(deps)
+  createDataActions(deps),
+  createCompareActions(deps)
 );

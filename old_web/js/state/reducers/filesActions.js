@@ -126,6 +126,9 @@ export function createFileActions(deps) {
       notation: "auto",
       lineGrid: true,
       lineAspect: "line",
+      lineCompareEnabled: false,
+      lineCompareItems: [],
+      lineCompareStatus: null,
       heatmapGrid: true,
       heatmapColormap: "viridis",
       matrixFullEnabled: false,
@@ -141,6 +144,9 @@ export function createFileActions(deps) {
     setState({
       route: "home",
       selectedPath: "/",
+      lineCompareEnabled: false,
+      lineCompareItems: [],
+      lineCompareStatus: null,
     });
   },
 

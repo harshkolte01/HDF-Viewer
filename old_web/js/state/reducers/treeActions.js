@@ -98,6 +98,8 @@ export function createTreeActions(deps) {
         previewError: null,
         previewRequestKey: null,
         previewRequestInFlight: false,
+        lineCompareItems: [],
+        lineCompareStatus: null,
       };
     });
 
@@ -210,6 +212,8 @@ export function createTreeActions(deps) {
     setState((prev) => {
       const expandedPaths = new Set(prev.expandedPaths || ["/"]);
       requiredAncestors.forEach((entry) => expandedPaths.add(entry));
+      const datasetBaseChanged =
+        nodeType === "dataset" && normalizePath(prev.selectedPath || "/") !== normalizedPath;
 
       return {
         selectedPath: normalizedPath,
@@ -219,6 +223,12 @@ export function createTreeActions(deps) {
         matrixFullEnabled: false,
         lineFullEnabled: false,
         heatmapFullEnabled: false,
+        ...(datasetBaseChanged
+          ? {
+              lineCompareItems: [],
+              lineCompareStatus: null,
+            }
+          : {}),
         ...(nodeType === "dataset" ? { displayConfig: getDisplayConfigDefaults() } : {}),
         ...(nodeType === "group"
           ? {
@@ -231,6 +241,8 @@ export function createTreeActions(deps) {
               previewError: null,
               previewRequestKey: null,
               previewRequestInFlight: false,
+              lineCompareItems: [],
+              lineCompareStatus: null,
             }
           : {}),
       };

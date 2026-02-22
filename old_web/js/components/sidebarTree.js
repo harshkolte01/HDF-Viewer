@@ -69,23 +69,60 @@ function renderNode(node, state) {
     .join(" ");
   const iconClass = nodeType === "group" ? "tree-icon is-group" : "tree-icon is-dataset";
   const count = Number(node.num_children) || 0;
+  const compareMode =
+    nodeType === "dataset" &&
+    state.route === "viewer" &&
+    state.viewMode === "display" &&
+    state.displayTab === "line" &&
+    state.lineCompareEnabled === true;
+  const compareItems = Array.isArray(state.lineCompareItems) ? state.lineCompareItems : [];
+  const alreadyCompared = compareItems.some((entry) => String(entry?.path || "") === path);
+  const isBaseDataset = nodeType === "dataset" && state.selectedPath === path;
+  const compareButtonLabel = isBaseDataset ? "Base" : alreadyCompared ? "Added" : "Compare";
+  const compareShape = Array.isArray(node.shape) ? node.shape.join(",") : "";
+  const compareDtype = node.dtype || "";
+  const compareNdim = Number.isFinite(Number(node.ndim)) ? Number(node.ndim) : "";
 
   return `
     <li class="tree-node">
-      <button class="tree-row ${selected}" type="button"
-          data-tree-select-path="${escapeHtml(path)}"
-          data-tree-select-type="${escapeHtml(nodeType)}"
-          data-tree-select-name="${escapeHtml(name)}"
-        >
-          ${
-            nodeType === "group"
-              ? `<span class="${caretClass}" data-tree-toggle-path="${escapeHtml(path)}"></span>`
-              : `<span class="${caretClass}"></span>`
-          }
-          <span class="${iconClass}" aria-hidden="true"></span>
-          <span class="tree-label">${escapeHtml(name)}</span>
-          ${nodeType === "group" && count > 0 ? `<span class="tree-count">${count}</span>` : ""}
-      </button>
+      <div class="tree-row-wrap">
+        <button class="tree-row ${selected}" type="button"
+            data-tree-select-path="${escapeHtml(path)}"
+            data-tree-select-type="${escapeHtml(nodeType)}"
+            data-tree-select-name="${escapeHtml(name)}"
+          >
+            ${
+              nodeType === "group"
+                ? `<span class="${caretClass}" data-tree-toggle-path="${escapeHtml(path)}"></span>`
+                : `<span class="${caretClass}"></span>`
+            }
+            <span class="${iconClass}" aria-hidden="true"></span>
+            <span class="tree-label">${escapeHtml(name)}</span>
+            ${nodeType === "group" && count > 0 ? `<span class="tree-count">${count}</span>` : ""}
+        </button>
+        ${
+          compareMode
+            ? `<button
+                  type="button"
+                  class="tree-compare-btn ${isBaseDataset || alreadyCompared ? "is-disabled" : ""}"
+                  data-tree-compare-add-path="${escapeHtml(path)}"
+                  data-tree-compare-add-name="${escapeHtml(name)}"
+                  data-tree-compare-add-type="${escapeHtml(nodeType)}"
+                  data-tree-compare-add-dtype="${escapeHtml(compareDtype)}"
+                  data-tree-compare-add-shape="${escapeHtml(compareShape)}"
+                  data-tree-compare-add-ndim="${escapeHtml(compareNdim)}"
+                  title="${
+                    isBaseDataset
+                      ? "Base dataset currently plotted"
+                      : alreadyCompared
+                      ? "Already added to comparison"
+                      : "Add dataset to line comparison"
+                  }"
+                  ${isBaseDataset || alreadyCompared ? "disabled" : ""}
+                >${compareButtonLabel}</button>`
+            : ""
+        }
+      </div>
       ${
         nodeType === "group" && expanded
           ? `<ul class="tree-branch">${
@@ -106,6 +143,11 @@ export function renderSidebarTree(state) {
     path: "/",
     num_children: (getChildren(state, "/") || []).length,
   };
+  const compareTreeScrollEnabled =
+    state.route === "viewer" &&
+    state.viewMode === "display" &&
+    state.displayTab === "line" &&
+    state.lineCompareEnabled === true;
 
   return `
     <aside class="viewer-sidebar">
@@ -122,7 +164,7 @@ export function renderSidebarTree(state) {
       </div>
       <div class="sidebar-section">
         <div class="section-label">Structure</div>
-        <div class="sidebar-tree">
+        <div class="sidebar-tree ${compareTreeScrollEnabled ? "is-compare-mode" : ""}">
           <ul class="tree-root">
             ${renderNode(treeRoot, state)}
           </ul>
@@ -154,5 +196,32 @@ export function bindSidebarTreeEvents(root, actions) {
         name: button.dataset.treeSelectName || "",
       });
     });
+  });
+
+  root.querySelectorAll("[data-tree-compare-add-path]").forEach((button) => {
+    const onCompareAdd = (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+
+      if (button.disabled) {
+        return;
+      }
+
+      const shape = String(button.dataset.treeCompareAddShape || "")
+        .split(",")
+        .map((entry) => Number(entry))
+        .filter((entry) => Number.isFinite(entry) && entry >= 0);
+
+      actions.addLineCompareDataset({
+        path: button.dataset.treeCompareAddPath || "/",
+        name: button.dataset.treeCompareAddName || "",
+        type: button.dataset.treeCompareAddType || "dataset",
+        dtype: button.dataset.treeCompareAddDtype || "",
+        ndim: Number(button.dataset.treeCompareAddNdim),
+        shape,
+      });
+    };
+
+    button.addEventListener("click", onCompareAdd);
   });
 }
