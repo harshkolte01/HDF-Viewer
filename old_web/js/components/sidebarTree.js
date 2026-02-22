@@ -26,6 +26,111 @@ function getError(state, path) {
   return state.treeErrors.get(path) || null;
 }
 
+function normalizePath(path) {
+  if (!path || path === "/") {
+    return "/";
+  }
+  const normalized = `/${String(path).replace(/^\/+/, "").replace(/\/+/g, "/")}`;
+  return normalized.endsWith("/") && normalized.length > 1
+    ? normalized.slice(0, -1)
+    : normalized;
+}
+
+function normalizeShape(shape) {
+  if (!Array.isArray(shape)) {
+    return [];
+  }
+  return shape
+    .map((entry) => Number(entry))
+    .filter((entry) => Number.isFinite(entry) && entry >= 0);
+}
+
+function isNumericDtype(dtype) {
+  const normalized = String(dtype || "").trim().toLowerCase();
+  if (!normalized || normalized.includes("complex")) {
+    return false;
+  }
+  return (
+    normalized.includes("float") ||
+    normalized.includes("int") ||
+    normalized.includes("uint") ||
+    normalized.includes("bool")
+  );
+}
+
+function lookupDatasetFromCache(state, targetPath) {
+  const normalizedTargetPath = normalizePath(targetPath);
+  if (!(state.childrenCache instanceof Map)) {
+    return null;
+  }
+
+  for (const children of state.childrenCache.values()) {
+    if (!Array.isArray(children)) {
+      continue;
+    }
+
+    const hit = children.find((entry) => {
+      return entry?.type === "dataset" && normalizePath(entry?.path || "/") === normalizedTargetPath;
+    });
+
+    if (hit) {
+      return {
+        path: normalizePath(hit.path || normalizedTargetPath),
+        dtype: String(hit.dtype || ""),
+        shape: normalizeShape(hit.shape),
+        ndim: Number(hit.ndim),
+      };
+    }
+  }
+
+  return null;
+}
+
+function getBaseDatasetForCompare(state) {
+  const selectedPath = normalizePath(state.selectedPath || "/");
+  if (selectedPath === "/") {
+    return null;
+  }
+
+  const preview =
+    state.preview && normalizePath(state.preview.path || "/") === selectedPath ? state.preview : null;
+  if (preview) {
+    const shape = normalizeShape(preview.shape);
+    const ndim = Number.isFinite(Number(preview.ndim)) ? Number(preview.ndim) : shape.length;
+    return {
+      path: selectedPath,
+      dtype: String(preview.dtype || ""),
+      shape,
+      ndim,
+    };
+  }
+
+  return lookupDatasetFromCache(state, selectedPath);
+}
+
+function shapesMatch(left, right) {
+  if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) {
+    return false;
+  }
+  return left.every((entry, index) => Number(entry) === Number(right[index]));
+}
+
+function isDatasetCompatibleWithBase(baseDataset, candidateDataset) {
+  if (!baseDataset || !candidateDataset) {
+    return false;
+  }
+  if (!isNumericDtype(baseDataset.dtype) || !isNumericDtype(candidateDataset.dtype)) {
+    return false;
+  }
+  if (!Number.isFinite(baseDataset.ndim) || !Number.isFinite(candidateDataset.ndim)) {
+    return false;
+  }
+  if (baseDataset.ndim !== candidateDataset.ndim) {
+    return false;
+  }
+  return shapesMatch(baseDataset.shape, candidateDataset.shape);
+}
+
 function renderStatus(state, path) {
   const loading = isLoading(state, path);
   const error = getError(state, path);
@@ -53,8 +158,8 @@ function renderStatus(state, path) {
   return "";
 }
 
-function renderNode(node, state) {
-  const path = String(node.path || "/");
+function renderNode(node, state, compareContext = null) {
+  const path = normalizePath(node.path || "/");
   const nodeType = node.type === "dataset" ? "dataset" : "group";
   const name = node.name || (path === "/" ? state.selectedFile || "root" : path.split("/").filter(Boolean).pop());
   const selected = state.selectedPath === path ? "active" : "";
@@ -69,19 +174,29 @@ function renderNode(node, state) {
     .join(" ");
   const iconClass = nodeType === "group" ? "tree-icon is-group" : "tree-icon is-dataset";
   const count = Number(node.num_children) || 0;
-  const compareMode =
-    nodeType === "dataset" &&
-    state.route === "viewer" &&
-    state.viewMode === "display" &&
-    state.displayTab === "line" &&
-    state.lineCompareEnabled === true;
-  const compareItems = Array.isArray(state.lineCompareItems) ? state.lineCompareItems : [];
-  const alreadyCompared = compareItems.some((entry) => String(entry?.path || "") === path);
+  const compareMode = Boolean(compareContext?.enabled) && nodeType === "dataset";
+  const candidateDataset = compareMode
+    ? {
+        path,
+        dtype: String(node.dtype || ""),
+        shape: normalizeShape(node.shape),
+        ndim: Number(node.ndim),
+      }
+    : null;
+  const comparePathSet = compareContext?.pathSet || new Set();
+  const alreadyCompared = comparePathSet.has(path);
   const isBaseDataset = nodeType === "dataset" && state.selectedPath === path;
+  const isCompatibleCandidate =
+    compareMode && !isBaseDataset
+      ? isDatasetCompatibleWithBase(compareContext?.baseDataset || null, candidateDataset)
+      : false;
+  const showCompareControl = compareMode && (isBaseDataset || alreadyCompared || isCompatibleCandidate);
   const compareButtonLabel = isBaseDataset ? "Base" : alreadyCompared ? "Added" : "Compare";
-  const compareShape = Array.isArray(node.shape) ? node.shape.join(",") : "";
+  const compareShape = Array.isArray(candidateDataset?.shape) ? candidateDataset.shape.join(",") : "";
   const compareDtype = node.dtype || "";
-  const compareNdim = Number.isFinite(Number(node.ndim)) ? Number(node.ndim) : "";
+  const compareNdim = Number.isFinite(Number(candidateDataset?.ndim))
+    ? Number(candidateDataset.ndim)
+    : "";
 
   return `
     <li class="tree-node">
@@ -101,7 +216,7 @@ function renderNode(node, state) {
             ${nodeType === "group" && count > 0 ? `<span class="tree-count">${count}</span>` : ""}
         </button>
         ${
-          compareMode
+          showCompareControl
             ? `<button
                   type="button"
                   class="tree-compare-btn ${isBaseDataset || alreadyCompared ? "is-disabled" : ""}"
@@ -123,15 +238,17 @@ function renderNode(node, state) {
             : ""
         }
       </div>
-      ${
-        nodeType === "group" && expanded
-          ? `<ul class="tree-branch">${
-              loaded
-                ? (getChildren(state, path) || []).map((child) => renderNode(child, state)).join("")
-                : ""
-            }${renderStatus(state, path)}</ul>`
-          : ""
-      }
+        ${
+          nodeType === "group" && expanded
+            ? `<ul class="tree-branch">${
+                loaded
+                  ? (getChildren(state, path) || [])
+                      .map((child) => renderNode(child, state, compareContext))
+                      .join("")
+                  : ""
+              }${renderStatus(state, path)}</ul>`
+            : ""
+        }
     </li>
   `;
 }
@@ -148,6 +265,15 @@ export function renderSidebarTree(state) {
     state.viewMode === "display" &&
     state.displayTab === "line" &&
     state.lineCompareEnabled === true;
+  const compareItems = Array.isArray(state.lineCompareItems) ? state.lineCompareItems : [];
+  const comparePathSet = new Set(
+    compareItems.map((entry) => normalizePath(entry?.path || "/"))
+  );
+  const compareContext = {
+    enabled: compareTreeScrollEnabled,
+    baseDataset: compareTreeScrollEnabled ? getBaseDatasetForCompare(state) : null,
+    pathSet: comparePathSet,
+  };
 
   return `
     <aside class="viewer-sidebar">
@@ -166,7 +292,7 @@ export function renderSidebarTree(state) {
         <div class="section-label">Structure</div>
         <div class="sidebar-tree ${compareTreeScrollEnabled ? "is-compare-mode" : ""}">
           <ul class="tree-root">
-            ${renderNode(treeRoot, state)}
+            ${renderNode(treeRoot, state, compareContext)}
           </ul>
         </div>
       </div>
