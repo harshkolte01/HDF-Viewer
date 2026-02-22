@@ -5,14 +5,14 @@ Backend communication layer for `old_web`.
 ## Files
 
 - `client.js`
-  - Fetch wrapper, query serialization, cancel channels, `ApiError` normalization.
+- Fetch wrapper, query serialization, cancel channels, `ApiError` normalization.
 - `contracts.js`
-  - Normalizers for `/files`, `/children`, `/meta`, `/preview`, `/data` payloads.
+- Normalizers for `/files`, `/children`, `/meta`, `/preview`, `/data` payloads.
 - `hdf5Service.js`
-  - High-level API used by actions/runtimes.
-  - Adds frontend caches, in-flight de-duplication, and stale-while-refresh preview support.
+- High-level API used by state actions and runtimes.
+- Includes frontend caches, in-flight de-dup, and stale-while-refresh preview support.
 - `config.js`
-  - Compatibility re-export of app config.
+- Compatibility re-export of app config.
 
 ## Main Exports Used by App
 
@@ -23,21 +23,27 @@ Backend communication layer for `old_web`.
 - `getFileData`
 - `clearFrontendCaches`
 
-## Cache Strategy Implemented (`hdf5Service.js`)
+## Cache Strategy (`hdf5Service.js`)
 
-- Files: singleton cache.
-- Tree children: per-file map.
-- Preview: per selection key map + optional background refresh.
-- Matrix blocks: LRU cache.
-- Line windows: LRU cache.
-- Heatmap payloads: LRU cache.
-- Metadata: LRU cache.
-- In-flight request maps for de-dup and cancellation.
+- Files: singleton cache
+- Tree children: per-file map
+- Preview: per-selection cache (+ optional background refresh)
+- Matrix blocks: LRU cache
+- Line windows: LRU cache
+- Heatmap payloads: LRU cache
+- Metadata: LRU cache
+- In-flight request maps for de-dup + cancellation
 
-## Routing to `/data`
+## `/data` Routing
 
 `getFileData()` dispatches by `params.mode`:
 
 - `matrix` -> block window request
 - `line` -> line window request
 - `heatmap` -> heatmap request
+
+## Line Compare Integration
+
+- No new backend endpoint was added for compare V1.
+- `lineRuntime.js` issues multiple `getFileData(... mode=line ...)` requests in parallel for base + compare datasets.
+- Responses are handled via `Promise.allSettled` so partial failures do not break base rendering.

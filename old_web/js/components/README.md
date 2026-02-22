@@ -5,15 +5,19 @@ Reusable UI components and viewer-panel facade modules.
 ## Active Components
 
 - `topBar.js`
-  - Home navbar and refresh button binding.
+- Home navbar and refresh button binding.
 - `tableView.js`
-  - Home file table renderer.
+- Home file table renderer.
 - `sidebarTree.js`
-  - Viewer tree renderer + expand/select/retry event wiring.
+- Viewer tree renderer + expand/select/retry wiring.
+- Line-compare tree integration:
+- compare button rendering on compatible datasets only
+- base/added/compare states
+- compare-mode horizontal tree scroll class
 - `viewerPanel.js`
-  - Facade re-export for panel render/runtime modules.
+- Facade re-export for panel render/runtime modules.
 
-## Compatibility Helpers (Not in Main Render Path)
+## Compatibility Helpers (Not Main Render Path)
 
 - `toolbar.js`: old mode toggle helper.
 - `lineChart.js`: renderer marker helper (`svg`).
