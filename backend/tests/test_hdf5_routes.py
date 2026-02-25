@@ -250,6 +250,21 @@ class Hdf5RoutesTestCase(unittest.TestCase):
         payload = response.get_json()
         self.assertFalse(payload['success'])
 
+    def test_children_decodes_encoded_key_segments(self):
+        reader = Mock()
+        reader.get_children.return_value = []
+        minio = Mock()
+        minio.get_object_metadata.return_value = {'etag': 'etag-1'}
+
+        with patch('src.routes.hdf5.get_hdf5_reader', return_value=reader), \
+             patch('src.routes.hdf5.get_minio_client', return_value=minio), \
+             patch('src.routes.hdf5.get_hdf5_cache', return_value=_NullCache()):
+            response = self.client.get('/files/Folder_1%2Frandom_05.h5/children?path=/')
+
+        self.assertEqual(response.status_code, 200)
+        minio.get_object_metadata.assert_called_once_with('Folder_1/random_05.h5')
+        reader.get_children.assert_called_once_with('Folder_1/random_05.h5', '/')
+
     def test_meta_not_found_returns_404(self):
         reader = Mock()
         reader.get_metadata.side_effect = ValueError("Path '/missing' not found in 'sample.h5'")

@@ -1,4 +1,4 @@
-import { API_BASE_URL } from "../config.js";
+import { API_BASE_URL, encodeObjectKeyForPath } from "../config.js";
 
 const CSV_BOM = "\uFEFF";
 
@@ -90,7 +90,7 @@ function appendQueryParam(searchParams, key, value) {
 }
 
 function buildCsvExportUrl(fileKey, params = {}) {
-  const endpoint = `/files/${encodeURIComponent(String(fileKey || ""))}/export/csv`;
+  const endpoint = `/files/${encodeObjectKeyForPath(fileKey)}/export/csv`;
   const url = new URL(endpoint, `${API_BASE_URL}/`);
   const searchParams = url.searchParams;
   Object.entries(params).forEach(([key, value]) => appendQueryParam(searchParams, key, value));

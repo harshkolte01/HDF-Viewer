@@ -4,6 +4,7 @@ HDF5 file navigation and metadata routes
 import logging
 import math
 import time
+from urllib.parse import unquote
 from flask import Blueprint, request, jsonify, Response, stream_with_context
 from src.storage.minio_client import get_minio_client
 from src.readers.hdf5_reader import get_hdf5_reader
@@ -167,6 +168,14 @@ def _client_error_message(error, status_code):
     if status_code >= 500:
         return 'Internal server error'
     return str(error)
+
+
+def _normalize_object_key(raw_key):
+    """Normalize route key and tolerate encoded path separators."""
+    text = str(raw_key or '')
+    if '%' in text:
+        text = unquote(text)
+    return text
 
 
 def _normalize_selection(shape, display_dims_param, fixed_indices_param):
@@ -341,6 +350,7 @@ def _get_cached_dataset_info(reader, key, hdf_path, cache_version):
 def get_children(key):
     """Get children at a specific path in an HDF5 file"""
     try:
+        key = _normalize_object_key(key)
         # Get query parameters
         hdf_path = request.args.get('path', '/')
         
@@ -406,6 +416,7 @@ def get_children(key):
 def get_metadata(key):
     """Get metadata for a specific path in an HDF5 file"""
     try:
+        key = _normalize_object_key(key)
         # Get query parameters
         hdf_path = request.args.get('path')
         
@@ -475,6 +486,7 @@ def get_metadata(key):
 def get_preview(key):
     """Get a preview payload for a specific dataset path"""
     try:
+        key = _normalize_object_key(key)
         request_started = time.perf_counter()
         hdf_path = request.args.get('path')
         if not hdf_path:
@@ -583,6 +595,7 @@ def get_preview(key):
 def get_data(key):
     """Validate /data selections against hard limits before any data reads."""
     try:
+        key = _normalize_object_key(key)
         request_started = time.perf_counter()
         hdf_path = request.args.get('path')
         mode = request.args.get('mode')
@@ -891,6 +904,7 @@ def get_data(key):
 def export_csv(key):
     """Stream CSV export for matrix, heatmap (full slice), and line modes."""
     try:
+        key = _normalize_object_key(key)
         request_started = time.perf_counter()
         hdf_path = request.args.get('path')
         mode = str(request.args.get('mode', '')).strip().lower()

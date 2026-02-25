@@ -90,6 +90,9 @@ Used endpoints:
 
 `/export/csv` is used for full CSV downloads (matrix, line, heatmap).
 
+Note:
+- File keys that include folder separators (example `Folder_1/random_05.h5`) are routed with segment-safe encoding so `/` remains a path separator.
+
 ## Folder Map
 
 - `assets/`: static assets.

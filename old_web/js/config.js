@@ -9,13 +9,20 @@ function normalizeBaseUrl(value) {
 
 export const API_BASE_URL = normalizeBaseUrl(runtimeConfig.API_BASE_URL);
 
+export function encodeObjectKeyForPath(key) {
+  return String(key || "")
+    .split("/")
+    .map((segment) => encodeURIComponent(segment))
+    .join("/");
+}
+
 export const API_ENDPOINTS = {
   FILES: "/files",
   FILES_REFRESH: "/files/refresh",
-  FILE_CHILDREN: (key) => `/files/${encodeURIComponent(key)}/children`,
-  FILE_META: (key) => `/files/${encodeURIComponent(key)}/meta`,
-  FILE_PREVIEW: (key) => `/files/${encodeURIComponent(key)}/preview`,
-  FILE_DATA: (key) => `/files/${encodeURIComponent(key)}/data`,
+  FILE_CHILDREN: (key) => `/files/${encodeObjectKeyForPath(key)}/children`,
+  FILE_META: (key) => `/files/${encodeObjectKeyForPath(key)}/meta`,
+  FILE_PREVIEW: (key) => `/files/${encodeObjectKeyForPath(key)}/preview`,
+  FILE_DATA: (key) => `/files/${encodeObjectKeyForPath(key)}/data`,
 };
 
 export const APP_CONFIG = Object.freeze({

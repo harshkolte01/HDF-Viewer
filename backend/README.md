@@ -73,21 +73,26 @@ gunicorn wsgi:app --bind 0.0.0.0:5000
 
 - `GET /files/<key>/children`
 - Lists immediate HDF5 children at `path` (default `/`).
+- Accepts keys with nested folder paths (for example `Folder_1/random_05.h5`).
 
 - `GET /files/<key>/meta`
 - Returns metadata for one HDF5 object (`path` required).
+- Accepts keys with nested folder paths.
 
 - `GET /files/<key>/preview`
 - Returns preview payload for lightweight render paths.
 - Supports `mode=auto|line|table|heatmap`, `detail=fast|full`, `include_stats`, `display_dims`, `fixed_indices`, `max_size`, `etag`.
+- Accepts keys with nested folder paths.
 
 - `GET /files/<key>/data`
 - Returns bounded data payload for `mode=matrix|heatmap|line`.
 - Enforces hard limits before data reads.
+- Accepts keys with nested folder paths.
 
 - `GET /files/<key>/export/csv`
 - Streams CSV for `mode=matrix|heatmap|line`.
 - Supports matrix/heatmap window params (`row_offset`, `row_limit`, `col_offset`, `col_limit`) and line params (`line_dim`, `line_index`, `line_offset`, `line_limit`, `chunk_points`, `compare_paths`).
+- Accepts keys with nested folder paths.
 
 ## Runtime limits in routes (`src/routes/hdf5.py`)
 
