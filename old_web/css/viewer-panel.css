@@ -137,6 +137,10 @@
     align-items: start;
 }
 
+.preview-layout > * {
+    min-width: 0;
+}
+
 .preview-layout.is-line {
     grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
     grid-template-rows: minmax(0, 1fr);
@@ -392,12 +396,15 @@
     border-radius: var(--radius-lg);
     padding: var(--spacing-lg);
     min-height: clamp(200px, 35vh, 300px);
+    min-width: 0;
+    overflow-x: hidden;
 }
 
 .data-section {
     display: flex;
     flex-direction: column;
     gap: var(--spacing-md);
+    min-width: 0;
 }
 
 .data-actions {
@@ -405,6 +412,7 @@
     align-items: center;
     gap: var(--spacing-sm);
     flex-wrap: wrap;
+    min-width: 0;
 }
 
 .data-btn {
@@ -438,6 +446,8 @@
 .data-status {
     font-size: 0.75rem;
     color: var(--text-secondary);
+    min-width: 0;
+    overflow-wrap: anywhere;
 }
 
 .data-status.error {
@@ -811,6 +821,8 @@
     display: flex;
     flex-direction: column;
     gap: var(--spacing-sm);
+    min-width: 0;
+    max-width: 100%;
 }
 
 .line-chart-shell-full {
@@ -863,6 +875,8 @@ body.line-panel-fullscreen-active {
     flex-wrap: wrap;
     position: relative;
     z-index: 2;
+    min-width: 0;
+    max-width: 100%;
 }
 
 .line-tool-group {
@@ -963,10 +977,14 @@ body.line-panel-fullscreen-active {
 .line-chart-stage {
     position: relative;
     overscroll-behavior: contain;
+    min-width: 0;
+    max-width: 100%;
 }
 
 .line-chart-canvas {
     width: 100%;
+    max-width: 100%;
+    min-width: 0;
     height: clamp(200px, 45vh, 480px);
     border-radius: var(--radius-md);
     background: var(--surface-alt);
@@ -1177,8 +1195,10 @@ body.line-panel-fullscreen-active {
 .line-stats {
     display: flex;
     gap: var(--spacing-md);
+    flex-wrap: wrap;
     font-size: 0.75rem;
     color: var(--text-secondary);
+    min-width: 0;
 }
 
 .line-legend {
@@ -1188,6 +1208,7 @@ body.line-panel-fullscreen-active {
     align-items: center;
     border-top: 1px dashed var(--border);
     padding-top: 0.45rem;
+    min-width: 0;
 }
 
 .line-legend[hidden] {

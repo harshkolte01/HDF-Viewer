@@ -824,7 +824,11 @@ function initializeHeatmapRuntime(shell) {
       runtime.plotAxis === "col"
         ? `Col ${cell.col} across Y`
         : `Y ${cell.displayRow} across columns`;
-    linkedPlotTitle.textContent = `${modeText}: ${axisText} | Value ${formatCell(cell.value, "auto")}`;
+    const selectedText = `Selected Y ${cell.displayRow}, Col ${cell.col}`;
+    linkedPlotTitle.textContent = `${modeText}: ${axisText} | ${selectedText} | Value ${formatCell(
+      cell.value,
+      "auto"
+    )}`;
   }
 
   function syncPlotAxisButtons() {
@@ -1048,7 +1052,9 @@ function initializeHeatmapRuntime(shell) {
   }
 
   function resizeCanvasForHost(context) {
-    const rect = canvasHost.getBoundingClientRect();
+    // Use canvas rect (content-box) instead of canvasHost rect to avoid
+    // border-induced sizing/coordinate mismatch.
+    const rect = canvas.getBoundingClientRect();
     const width = Math.max(320, Math.floor(rect.width || 320));
     const height = Math.max(240, Math.floor(rect.height || 240));
     const dpr = window.devicePixelRatio || 1;
@@ -1144,9 +1150,90 @@ function initializeHeatmapRuntime(shell) {
         const cellHeight = (layout.chartHeight / runtime.rows) * runtime.zoom;
         const x = drawX + runtime.selectedCell.col * cellWidth;
         const y = drawY + runtime.selectedCell.row * cellHeight;
-        context.strokeStyle = "rgba(217,119,6,0.95)";
-        context.lineWidth = 2;
-        context.strokeRect(x, y, cellWidth, cellHeight);
+        const chartLeft = layout.chartX;
+        const chartTop = layout.chartY;
+        const chartRight = layout.chartX + layout.chartWidth;
+        const chartBottom = layout.chartY + layout.chartHeight;
+        const rectRight = x + cellWidth;
+        const rectBottom = y + cellHeight;
+        const intersectsViewport =
+          rectRight >= chartLeft &&
+          x <= chartRight &&
+          rectBottom >= chartTop &&
+          y <= chartBottom;
+
+        if (intersectsViewport) {
+          const safeCellWidth = Math.max(1, cellWidth);
+          const safeCellHeight = Math.max(1, cellHeight);
+          const centerX = x + cellWidth / 2;
+          const centerY = y + cellHeight / 2;
+          const markerRadius = clamp(Math.min(cellWidth, cellHeight) * 0.5, 4, 9);
+          const markerCrossHalf = markerRadius + 3;
+          const showSelectionGuides = runtime.linkedPlotOpen || runtime.plottingEnabled;
+
+          if (showSelectionGuides) {
+            context.save();
+            context.setLineDash([6, 4]);
+            context.strokeStyle = "rgba(217,119,6,0.58)";
+            context.lineWidth = 1.1;
+            context.beginPath();
+            context.moveTo(centerX, chartTop);
+            context.lineTo(centerX, chartBottom);
+            context.moveTo(chartLeft, centerY);
+            context.lineTo(chartRight, centerY);
+            context.stroke();
+            context.restore();
+          }
+
+          // Keep the selected cell edge visible when the grid is very dense.
+          context.strokeStyle = "rgba(217,119,6,0.95)";
+          context.lineWidth = Math.max(1.4, 2 / Math.max(runtime.zoom, 1));
+          context.strokeRect(x, y, safeCellWidth, safeCellHeight);
+
+          // Draw a fixed-size center marker so selection remains visible at sub-pixel cell sizes.
+          context.strokeStyle = "rgba(255,255,255,0.92)";
+          context.lineWidth = 2.4;
+          context.beginPath();
+          context.arc(centerX, centerY, markerRadius + 1.2, 0, Math.PI * 2);
+          context.stroke();
+
+          context.strokeStyle = "rgba(217,119,6,0.98)";
+          context.lineWidth = 1.8;
+          context.beginPath();
+          context.arc(centerX, centerY, markerRadius, 0, Math.PI * 2);
+          context.stroke();
+
+          context.strokeStyle = "rgba(15,23,42,0.76)";
+          context.lineWidth = 1.2;
+          context.beginPath();
+          context.moveTo(centerX - markerCrossHalf, centerY);
+          context.lineTo(centerX + markerCrossHalf, centerY);
+          context.moveTo(centerX, centerY - markerCrossHalf);
+          context.lineTo(centerX, centerY + markerCrossHalf);
+          context.stroke();
+
+          context.fillStyle = "rgba(217,119,6,1)";
+          context.beginPath();
+          context.arc(centerX, centerY, 2.6, 0, Math.PI * 2);
+          context.fill();
+
+          if (runtime.linkedPlotOpen) {
+            const selectedBadge = `Sel Y ${runtime.selectedCell.displayRow}, C ${runtime.selectedCell.col}`;
+            const maxBadgeWidth = Math.max(72, layout.chartWidth - 8);
+            context.font = "700 10px 'Segoe UI', Arial, sans-serif";
+            const measured = Math.ceil(context.measureText(selectedBadge).width) + 14;
+            const badgeWidth = Math.min(maxBadgeWidth, Math.max(72, measured));
+            const badgeX = layout.chartX + 6;
+            const badgeY = layout.chartY + 6;
+            context.fillStyle = "rgba(15,23,42,0.78)";
+            context.fillRect(badgeX, badgeY, badgeWidth, 17);
+            context.fillStyle = "#FFFFFF";
+            context.textAlign = "left";
+            context.textBaseline = "middle";
+            context.fillText(selectedBadge, badgeX + 7, badgeY + 8.5);
+            context.textBaseline = "alphabetic";
+          }
+        }
       }
       context.restore();
     }
@@ -1257,7 +1344,9 @@ function initializeHeatmapRuntime(shell) {
   }
 
   function getRelativePoint(event) {
-    const rect = canvasHost.getBoundingClientRect();
+    // Use canvas rect so coordinates match exactly what is drawn on the
+    // canvas, avoiding the 1px (or more) border offset from canvasHost.
+    const rect = canvas.getBoundingClientRect();
     return {
       x: event.clientX - rect.left,
       y: event.clientY - rect.top,
@@ -1310,9 +1399,17 @@ function initializeHeatmapRuntime(shell) {
     runtime.hoverDisplayRow = cell.displayRow;
 
     if (tooltip) {
-      const hostRect = canvasHost.getBoundingClientRect();
-      const left = clamp(point.x + 12, 8, Math.max(8, hostRect.width - 156));
-      const top = clamp(point.y + 12, 8, Math.max(8, hostRect.height - 72));
+      // Use canvas rect for tooltip clamping — keeps coordinates consistent
+      // with getRelativePoint() which is also canvas-relative.
+      const canvasRect = canvas.getBoundingClientRect();
+      const hasSelectedCell = runtime.selectedCell && Number.isFinite(runtime.selectedCell.row);
+      const selectedDiffers =
+        hasSelectedCell &&
+        (runtime.selectedCell.row !== cell.row || runtime.selectedCell.col !== cell.col);
+      const maxTooltipWidth = selectedDiffers ? 190 : 156;
+      const maxTooltipHeight = selectedDiffers ? 90 : 72;
+      const left = clamp(point.x + 12, 8, Math.max(8, canvasRect.width - maxTooltipWidth));
+      const top = clamp(point.y + 12, 8, Math.max(8, canvasRect.height - maxTooltipHeight));
       tooltip.style.left = `${left}px`;
       tooltip.style.top = `${top}px`;
       tooltip.style.right = "auto";
@@ -1321,6 +1418,11 @@ function initializeHeatmapRuntime(shell) {
         <div>Y: ${runtime.hoverDisplayRow}</div>
         <div>Col: ${cell.col}</div>
         <div>Value: ${formatCell(cell.value, "auto")}</div>
+        ${
+          selectedDiffers
+            ? `<div>Sel: Y ${runtime.selectedCell.displayRow}, C ${runtime.selectedCell.col}</div>`
+            : ""
+        }
       `;
     }
 

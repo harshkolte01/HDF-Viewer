@@ -1,6 +1,6 @@
 import { escapeHtml } from "../utils/format.js";
 import { renderSidebarTree, bindSidebarTreeEvents } from "../components/sidebarTree.js";
-import { renderViewerPanel, bindViewerPanelEvents } from "../components/viewerPanel.js?v=20260221-13";
+import { renderViewerPanel, bindViewerPanelEvents } from "../components/viewerPanel.js?v=20260225-2";
 import { loadTemplate, applyTemplate } from "../utils/templateLoader.js";
 
 const VIEWER_TEMPLATE_FALLBACK = `
