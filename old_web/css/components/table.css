@@ -72,6 +72,12 @@
   font-weight: 500;
 }
 
+.file-type {
+  color: var(--text-secondary);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
 .file-modified {
   color: var(--text-secondary);
   font-variant-numeric: tabular-nums;
@@ -104,6 +110,11 @@
 
 .go-btn:active {
   transform: translateY(0);
+}
+
+.entry-muted {
+  color: var(--text-secondary);
+  font-weight: 600;
 }
 
 @media (max-width: 768px) {

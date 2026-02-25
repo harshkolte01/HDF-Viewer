@@ -162,6 +162,13 @@ def _is_not_found_error(error):
     return 'not found' in message
 
 
+def _client_error_message(error, status_code):
+    """Avoid leaking internals for server-side failures."""
+    if status_code >= 500:
+        return 'Internal server error'
+    return str(error)
+
+
 def _normalize_selection(shape, display_dims_param, fixed_indices_param):
     ndim = len(shape)
     display_dims = _parse_display_dims(display_dims_param, ndim)
@@ -229,6 +236,9 @@ def _csv_escape(value):
         text = ""
     else:
         text = str(value)
+    stripped = text.lstrip()
+    if stripped and stripped[0] in ('=', '+', '-', '@'):
+        text = "'" + text
     if any(marker in text for marker in (",", '"', "\r", "\n")):
         text = '"' + text.replace('"', '""') + '"'
     return text
@@ -388,7 +398,7 @@ def get_children(key):
         status_code = 404 if _is_not_found_error(e) else 500
         return jsonify({
             'success': False,
-            'error': str(e)
+            'error': _client_error_message(e, status_code)
         }), status_code
 
 
@@ -457,7 +467,7 @@ def get_metadata(key):
         status_code = 404 if _is_not_found_error(e) else 500
         return jsonify({
             'success': False,
-            'error': str(e)
+            'error': _client_error_message(e, status_code)
         }), status_code
 
 
@@ -565,7 +575,7 @@ def get_preview(key):
         logger.error(f"Error getting HDF5 preview for '{key}' at '{hdf_path}': {e}")
         return jsonify({
             'success': False,
-            'error': str(e)
+            'error': _client_error_message(e, 500)
         }), 500
 
 
@@ -873,7 +883,7 @@ def get_data(key):
         logger.error(f"Error validating /data for '{key}' at '{hdf_path}': {e}")
         return jsonify({
             'success': False,
-            'error': str(e)
+            'error': _client_error_message(e, 500)
         }), 500
 
 
@@ -1152,5 +1162,5 @@ def export_csv(key):
         logger.error(f"Error exporting CSV for '{key}': {e}")
         return jsonify({
             'success': False,
-            'error': str(e)
+            'error': _client_error_message(e, 500)
         }), 500

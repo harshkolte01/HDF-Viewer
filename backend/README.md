@@ -46,6 +46,12 @@ pip install -r requirements.txt
 python app.py
 ```
 
+For production WSGI runtimes, use `backend/wsgi.py` (example):
+
+```bash
+gunicorn wsgi:app --bind 0.0.0.0:5000
+```
+
 ## Main endpoints
 
 - `GET /`
@@ -56,6 +62,11 @@ python app.py
 
 - `GET /files/`
 - Lists objects in configured bucket.
+- Returns both `file` and `folder` entries by default.
+- Optional query params:
+  - `prefix` (string): key prefix to list.
+  - `include_folders` (bool, default `true`): include derived folder entries.
+  - `max_items` (int, default `20000`, max `50000`): max file entries per response.
 
 - `POST /files/refresh`
 - Clears file-list cache.
@@ -120,3 +131,4 @@ python -m unittest tests/test_hdf5_routes.py
 - `app.url_map.strict_slashes = False` is enabled to avoid slash redirect issues.
 - CORS currently allows all origins (`origins="*"`).
 - `/export/csv` is the backend contract used by frontend full CSV exports.
+- CSV export now prefixes formula-like cells to prevent spreadsheet formula injection.

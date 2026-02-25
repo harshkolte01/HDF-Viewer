@@ -56,22 +56,36 @@ function normalizeShape(value) {
  */
 export function normalizeFileItem(value) {
   const raw = asObject(value);
+  const key = asString(raw.key);
+  const normalizedType = asString(raw.type, "").toLowerCase();
+  const isFolder =
+    raw.is_folder === true ||
+    normalizedType === "folder" ||
+    key.endsWith("/");
+
   return {
-    key: asString(raw.key),
+    key,
     size: asNumber(raw.size, 0),
     last_modified: asNullableString(raw.last_modified),
     etag: asNullableString(raw.etag),
+    type: isFolder ? "folder" : "file",
+    is_folder: isFolder,
   };
 }
 
 export function normalizeFilesResponse(payload) {
   const raw = asObject(payload);
   const files = asArray(raw.files).map(normalizeFileItem);
+  const filesCount = files.filter((entry) => entry.type === "file").length;
+  const foldersCount = files.filter((entry) => entry.type === "folder").length;
 
   return {
     success: raw.success === true,
     count: asNumber(raw.count, files.length),
     files,
+    files_count: asNumber(raw.files_count, filesCount),
+    folders_count: asNumber(raw.folders_count, foldersCount),
+    truncated: raw.truncated === true,
     cached: raw.cached === true,
     error: raw.success === false ? asString(raw.error, "Unknown error") : null,
   };

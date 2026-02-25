@@ -538,6 +538,36 @@ class Hdf5RoutesTestCase(unittest.TestCase):
         # two chunks, base + compare each chunk
         self.assertEqual(reader.get_line.call_count, 4)
 
+    def test_export_csv_escapes_formula_like_cells(self):
+        reader = Mock()
+        reader.get_dataset_info.return_value = {
+            'shape': [1, 1],
+            'ndim': 2,
+            'dtype': 'object'
+        }
+        reader.get_matrix.return_value = {
+            'dtype': 'object',
+            'data': [['=2+2']],
+            'shape': [1, 1],
+            'row_offset': 0,
+            'col_offset': 0,
+            'downsample_info': {'row_step': 1, 'col_step': 1}
+        }
+
+        with patch('src.routes.hdf5.get_hdf5_reader', return_value=reader), \
+             patch('src.routes.hdf5.get_dataset_cache', return_value=_MemoryCache()):
+            response = self.client.get(
+                '/files/sample.h5/export/csv'
+                '?path=/array_2d'
+                '&mode=matrix'
+                '&row_limit=1'
+                '&col_limit=1'
+            )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.get_data(as_text=True)
+        self.assertIn("0,'=2+2", body)
+
     def test_export_csv_heatmap_mode_uses_full_matrix_slice(self):
         reader = Mock()
         reader.get_dataset_info.return_value = {

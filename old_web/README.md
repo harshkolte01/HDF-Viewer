@@ -29,6 +29,8 @@ python -m http.server 8080
 ## Implemented Features
 
 - Home file list with search, refresh, and open-file action.
+- Home list includes both `file` and `folder` entries from backend.
+- Folder rows are visible but are not openable in viewer mode.
 - Lazy tree browsing for HDF5 groups and datasets.
 - Dataset preview and full runtime for Matrix, Line Graph, and Heatmap.
 - N-dimensional selection with `displayDims` and `fixedIndices`.
@@ -73,6 +75,7 @@ Important notes:
 - Export actions require full runtime shell for the active tab.
 - If full view is not loaded, UI shows: `Load full ... before exporting.`
 - Shared export helpers are implemented in `js/utils/export.js`.
+- CSV export helpers now prefix formula-like values to prevent spreadsheet formula injection.
 
 ## Backend Contract Required by old_web
 

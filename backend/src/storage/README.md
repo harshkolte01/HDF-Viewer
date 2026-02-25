@@ -19,9 +19,10 @@ Reads environment config:
 
 ## Implemented operations
 
-- `list_objects(prefix='')`
+- `list_objects(prefix='', include_folders=False, max_items=None)`
 - Lists objects using paginator (`list_objects_v2`).
-- Returns `key`, `size`, `last_modified`, `etag`.
+- Can include derived folder rows from object keys.
+- Returns `key`, `size`, `last_modified`, `etag`, `type`, `is_folder`.
 
 - `get_object_metadata(key)`
 - Uses `head_object`.

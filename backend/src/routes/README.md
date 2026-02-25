@@ -11,7 +11,12 @@ HTTP route layer for the backend.
 
 Implemented endpoints:
 - `GET /files/`
-- Returns object list from MinIO/S3 and caches result under `files_list`.
+- Returns object list from MinIO/S3 and caches result under a request-aware key.
+- Supports query params:
+  - `prefix`
+  - `include_folders` (default `true`)
+  - `max_items` (default `20000`)
+- Response includes mixed `file` and `folder` rows.
 
 - `POST /files/refresh`
 - Clears files cache.

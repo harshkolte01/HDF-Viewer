@@ -35,7 +35,16 @@ function getFilteredFiles(state) {
 }
 
 function getTotalSize(state) {
-  const total = state.files.reduce((sum, file) => sum + (Number(file.size) || 0), 0);
+  const total = state.files.reduce((sum, file) => {
+    const isFolder =
+      file?.is_folder === true ||
+      String(file?.type || "").toLowerCase() === "folder" ||
+      String(file?.key || "").endsWith("/");
+    if (isFolder) {
+      return sum;
+    }
+    return sum + (Number(file.size) || 0);
+  }, 0);
   return formatBytes(total);
 }
 
@@ -44,11 +53,19 @@ function renderStats(state, filteredFiles) {
     return "";
   }
 
+  const filesCount = state.files.filter((entry) => entry.type !== "folder").length;
+  const foldersCount = state.files.filter((entry) => entry.type === "folder").length;
+  const filteredCount = filteredFiles.length;
+
   return `
     <div class="stats-bar">
       <div class="stat-card">
-        <div class="stat-label">Total Files</div>
-        <div class="stat-value">${state.files.length}<span class="stat-unit">files</span></div>
+        <div class="stat-label">Files</div>
+        <div class="stat-value">${filesCount}<span class="stat-unit">items</span></div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Folders</div>
+        <div class="stat-value">${foldersCount}<span class="stat-unit">items</span></div>
       </div>
       <div class="stat-card">
         <div class="stat-label">Total Size</div>
@@ -56,7 +73,7 @@ function renderStats(state, filteredFiles) {
       </div>
       <div class="stat-card">
         <div class="stat-label">Showing</div>
-        <div class="stat-value">${filteredFiles.length}<span class="stat-unit">of ${state.files.length}</span></div>
+        <div class="stat-value">${filteredCount}<span class="stat-unit">of ${state.files.length}</span></div>
       </div>
     </div>
   `;
@@ -74,7 +91,7 @@ function renderControls(state) {
           <circle cx="11" cy="11" r="8" />
           <path d="m21 21-4.35-4.35" />
         </svg>
-        <input id="search-input" type="text" class="search-input" placeholder="Search files..." value="${escapeHtml(state.searchQuery)}" />
+        <input id="search-input" type="text" class="search-input" placeholder="Search files or folders..." value="${escapeHtml(state.searchQuery)}" />
       </div>
     </div>
   `;

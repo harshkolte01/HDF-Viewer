@@ -153,6 +153,7 @@ Optional:
 - `GET /`
 - `GET /health`
 - `GET /files/`
+- Returns file and folder entries (folder rows have `type: "folder"` and `is_folder: true`).
 - `POST /files/refresh`
 - `GET /files/<key>/children`
 - `GET /files/<key>/meta`
@@ -194,4 +195,3 @@ python -m unittest tests/test_hdf5_routes.py
 - `old_web/js/README.md`
 - `old_web/js/components/viewerPanel/runtime/README.md`
 - Agent change logs: `docs/AGENT_CONTEXT_*.md`
-

@@ -24,7 +24,11 @@ function csvEscapeCell(value) {
   if (value === null || value === undefined) {
     return "";
   }
-  const text = String(value);
+  let text = String(value);
+  const trimmed = text.trimStart();
+  if (trimmed && /^[=+\-@]/.test(trimmed)) {
+    text = `'${text}`;
+  }
   if (/[",\r\n]/.test(text)) {
     return `"${text.replace(/"/g, "\"\"")}"`;
   }

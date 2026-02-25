@@ -1,6 +1,6 @@
 import os
 import logging
-from typing import List, Dict, Optional, BinaryIO
+from typing import List, Dict, Optional, BinaryIO, Any, Set
 import boto3
 from botocore.client import Config
 from botocore.exceptions import ClientError
@@ -35,39 +35,123 @@ class MinIOClient:
         
         logger.info(f"MinIO client initialized - Endpoint: {self.endpoint}, Bucket: {self.bucket}")
     
-    def list_objects(self, prefix: str = '') -> List[Dict[str, any]]:
+    def _normalize_prefix(self, prefix: str) -> str:
+        """Normalize a logical folder prefix for S3 key matching."""
+        return str(prefix or '').strip().lstrip('/')
+
+    def _derive_parent_folders(self, key: str, normalized_prefix: str) -> Set[str]:
+        """Return parent folder paths for a key (folder paths end with '/')."""
+        folders: Set[str] = set()
+        parts = [part for part in str(key).split('/') if part]
+        if len(parts) <= 1:
+            return folders
+
+        running = []
+        for part in parts[:-1]:
+            running.append(part)
+            folder = '/'.join(running) + '/'
+            if normalized_prefix and not folder.startswith(normalized_prefix):
+                continue
+            folders.add(folder)
+
+        return folders
+
+    def list_objects(
+        self,
+        prefix: str = '',
+        include_folders: bool = False,
+        max_items: Optional[int] = None
+    ) -> List[Dict[str, Any]]:
         """
         List all objects in the bucket with optional prefix filter
         
         Args:
             prefix: Optional prefix to filter objects
-            
+            include_folders: Include derived folder entries from object keys
+            max_items: Optional maximum number of file entries to return
+             
         Returns:
-            List of dictionaries containing object metadata:
+            List of dictionaries containing object and/or folder metadata:
             - key: Object key/path
             - size: Size in bytes
             - last_modified: Last modification timestamp
             - etag: Entity tag
+            - type: file|folder
+            - is_folder: boolean
         """
         try:
-            logger.info(f"Listing objects in bucket '{self.bucket}' with prefix '{prefix}'")
-            
+            normalized_prefix = self._normalize_prefix(prefix)
+            normalized_max_items = None
+            if max_items is not None:
+                normalized_max_items = max(1, int(max_items))
+
+            logger.info(
+                "Listing objects in bucket '%s' with prefix '%s' (include_folders=%s, max_items=%s)",
+                self.bucket,
+                normalized_prefix,
+                include_folders,
+                normalized_max_items if normalized_max_items is not None else 'all'
+            )
+             
             objects = []
+            folders: Set[str] = set()
             paginator = self.client.get_paginator('list_objects_v2')
-            
-            for page in paginator.paginate(Bucket=self.bucket, Prefix=prefix):
+            reached_limit = False
+             
+            for page in paginator.paginate(Bucket=self.bucket, Prefix=normalized_prefix):
                 if 'Contents' in page:
                     for obj in page['Contents']:
+                        key = obj.get('Key')
+                        if not key:
+                            continue
+
+                        if str(key).endswith('/'):
+                            if include_folders:
+                                folders.add(str(key))
+                            continue
+
                         objects.append({
-                            'key': obj['Key'],
+                            'key': key,
                             'size': obj['Size'],
                             'last_modified': obj['LastModified'].isoformat(),
-                            'etag': obj['ETag'].strip('"')
+                            'etag': obj['ETag'].strip('"'),
+                            'type': 'file',
+                            'is_folder': False
                         })
-            
-            logger.info(f"Found {len(objects)} objects")
+
+                        if include_folders:
+                            folders.update(self._derive_parent_folders(key, normalized_prefix))
+
+                        if normalized_max_items is not None and len(objects) >= normalized_max_items:
+                            reached_limit = True
+                            break
+
+                if reached_limit:
+                    break
+
+            if include_folders and folders:
+                folder_entries = [
+                    {
+                        'key': folder,
+                        'size': 0,
+                        'last_modified': None,
+                        'etag': None,
+                        'type': 'folder',
+                        'is_folder': True
+                    }
+                    for folder in sorted(folders)
+                ]
+                objects.extend(folder_entries)
+             
+            logger.info(
+                "Found %d entries (%d files, %d folders)%s",
+                len(objects),
+                len([entry for entry in objects if entry.get('type') == 'file']),
+                len([entry for entry in objects if entry.get('type') == 'folder']),
+                " [truncated]" if reached_limit else ""
+            )
             return objects
-            
+             
         except ClientError as e:
             logger.error(f"Error listing objects: {e}")
             raise
