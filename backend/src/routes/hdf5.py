@@ -334,15 +334,15 @@ def _serialize_request_args(exclude_keys=None):
     return '&'.join(parts)
 
 
-def _get_cached_dataset_info(reader, key, hdf_path, cache_version):
+def _get_cached_dataset_info(reader, key, hdf_path, cache_version, bucket=None):
     """Get dataset info with cache reuse across preview/data endpoints."""
     dataset_cache = get_dataset_cache()
-    dataset_cache_key = make_cache_key('dataset', key, cache_version, hdf_path)
+    dataset_cache_key = make_cache_key('dataset', key, cache_version, hdf_path, bucket or 'default')
     dataset_info = dataset_cache.get(dataset_cache_key)
     if dataset_info is not None:
         return dataset_info
 
-    dataset_info = reader.get_dataset_info(key, hdf_path)
+    dataset_info = reader.get_dataset_info(key, hdf_path, bucket=bucket)
     dataset_cache.set(dataset_cache_key, dataset_info)
     return dataset_info
 
@@ -353,15 +353,16 @@ def get_children(key):
         key = _normalize_object_key(key)
         # Get query parameters
         hdf_path = request.args.get('path', '/')
+        bucket = request.args.get('bucket') or None
         
         # Get file etag for cache invalidation
         minio = get_minio_client()
-        metadata = minio.get_object_metadata(key)
+        metadata = minio.get_object_metadata(key, bucket=bucket)
         etag = metadata['etag']
         
         # Check cache
         cache = get_hdf5_cache()
-        cache_key = make_cache_key('children', key, etag, hdf_path)
+        cache_key = make_cache_key('children', key, etag, hdf_path, bucket or 'default')
         
         cached_data = cache.get(cache_key)
         if cached_data is not None:
@@ -377,7 +378,7 @@ def get_children(key):
         # Cache miss - read from HDF5
         logger.info(f"HDF5 children requested for '{key}' at '{hdf_path}' - CACHE MISS")
         reader = get_hdf5_reader()
-        children = reader.get_children(key, hdf_path)
+        children = reader.get_children(key, hdf_path, bucket=bucket)
         
         # Store in cache
         cache.set(cache_key, children)
@@ -419,6 +420,7 @@ def get_metadata(key):
         key = _normalize_object_key(key)
         # Get query parameters
         hdf_path = request.args.get('path')
+        bucket = request.args.get('bucket') or None
         
         if not hdf_path:
             return jsonify({
@@ -428,12 +430,12 @@ def get_metadata(key):
         
         # Get file etag for cache invalidation
         minio = get_minio_client()
-        metadata = minio.get_object_metadata(key)
+        metadata = minio.get_object_metadata(key, bucket=bucket)
         etag = metadata['etag']
         
         # Check cache
         cache = get_hdf5_cache()
-        cache_key = make_cache_key('meta', key, etag, hdf_path)
+        cache_key = make_cache_key('meta', key, etag, hdf_path, bucket or 'default')
         
         cached_data = cache.get(cache_key)
         if cached_data is not None:
@@ -448,7 +450,7 @@ def get_metadata(key):
         # Cache miss - read from HDF5
         logger.info(f"HDF5 metadata requested for '{key}' at '{hdf_path}' - CACHE MISS")
         reader = get_hdf5_reader()
-        meta = reader.get_metadata(key, hdf_path)
+        meta = reader.get_metadata(key, hdf_path, bucket=bucket)
         
         # Store in cache
         cache.set(cache_key, meta)
@@ -489,6 +491,7 @@ def get_preview(key):
         key = _normalize_object_key(key)
         request_started = time.perf_counter()
         hdf_path = request.args.get('path')
+        bucket = request.args.get('bucket') or None
         if not hdf_path:
             return jsonify({
                 'success': False,
@@ -534,7 +537,8 @@ def get_preview(key):
             max_size_key,
             mode,
             detail,
-            'stats' if include_stats else 'no-stats'
+            'stats' if include_stats else 'no-stats',
+            bucket or 'default'
         )
 
         cached_data = cache.get(cache_key)
@@ -558,7 +562,8 @@ def get_preview(key):
             mode=mode,
             max_size=max_size,
             include_stats=include_stats,
-            detail=detail
+            detail=detail,
+            bucket=bucket
         )
 
         cache.set(cache_key, preview)
@@ -599,6 +604,7 @@ def get_data(key):
         request_started = time.perf_counter()
         hdf_path = request.args.get('path')
         mode = request.args.get('mode')
+        bucket = request.args.get('bucket') or None
         if not hdf_path:
             return jsonify({
                 'success': False,
@@ -635,7 +641,7 @@ def get_data(key):
             return jsonify(response), 200
 
         reader = get_hdf5_reader()
-        dataset_info = _get_cached_dataset_info(reader, key, hdf_path, cache_version)
+        dataset_info = _get_cached_dataset_info(reader, key, hdf_path, cache_version, bucket=bucket)
         shape = dataset_info['shape']
         ndim = dataset_info['ndim']
 
@@ -687,7 +693,8 @@ def get_data(key):
                 col_offset,
                 col_limit,
                 row_step=row_step,
-                col_step=col_step
+                col_step=col_step,
+                bucket=bucket
             )
 
             response_payload = {
@@ -730,7 +737,8 @@ def get_data(key):
                 display_dims,
                 fixed_indices,
                 effective_max_size,
-                include_stats=include_stats
+                include_stats=include_stats,
+                bucket=bucket
             )
 
             response_payload = {
@@ -838,7 +846,8 @@ def get_data(key):
                 line_index,
                 line_offset,
                 line_limit,
-                line_step
+                line_step,
+                bucket=bucket
             )
 
             response_payload = {
@@ -908,6 +917,7 @@ def export_csv(key):
         request_started = time.perf_counter()
         hdf_path = request.args.get('path')
         mode = str(request.args.get('mode', '')).strip().lower()
+        bucket = request.args.get('bucket') or None
 
         if not hdf_path:
             return jsonify({
@@ -923,7 +933,7 @@ def export_csv(key):
 
         reader = get_hdf5_reader()
         cache_version = _resolve_cache_version_tag()
-        dataset_info = _get_cached_dataset_info(reader, key, hdf_path, cache_version)
+        dataset_info = _get_cached_dataset_info(reader, key, hdf_path, cache_version, bucket=bucket)
         shape = dataset_info['shape']
         ndim = dataset_info['ndim']
         dtype = dataset_info.get('dtype')
@@ -1014,7 +1024,8 @@ def export_csv(key):
                             col_cursor,
                             current_cols,
                             row_step=1,
-                            col_step=1
+                            col_step=1,
+                            bucket=bucket
                         )
                         block_data = block.get('data')
                         safe_block_rows = block_data if isinstance(block_data, list) else []
@@ -1099,7 +1110,7 @@ def export_csv(key):
             raise ValueError("Up to 4 compare_paths are supported per line export.")
         compare_targets = []
         for compare_path in compare_paths:
-            compare_info = _get_cached_dataset_info(reader, key, compare_path, cache_version)
+            compare_info = _get_cached_dataset_info(reader, key, compare_path, cache_version, bucket=bucket)
             compare_shape = compare_info.get('shape') or []
             compare_dtype = compare_info.get('dtype')
             if list(compare_shape) != list(shape):
@@ -1128,7 +1139,8 @@ def export_csv(key):
                     line_index,
                     cursor,
                     current_limit,
-                    1
+                    1,
+                    bucket=bucket
                 )
                 base_values = base_line.get('data') if isinstance(base_line.get('data'), list) else []
 
@@ -1143,7 +1155,8 @@ def export_csv(key):
                         line_index,
                         cursor,
                         current_limit,
-                        1
+                        1,
+                        bucket=bucket
                     )
                     compare_values = compare_line.get('data') if isinstance(compare_line.get('data'), list) else []
                     compare_value_sets.append(compare_values)

@@ -54,9 +54,10 @@ def list_files():
         prefix = str(request.args.get('prefix', '') or '').strip()
         include_folders = _parse_bool_param('include_folders', True)
         max_items = _parse_int_param('max_items', 20000, 1, 50000)
+        bucket = request.args.get('bucket') or None
 
         cache = get_files_cache()
-        cache_key = f"files_list:{prefix}:{include_folders}:{max_items}"
+        cache_key = f"files_list:{prefix}:{include_folders}:{max_items}:{bucket or 'default'}"
         
         # Try to get from cache
         cached_data = cache.get(cache_key)
@@ -84,7 +85,8 @@ def list_files():
         entries = minio.list_objects(
             prefix=prefix,
             include_folders=include_folders,
-            max_items=max_items
+            max_items=max_items,
+            bucket=bucket
         )
         files_count = sum(1 for entry in entries if entry.get('type') == 'file')
         folders_count = sum(1 for entry in entries if entry.get('type') == 'folder')

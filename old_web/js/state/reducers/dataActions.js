@@ -196,6 +196,7 @@ export function createDataActions(deps) {
     try {
       const response = await getFileMeta(snapshot.selectedFile, targetPath, {
         etag: snapshot.selectedFileEtag || undefined,
+        bucket: snapshot.selectedFileBucket || undefined,
       });
       const metadata = response.metadata || null;
       const latest = getState();
@@ -278,6 +279,11 @@ export function createDataActions(deps) {
 
     if (selectedFileEtag) {
       previewParams.etag = selectedFileEtag;
+    }
+
+    const selectedFileBucket = snapshot.selectedFileBucket || null;
+    if (selectedFileBucket) {
+      previewParams.bucket = selectedFileBucket;
     }
 
     const requestKey = buildPreviewSelectionKey(

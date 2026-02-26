@@ -79,6 +79,7 @@ function initializeMatrixRuntime(shell) {
   const blockCols = Math.max(1, toSafeInteger(shell.dataset.matrixBlockCols, 40));
   const fileKey = shell.dataset.matrixFileKey || "";
   const fileEtag = shell.dataset.matrixFileEtag || "";
+  const bucket = shell.dataset.matrixBucket || "";
   const path = shell.dataset.matrixPath || "/";
   const displayDims = shell.dataset.matrixDisplayDims || "";
   const fixedIndices = shell.dataset.matrixFixedIndices || "";
@@ -101,6 +102,7 @@ function initializeMatrixRuntime(shell) {
     blockCols,
     fileKey,
     fileEtag,
+    bucket,
     path,
     displayDims,
     fixedIndices,
@@ -217,6 +219,10 @@ function initializeMatrixRuntime(shell) {
 
     if (runtime.fileEtag) {
       params.etag = runtime.fileEtag;
+    }
+
+    if (runtime.bucket) {
+      params.bucket = runtime.bucket;
     }
 
     try {
@@ -438,6 +444,9 @@ function initializeMatrixRuntime(shell) {
     if (runtime.fileEtag) {
       paramsBase.etag = runtime.fileEtag;
     }
+    if (runtime.bucket) {
+      paramsBase.bucket = runtime.bucket;
+    }
 
     const startRowBlock = Math.floor(rowStart / runtime.blockRows) * runtime.blockRows;
     const endRowBlock = Math.floor(rowEnd / runtime.blockRows) * runtime.blockRows;
@@ -551,6 +560,9 @@ function initializeMatrixRuntime(shell) {
     }
     if (runtime.fileEtag) {
       query.etag = runtime.fileEtag;
+    }
+    if (runtime.bucket) {
+      query.bucket = runtime.bucket;
     }
 
     const url = buildCsvExportUrl(runtime.fileKey, query);

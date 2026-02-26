@@ -60,7 +60,8 @@ class MinIOClient:
         self,
         prefix: str = '',
         include_folders: bool = False,
-        max_items: Optional[int] = None
+        max_items: Optional[int] = None,
+        bucket: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """
         List all objects in the bucket with optional prefix filter
@@ -85,9 +86,10 @@ class MinIOClient:
             if max_items is not None:
                 normalized_max_items = max(1, int(max_items))
 
+            effective_bucket = bucket or self.bucket
             logger.info(
                 "Listing objects in bucket '%s' with prefix '%s' (include_folders=%s, max_items=%s)",
-                self.bucket,
+                effective_bucket,
                 normalized_prefix,
                 include_folders,
                 normalized_max_items if normalized_max_items is not None else 'all'
@@ -98,7 +100,7 @@ class MinIOClient:
             paginator = self.client.get_paginator('list_objects_v2')
             reached_limit = False
              
-            for page in paginator.paginate(Bucket=self.bucket, Prefix=normalized_prefix):
+            for page in paginator.paginate(Bucket=effective_bucket, Prefix=normalized_prefix):
                 if 'Contents' in page:
                     for obj in page['Contents']:
                         key = obj.get('Key')
@@ -156,7 +158,7 @@ class MinIOClient:
             logger.error(f"Error listing objects: {e}")
             raise
     
-    def get_object_metadata(self, key: str) -> Dict[str, any]:
+    def get_object_metadata(self, key: str, bucket: Optional[str] = None) -> Dict[str, any]:
         """
         Get metadata for a specific object using HEAD request
         
@@ -172,9 +174,10 @@ class MinIOClient:
             - content_type: Content type
         """
         try:
-            logger.info(f"Getting metadata for object '{key}'")
+            effective_bucket = bucket or self.bucket
+            logger.info(f"Getting metadata for object '{key}' in bucket '{effective_bucket}'")
             
-            response = self.client.head_object(Bucket=self.bucket, Key=key)
+            response = self.client.head_object(Bucket=effective_bucket, Key=key)
             
             metadata = {
                 'key': key,

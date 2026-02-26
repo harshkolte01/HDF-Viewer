@@ -41,14 +41,14 @@ class HDF5Reader:
         
         logger.info(f"HDF5Reader initialized with S3 endpoint: {self.endpoint}")
 
-    def _get_s3_path(self, key: str) -> str:
+    def _get_s3_path(self, key: str, bucket: Optional[str] = None) -> str:
         """Convert object key to S3 path"""
-        return f"{self.bucket}/{key}"
+        return f"{bucket or self.bucket}/{key}"
 
-    def get_dataset_info(self, key: str, path: str) -> Dict[str, Any]:
+    def get_dataset_info(self, key: str, path: str, bucket: Optional[str] = None) -> Dict[str, Any]:
         """Get lightweight dataset info (shape, dtype, ndim) without full reads."""
         try:
-            s3_path = self._get_s3_path(key)
+            s3_path = self._get_s3_path(key, bucket=bucket)
             logger.info(f"Reading HDF5 dataset info from '{key}' at path '{path}'")
 
             with self.s3.open(s3_path, 'rb') as f:
@@ -106,11 +106,12 @@ class HDF5Reader:
         mode: str = 'auto',
         max_size: Optional[int] = None,
         include_stats: bool = True,
-        detail: str = 'full'
+        detail: str = 'full',
+        bucket: Optional[str] = None
     ) -> Dict[str, Any]:
         """Generate a preview payload for a dataset."""
         try:
-            s3_path = self._get_s3_path(key)
+            s3_path = self._get_s3_path(key, bucket=bucket)
             logger.info(f"Generating HDF5 preview from '{key}' at path '{path}'")
 
             with self.s3.open(s3_path, 'rb') as f:
@@ -238,11 +239,12 @@ class HDF5Reader:
         col_offset: int,
         col_limit: int,
         row_step: int = 1,
-        col_step: int = 1
+        col_step: int = 1,
+        bucket: Optional[str] = None
     ) -> Dict[str, Any]:
         """Extract a 2D matrix block from a dataset."""
         try:
-            s3_path = self._get_s3_path(key)
+            s3_path = self._get_s3_path(key, bucket=bucket)
             logger.info(f"Reading HDF5 matrix from '{key}' at path '{path}'")
 
             with self.s3.open(s3_path, 'rb') as f:
@@ -316,11 +318,12 @@ class HDF5Reader:
         line_index: Optional[int],
         line_offset: int,
         line_limit: int,
-        line_step: int
+        line_step: int,
+        bucket: Optional[str] = None
     ) -> Dict[str, Any]:
         """Extract a 1D line profile from a dataset."""
         try:
-            s3_path = self._get_s3_path(key)
+            s3_path = self._get_s3_path(key, bucket=bucket)
             logger.info(f"Reading HDF5 line from '{key}' at path '{path}'")
 
             with self.s3.open(s3_path, 'rb') as f:
@@ -402,11 +405,12 @@ class HDF5Reader:
         display_dims: Tuple[int, int],
         fixed_indices: Dict[int, int],
         max_size: int,
-        include_stats: bool = True
+        include_stats: bool = True,
+        bucket: Optional[str] = None
     ) -> Dict[str, Any]:
         """Extract a downsampled 2D heatmap plane from a dataset."""
         try:
-            s3_path = self._get_s3_path(key)
+            s3_path = self._get_s3_path(key, bucket=bucket)
             logger.info(f"Reading HDF5 heatmap from '{key}' at path '{path}'")
 
             with self.s3.open(s3_path, 'rb') as f:
@@ -482,19 +486,20 @@ class HDF5Reader:
             logger.error(f"Error reading HDF5 heatmap from '{key}' at '{path}': {e}")
             raise
     
-    def get_children(self, key: str, path: str = '/') -> List[Dict[str, Any]]:
+    def get_children(self, key: str, path: str = '/', bucket: Optional[str] = None) -> List[Dict[str, Any]]:
         """
         Get children (groups/datasets) at a specific path in HDF5 file
         
         Args:
             key: S3 object key (filename)
             path: HDF5 internal path (default: root '/')
+            bucket: Optional bucket override (defaults to env S3_BUCKET)
             
         Returns:
             List of children with metadata
         """
         try:
-            s3_path = self._get_s3_path(key)
+            s3_path = self._get_s3_path(key, bucket=bucket)
             logger.info(f"Reading HDF5 children from '{key}' at path '{path}'")
             
             children = []
@@ -1043,19 +1048,20 @@ class HDF5Reader:
             return [self._sanitize(item) for item in data]
         return data
     
-    def get_metadata(self, key: str, path: str) -> Dict[str, Any]:
+    def get_metadata(self, key: str, path: str, bucket: Optional[str] = None) -> Dict[str, Any]:
         """
         Get comprehensive metadata for a specific path in HDF5 file
         
         Args:
             key: S3 object key (filename)
             path: HDF5 internal path
+            bucket: Optional bucket override (defaults to env S3_BUCKET)
             
         Returns:
             Comprehensive metadata dictionary with type info, filters, etc.
         """
         try:
-            s3_path = self._get_s3_path(key)
+            s3_path = self._get_s3_path(key, bucket=bucket)
             logger.info(f"Reading HDF5 metadata from '{key}' at path '{path}'")
             
             with self.s3.open(s3_path, 'rb') as f:

@@ -439,6 +439,7 @@ function renderLinkedLineShellMarkup(config) {
       data-line-shell="true"
       data-line-file-key="${escapeHtml(config.fileKey || "")}"
       data-line-file-etag="${escapeHtml(config.fileEtag || "")}"
+      data-line-bucket="${escapeHtml(config.bucket || "")}"
       data-line-path="${escapeHtml(config.path || "/")}"
       data-line-display-dims="${escapeHtml(config.displayDims || "")}"
       data-line-fixed-indices="${escapeHtml(config.fixedIndices || "")}"
@@ -555,6 +556,7 @@ function initializeHeatmapRuntime(shell) {
 
   const fileKey = shell.dataset.heatmapFileKey || "";
   const fileEtag = shell.dataset.heatmapFileEtag || "";
+  const bucket = shell.dataset.heatmapBucket || "";
   const path = shell.dataset.heatmapPath || "/";
   const displayDims = shell.dataset.heatmapDisplayDims || "";
   const fixedIndices = shell.dataset.heatmapFixedIndices || "";
@@ -618,6 +620,7 @@ function initializeHeatmapRuntime(shell) {
   const runtime = {
     fileKey,
     fileEtag,
+    bucket,
     path,
     displayDims,
     fixedIndices,
@@ -965,6 +968,7 @@ function initializeHeatmapRuntime(shell) {
     linkedPlotShellHost.innerHTML = renderLinkedLineShellMarkup({
       fileKey: runtime.fileKey,
       fileEtag: runtime.fileEtag,
+      bucket: runtime.bucket,
       path: runtime.path,
       displayDims: runtime.displayDims,
       fixedIndices: runtime.fixedIndices,
@@ -1458,6 +1462,10 @@ function initializeHeatmapRuntime(shell) {
       params.etag = runtime.fileEtag;
     }
 
+    if (runtime.bucket) {
+      params.bucket = runtime.bucket;
+    }
+
     try {
       const response = await getFileData(runtime.fileKey, runtime.path, params, {
         cancelPrevious: true,
@@ -1625,6 +1633,9 @@ function initializeHeatmapRuntime(shell) {
     }
     if (runtime.fileEtag) {
       query.etag = runtime.fileEtag;
+    }
+    if (runtime.bucket) {
+      query.bucket = runtime.bucket;
     }
 
     const url = buildCsvExportUrl(runtime.fileKey, query);

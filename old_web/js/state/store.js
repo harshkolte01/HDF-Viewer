@@ -7,6 +7,7 @@ export const state = {
   searchQuery: "",
   selectedFile: null,
   selectedFileEtag: null,
+  selectedFileBucket: null,
   selectedNodeType: "group",
   selectedNodeName: "/",
   selectedPath: "/",

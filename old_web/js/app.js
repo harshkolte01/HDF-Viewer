@@ -85,6 +85,7 @@ async function bootstrapApp() {
   // We consume the param once, clean the URL bar, and drop straight into
   // the viewer — no home-page flash.
   const deepLinkKey = new URLSearchParams(location.search).get("file");
+  const deepLinkBucket = new URLSearchParams(location.search).get("bucket");
 
   renderApp();
 
@@ -98,7 +99,7 @@ async function bootstrapApp() {
     // Open the viewer immediately — etag is unknown here (H5API browse
     // does not expose it), but null is safe; the viewer only uses it as
     // an optional cache hint.
-    actions.openViewer({ key: deepLinkKey, etag: null });
+    actions.openViewer({ key: deepLinkKey, etag: null, bucket: deepLinkBucket || null });
   }
 }
 

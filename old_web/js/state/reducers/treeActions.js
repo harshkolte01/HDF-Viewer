@@ -143,6 +143,7 @@ export function createTreeActions(deps) {
       const response = await getFileChildren(snapshot.selectedFile, normalizedPath, {
         force,
         etag: snapshot.selectedFileEtag || undefined,
+        bucket: snapshot.selectedFileBucket || undefined,
       });
       const children = Array.isArray(response.children) ? response.children : [];
 

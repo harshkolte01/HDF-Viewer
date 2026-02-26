@@ -133,7 +133,7 @@ export function clearFrontendCaches() {
 }
 
 export async function getFiles(options = {}) {
-  const { force = false, signal } = options;
+  const { force = false, signal, bucket } = options;
 
   if (!force && frontendCache.files) {
     return {
@@ -143,7 +143,12 @@ export async function getFiles(options = {}) {
     };
   }
 
-  const payload = await apiClient.get(API_ENDPOINTS.FILES, {}, { signal });
+  const queryParams = {};
+  if (bucket) {
+    queryParams.bucket = bucket;
+  }
+
+  const payload = await apiClient.get(API_ENDPOINTS.FILES, queryParams, { signal });
   const normalized = assertSuccess(normalizeFilesResponse(payload), "getFiles");
   frontendCache.files = normalized;
   return normalized;
@@ -159,7 +164,7 @@ export async function refreshFiles(options = {}) {
 }
 
 export async function getFileChildren(key, path = "/", options = {}) {
-  const { force = false, signal, etag } = options;
+  const { force = false, signal, etag, bucket } = options;
   const treeCache = getTreeCache(key);
   const treeCacheKey = `${path}|${etag || "no-etag"}`;
 
@@ -174,6 +179,9 @@ export async function getFileChildren(key, path = "/", options = {}) {
   const queryParams = { path };
   if (etag) {
     queryParams.etag = etag;
+  }
+  if (bucket) {
+    queryParams.bucket = bucket;
   }
 
   const payload = await apiClient.get(
@@ -192,7 +200,7 @@ export async function getFileChildren(key, path = "/", options = {}) {
 }
 
 export async function getFileMeta(key, path, options = {}) {
-  const { force = false, signal, etag } = options;
+  const { force = false, signal, etag, bucket } = options;
   const cacheKey = `${key}|${path}|${etag || "no-etag"}`;
 
   if (!force) {
@@ -209,6 +217,9 @@ export async function getFileMeta(key, path, options = {}) {
   const queryParams = { path };
   if (etag) {
     queryParams.etag = etag;
+  }
+  if (bucket) {
+    queryParams.bucket = bucket;
   }
 
   const payload = await apiClient.get(

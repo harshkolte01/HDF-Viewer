@@ -250,6 +250,7 @@
   const VIEWER_BASE = (window.__VIEWER_BASE__ || 'https://hdf-viewer-old-web.vercel.app').replace(/\/+$/, '');
 
   let currentPrefix = '';
+  let currentBucket = '';
 
   // ── Routing ────────────────────────────────────────────────────
   function navigate(prefix) {
@@ -284,7 +285,8 @@
   // ── Render ──────────────────────────────────────────────────────
   function render(data) {
     // Bucket badge
-    document.getElementById('bucketBadge').textContent = data.bucket ?? 'hdf5files';
+    currentBucket = data.bucket ?? 'hdf5files';
+    document.getElementById('bucketBadge').textContent = currentBucket;
 
     // Breadcrumbs
     const bc = document.getElementById('breadcrumb');
@@ -375,7 +377,7 @@
   }
 
   function goToFile(key) {
-    const url = `${VIEWER_BASE}/?file=${encodeURIComponent(key)}`;
+    const url = `${VIEWER_BASE}/?file=${encodeURIComponent(key)}&bucket=${encodeURIComponent(currentBucket)}`;
     window.open(url, '_blank');
   }
 

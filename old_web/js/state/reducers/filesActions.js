@@ -106,6 +106,7 @@ export function createFileActions(deps) {
       route: "viewer",
       selectedFile: selection.key || null,
       selectedFileEtag: selection.etag || null,
+      selectedFileBucket: selection.bucket || null,
       selectedNodeType: "group",
       selectedNodeName: "/",
       selectedPath: "/",
