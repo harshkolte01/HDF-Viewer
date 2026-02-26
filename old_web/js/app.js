@@ -80,8 +80,26 @@ async function bootstrapApp() {
     actions.setSidebarOpen(false);
   }
 
+  // Deep-link: H5API "Go" button (and any external link) can open a file
+  // directly by passing ?file=<encoded-key> in the URL.
+  // We consume the param once, clean the URL bar, and drop straight into
+  // the viewer — no home-page flash.
+  const deepLinkKey = new URLSearchParams(location.search).get("file");
+
   renderApp();
+
+  // Always pre-load the file list so "back to home" works instantly.
   void actions.loadFiles();
+
+  if (deepLinkKey) {
+    // Remove ?file= from the address bar so a manual refresh doesn't
+    // re-open the same file unexpectedly.
+    history.replaceState({}, "", location.pathname);
+    // Open the viewer immediately — etag is unknown here (H5API browse
+    // does not expose it), but null is safe; the viewer only uses it as
+    // an optional cache hint.
+    actions.openViewer({ key: deepLinkKey, etag: null });
+  }
 }
 
 void bootstrapApp();
