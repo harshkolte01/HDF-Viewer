@@ -25,6 +25,17 @@ Backend dependencies (from `backend/requirements.txt`):
 - `h5py==3.10.0`
 - `s3fs==2024.2.0`
 
+cd "c:\Coding\HDF Viewer\backend"
+
+# Create the virtual environment
+python -m venv .venv
+
+# Activate it
+.venv\Scripts\Activate.ps1
+
+# Install dependencies
+pip install -r requirements.txt
+
 Frontend (`old_web`) has no npm/build dependency. It runs directly in browser as static files.
 
 ## Architecture Diagram
