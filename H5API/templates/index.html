@@ -241,13 +241,13 @@
 
 <script>
   // ── Config ─────────────────────────────────────────────────────
-  // The Flask server is always at port 5100; this page may be served
-  // from anywhere (Flask itself or python -m http.server).
-  const API_BASE = 'https://hdf-viewer.vercel.app';
+  // API base used by the browser for /api/browse.
+  // Override by setting window.__API_BASE__ before this script runs.
+  const API_BASE = (window.__API_BASE__ || 'https://hdf-viewer-backend.vercel.app').replace(/\/+$/, '');
 
   // Base URL of the HDF5 Viewer app — used by the "Go" button.
   // Override by setting window.__VIEWER_BASE__ before this script runs.
-  const VIEWER_BASE = (window.__VIEWER_BASE__ || 'https://hdf-viewer-old-web.vercel.app').replace(/\/+$/, '');
+  const VIEWER_BASE = (window.__VIEWER_BASE__ || 'https://hdf-viewer2.vercel.app').replace(/\/+$/, '');
 
   let currentPrefix = '';
   let currentBucket = '';
