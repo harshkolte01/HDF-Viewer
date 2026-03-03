@@ -105,6 +105,15 @@
   ns.api = ns.api || {};
   ns.api.config = configApi;
 
+  // Legacy symbol bridge for Phase 3 converted plain-script modules.
+  global.DEFAULT_API_BASE_URL = DEFAULT_API_BASE_URL;
+  global.API_BASE_URL = API_BASE_URL;
+  global.API_ENDPOINTS = API_ENDPOINTS;
+  global.APP_CONFIG = APP_CONFIG;
+  global.normalizeBaseUrl = normalizeBaseUrl;
+  global.encodeObjectKeyForPath = encodeObjectKeyForPath;
+  global.buildApiUrl = buildApiUrl;
+
   if (typeof ns.core.registerModule === "function") {
     ns.core.registerModule("core/config");
   }

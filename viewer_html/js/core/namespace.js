@@ -44,7 +44,7 @@
   }
 
   ns.__initialized = true;
-  ns.__phase = "phase2-scaffold";
+  ns.__phase = "phase3-port";
 
   ensureObject(ns, "core");
   ensureObject(ns, "utils");
