@@ -823,6 +823,11 @@ function initializeHeatmapRuntime(shell) {
     )}`;
   }
 
+  function syncLinkedPlotLayoutState() {
+    const linkedVisible = Boolean(linkedPlotPanel && linkedPlotPanel.hidden === false);
+    shell.classList.toggle("has-linked-plot", linkedVisible);
+  }
+
   function syncPlotAxisButtons() {
     if (linkedPlotRowButton) {
       linkedPlotRowButton.classList.toggle("active", runtime.plotAxis === "row");
@@ -854,6 +859,7 @@ function initializeHeatmapRuntime(shell) {
       linkedPlotPanel.hidden = true;
       linkedPlotPanel.classList.remove("is-visible");
     }
+    syncLinkedPlotLayoutState();
     setLinkedPlotTitle(null);
     syncPlotAxisButtons();
     renderHeatmap();
@@ -865,6 +871,7 @@ function initializeHeatmapRuntime(shell) {
       linkedPlotPanel.hidden = false;
       linkedPlotPanel.classList.add("is-visible");
     }
+    syncLinkedPlotLayoutState();
   }
 
   function isScrollableY(element) {
@@ -2018,6 +2025,7 @@ function initializeHeatmapRuntime(shell) {
     linkedPlotPanel.hidden = true;
     linkedPlotPanel.classList.remove("is-visible");
   }
+  syncLinkedPlotLayoutState();
   setLinkedPlotTitle(null);
   syncPlotAxisButtons();
   setPanState();
