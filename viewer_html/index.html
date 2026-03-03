@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>HDF Viewer</title>
+
+    <link rel="stylesheet" href="./css/tokens.css" />
+    <link rel="stylesheet" href="./css/app.css" />
+    <link rel="stylesheet" href="./css/home.css" />
+    <link rel="stylesheet" href="./css/viewer.css" />
+    <link rel="stylesheet" href="./css/viewer-panel.css" />
+    <link rel="stylesheet" href="./css/components/tree.css" />
+    <link rel="stylesheet" href="./css/components/table.css" />
+    <link rel="stylesheet" href="./css/components/charts.css" />
+  </head>
+  <body>
+    <div id="app-root"></div>
+
+    <script src="./config/runtime-config.js"></script>
+
+    <script src="./js/core/namespace.js" defer></script>
+    <script src="./js/core/config.js" defer></script>
+
+    <script src="./js/utils/format.js" defer></script>
+    <script src="./js/utils/lru.js" defer></script>
+    <script src="./js/utils/export.js" defer></script>
+
+    <script src="./js/api/client.js" defer></script>
+    <script src="./js/api/contracts.js" defer></script>
+    <script src="./js/api/hdf5Service.js" defer></script>
+
+    <script src="./js/state/store.js" defer></script>
+    <script src="./js/state/reducers/utils.js" defer></script>
+    <script src="./js/state/reducers/filesActions.js" defer></script>
+    <script src="./js/state/reducers/treeActions.js" defer></script>
+    <script src="./js/state/reducers/viewActions.js" defer></script>
+    <script src="./js/state/reducers/displayConfigActions.js" defer></script>
+    <script src="./js/state/reducers/dataActions.js" defer></script>
+    <script src="./js/state/reducers/compareActions.js" defer></script>
+    <script src="./js/state/reducers.js" defer></script>
+
+    <script src="./js/components/viewerPanel/shared.js" defer></script>
+    <script src="./js/components/viewerPanel/render/config.js" defer></script>
+    <script src="./js/components/viewerPanel/render/previews.js" defer></script>
+    <script src="./js/components/viewerPanel/render/dimensionControls.js" defer></script>
+    <script src="./js/components/viewerPanel/render/sections.js" defer></script>
+    <script src="./js/components/viewerPanel/render.js" defer></script>
+    <script src="./js/components/viewerPanel/runtime/common.js" defer></script>
+    <script src="./js/components/viewerPanel/runtime/matrixRuntime.js" defer></script>
+    <script src="./js/components/viewerPanel/runtime/lineRuntime.js" defer></script>
+    <script src="./js/components/viewerPanel/runtime/heatmapRuntime.js" defer></script>
+    <script src="./js/components/viewerPanel/runtime/bindEvents.js" defer></script>
+    <script src="./js/components/viewerPanel/runtime.js" defer></script>
+    <script src="./js/components/viewerPanel.js" defer></script>
+
+    <script src="./js/components/sidebarTree.js" defer></script>
+    <script src="./js/views/viewerView.js" defer></script>
+
+    <script src="./js/app-viewer.js" defer></script>
+  </body>
+</html>
