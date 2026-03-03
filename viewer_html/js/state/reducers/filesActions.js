@@ -117,6 +117,7 @@ function createFileActions(deps) {
 
     setState({
       route: "viewer",
+      viewerBlocked: false,
       selectedFile: selection.key || null,
       selectedFileEtag: selection.etag || null,
       selectedFileBucket: selection.bucket || null,
@@ -157,10 +158,34 @@ function createFileActions(deps) {
   goHome() {
     setState({
       route: "home",
+      viewerBlocked: true,
+      selectedFile: null,
+      selectedFileEtag: null,
+      selectedFileBucket: null,
+      selectedNodeType: "group",
+      selectedNodeName: "/",
       selectedPath: "/",
+      expandedPaths: new Set(["/"]),
+      childrenCache: new Map(),
+      treeLoadingPaths: new Set(),
+      treeErrors: new Map(),
+      metadata: null,
+      metadataLoading: false,
+      metadataError: null,
+      preview: null,
+      previewLoading: false,
+      previewError: null,
+      previewRequestKey: null,
+      previewRequestInFlight: false,
+      viewMode: "inspect",
+      displayTab: "line",
       lineCompareEnabled: false,
       lineCompareItems: [],
       lineCompareStatus: null,
+      matrixFullEnabled: false,
+      lineFullEnabled: false,
+      heatmapFullEnabled: false,
+      displayConfig: getDisplayConfigDefaults(),
     });
   },
 

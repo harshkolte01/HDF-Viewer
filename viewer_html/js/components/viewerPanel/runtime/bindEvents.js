@@ -1,4 +1,4 @@
-(function (global) {
+﻿(function (global) {
   "use strict";
   var ns = global.HDFViewer;
   if (!ns) {
@@ -11,132 +11,232 @@
     return;
   }
   var moduleState = ensurePath(ns, "components.viewerPanel.runtime.bindEvents");
-function isMobileWidth() {
-  return window.innerWidth <= 1024;
-}
-function bindViewerPanelEvents(root, actions) {
-  clearViewerRuntimeBindings();
 
-  /* â”€â”€ Sidebar collapse toggle (mobile) â”€â”€ */
-  root.querySelectorAll("[data-sidebar-toggle]").forEach((btn) => {
-    const sidebar = btn.closest(".preview-sidebar");
-    if (!sidebar) return;
-    /* auto-collapse on mobile */
-    if (isMobileWidth()) {
-      sidebar.classList.add("collapsed");
-    }
-    btn.addEventListener("click", () => {
-      sidebar.classList.toggle("collapsed");
-    });
-  });
+  var runtimeEventRoot = null;
+  var runtimeActions = {};
+  var disposeRuntimeEventBindings = null;
 
-  root.querySelectorAll("[data-axis-change]").forEach((button) => {
-    button.addEventListener("click", () => {
-      const axis = button.dataset.axisChange || "x";
-      const dim = Number(button.dataset.axisDim);
-      actions.setDisplayAxis(axis, dim);
-    });
-  });
+  function isMobileWidth() {
+    return window.innerWidth <= 1024;
+  }
 
-  root.querySelectorAll("[data-display-dim-select]").forEach((select) => {
-    select.addEventListener("change", () => {
-      const index = Number(select.dataset.dimIndex);
-      const dim = Number(select.value);
-      actions.setDisplayDim(index, dim);
-    });
-  });
-
-  root.querySelectorAll("[data-fixed-index-range]").forEach((input) => {
-    input.addEventListener("input", () => {
-      const dim = Number(input.dataset.fixedDim);
-      const size = Number(input.dataset.fixedSize);
-      actions.stageFixedIndex(dim, Number(input.value), size);
-    });
-  });
-
-  root.querySelectorAll("[data-fixed-index-number]").forEach((input) => {
-    input.addEventListener("change", () => {
-      const dim = Number(input.dataset.fixedDim);
-      const size = Number(input.dataset.fixedSize);
-      actions.stageFixedIndex(dim, Number(input.value), size);
-    });
-  });
-
-  root.querySelectorAll("[data-dim-apply]").forEach((button) => {
-    button.addEventListener("click", () => {
-      actions.applyDisplayConfig();
-    });
-  });
-
-  root.querySelectorAll("[data-dim-reset]").forEach((button) => {
-    button.addEventListener("click", () => {
-      actions.resetDisplayConfigFromPreview();
-    });
-  });
-
-  root.querySelectorAll("[data-matrix-enable]").forEach((button) => {
-    button.addEventListener("click", () => {
-      actions.enableMatrixFullView();
-    });
-  });
-
-  root.querySelectorAll("[data-line-enable]").forEach((button) => {
-    button.addEventListener("click", () => {
-      /* auto-collapse dimension sidebar on mobile when loading full chart */
-      if (isMobileWidth()) {
-        root.querySelectorAll(".preview-sidebar").forEach((sb) => {
-          sb.classList.add("collapsed");
-        });
+  function clearRuntimePanelBindings() {
+    if (typeof disposeRuntimeEventBindings === "function") {
+      try {
+        disposeRuntimeEventBindings();
+      } catch (_error) {
+        // ignore cleanup errors on detached roots
       }
-      actions.enableLineFullView();
+    }
+    disposeRuntimeEventBindings = null;
+    runtimeEventRoot = null;
+  }
+
+  function bindRuntimeDelegatedEvents(root) {
+    var onClick = function (event) {
+      var target = event.target;
+      if (!(target instanceof Element)) {
+        return;
+      }
+
+      var sidebarToggle = target.closest("[data-sidebar-toggle]");
+      if (sidebarToggle && root.contains(sidebarToggle)) {
+        var sidebar = sidebarToggle.closest(".preview-sidebar");
+        if (sidebar) {
+          sidebar.classList.toggle("collapsed");
+        }
+        return;
+      }
+
+      var axisChange = target.closest("[data-axis-change]");
+      if (axisChange && root.contains(axisChange)) {
+        if (typeof runtimeActions.setDisplayAxis === "function") {
+          var axis = axisChange.dataset.axisChange || "x";
+          var dim = Number(axisChange.dataset.axisDim);
+          runtimeActions.setDisplayAxis(axis, dim);
+        }
+        return;
+      }
+
+      var dimApply = target.closest("[data-dim-apply]");
+      if (dimApply && root.contains(dimApply)) {
+        if (typeof runtimeActions.applyDisplayConfig === "function") {
+          runtimeActions.applyDisplayConfig();
+        }
+        return;
+      }
+
+      var dimReset = target.closest("[data-dim-reset]");
+      if (dimReset && root.contains(dimReset)) {
+        if (typeof runtimeActions.resetDisplayConfigFromPreview === "function") {
+          runtimeActions.resetDisplayConfigFromPreview();
+        }
+        return;
+      }
+
+      var matrixEnable = target.closest("[data-matrix-enable]");
+      if (matrixEnable && root.contains(matrixEnable)) {
+        if (typeof runtimeActions.enableMatrixFullView === "function") {
+          runtimeActions.enableMatrixFullView();
+        }
+        return;
+      }
+
+      var lineEnable = target.closest("[data-line-enable]");
+      if (lineEnable && root.contains(lineEnable)) {
+        if (isMobileWidth()) {
+          root.querySelectorAll(".preview-sidebar").forEach(function (sidebar) {
+            sidebar.classList.add("collapsed");
+          });
+        }
+        if (typeof runtimeActions.enableLineFullView === "function") {
+          runtimeActions.enableLineFullView();
+        }
+        return;
+      }
+
+      var compareToggle = target.closest("[data-line-compare-toggle]");
+      if (compareToggle && root.contains(compareToggle)) {
+        if (typeof runtimeActions.toggleLineCompare === "function") {
+          runtimeActions.toggleLineCompare();
+        }
+        return;
+      }
+
+      var compareRemove = target.closest("[data-line-compare-remove]");
+      if (compareRemove && root.contains(compareRemove)) {
+        if (typeof runtimeActions.removeLineCompareDataset === "function") {
+          runtimeActions.removeLineCompareDataset(compareRemove.dataset.lineCompareRemove || "/");
+        }
+        return;
+      }
+
+      var compareClear = target.closest("[data-line-compare-clear]");
+      if (compareClear && root.contains(compareClear)) {
+        if (typeof runtimeActions.clearLineCompare === "function") {
+          runtimeActions.clearLineCompare();
+        }
+        return;
+      }
+
+      var compareDismiss = target.closest("[data-line-compare-dismiss]");
+      if (compareDismiss && root.contains(compareDismiss)) {
+        if (typeof runtimeActions.dismissLineCompareStatus === "function") {
+          runtimeActions.dismissLineCompareStatus();
+        }
+        return;
+      }
+
+      var heatmapEnable = target.closest("[data-heatmap-enable]");
+      if (heatmapEnable && root.contains(heatmapEnable)) {
+        if (typeof runtimeActions.enableHeatmapFullView === "function") {
+          runtimeActions.enableHeatmapFullView();
+        }
+      }
+    };
+
+    var onChange = function (event) {
+      var target = event.target;
+      if (!(target instanceof Element)) {
+        return;
+      }
+
+      var dimSelect = target.closest("[data-display-dim-select]");
+      if (dimSelect && root.contains(dimSelect)) {
+        if (typeof runtimeActions.setDisplayDim === "function") {
+          var index = Number(dimSelect.dataset.dimIndex);
+          var dim = Number(dimSelect.value);
+          runtimeActions.setDisplayDim(index, dim);
+        }
+        return;
+      }
+
+      var fixedNumber = target.closest("[data-fixed-index-number]");
+      if (fixedNumber && root.contains(fixedNumber)) {
+        if (typeof runtimeActions.stageFixedIndex === "function") {
+          var numDim = Number(fixedNumber.dataset.fixedDim);
+          var numSize = Number(fixedNumber.dataset.fixedSize);
+          runtimeActions.stageFixedIndex(numDim, Number(fixedNumber.value), numSize);
+        }
+      }
+    };
+
+    var onInput = function (event) {
+      var target = event.target;
+      if (!(target instanceof Element)) {
+        return;
+      }
+
+      var fixedRange = target.closest("[data-fixed-index-range]");
+      if (fixedRange && root.contains(fixedRange)) {
+        if (typeof runtimeActions.stageFixedIndex === "function") {
+          var dim = Number(fixedRange.dataset.fixedDim);
+          var size = Number(fixedRange.dataset.fixedSize);
+          runtimeActions.stageFixedIndex(dim, Number(fixedRange.value), size);
+        }
+      }
+    };
+
+    root.addEventListener("click", onClick);
+    root.addEventListener("change", onChange);
+    root.addEventListener("input", onInput);
+
+    disposeRuntimeEventBindings = function disposeRuntimePanelEvents() {
+      root.removeEventListener("click", onClick);
+      root.removeEventListener("change", onChange);
+      root.removeEventListener("input", onInput);
+    };
+  }
+
+  function bindViewerPanelEvents(root, actions) {
+    if (!root) {
+      return;
+    }
+
+    runtimeActions = actions && typeof actions === "object" ? actions : {};
+
+    if (runtimeEventRoot !== root || typeof disposeRuntimeEventBindings !== "function") {
+      clearRuntimePanelBindings();
+      runtimeEventRoot = root;
+      bindRuntimeDelegatedEvents(root);
+    }
+
+    if (typeof clearViewerRuntimeBindings === "function") {
+      clearViewerRuntimeBindings();
+    }
+
+    if (isMobileWidth()) {
+      root.querySelectorAll(".preview-sidebar").forEach(function (sidebar) {
+        sidebar.classList.add("collapsed");
+      });
+    }
+
+    root.querySelectorAll("[data-matrix-shell]").forEach(function (shell) {
+      if (typeof initializeMatrixRuntime === "function") {
+        initializeMatrixRuntime(shell);
+      }
     });
-  });
 
-  root.querySelectorAll("[data-line-compare-toggle]").forEach((button) => {
-    button.addEventListener("click", () => {
-      actions.toggleLineCompare();
+    root.querySelectorAll("[data-line-shell]").forEach(function (shell) {
+      if (typeof initializeLineRuntime === "function") {
+        initializeLineRuntime(shell);
+      }
     });
-  });
 
-  root.querySelectorAll("[data-line-compare-remove]").forEach((button) => {
-    button.addEventListener("click", () => {
-      actions.removeLineCompareDataset(button.dataset.lineCompareRemove || "/");
+    root.querySelectorAll("[data-heatmap-shell]").forEach(function (shell) {
+      if (typeof initializeHeatmapRuntime === "function") {
+        initializeHeatmapRuntime(shell);
+      }
     });
-  });
+  }
 
-  root.querySelectorAll("[data-line-compare-clear]").forEach((button) => {
-    button.addEventListener("click", () => {
-      actions.clearLineCompare();
-    });
-  });
-
-  root.querySelectorAll("[data-line-compare-dismiss]").forEach((button) => {
-    button.addEventListener("click", () => {
-      actions.dismissLineCompareStatus();
-    });
-  });
-
-  root.querySelectorAll("[data-heatmap-enable]").forEach((button) => {
-    button.addEventListener("click", () => {
-      actions.enableHeatmapFullView();
-    });
-  });
-
-  root.querySelectorAll("[data-matrix-shell]").forEach((shell) => {
-    initializeMatrixRuntime(shell);
-  });
-
-  root.querySelectorAll("[data-line-shell]").forEach((shell) => {
-    initializeLineRuntime(shell);
-  });
-
-  root.querySelectorAll("[data-heatmap-shell]").forEach((shell) => {
-    initializeHeatmapRuntime(shell);
-  });
-}
   if (typeof bindViewerPanelEvents !== "undefined") {
     moduleState.bindViewerPanelEvents = bindViewerPanelEvents;
     global.bindViewerPanelEvents = bindViewerPanelEvents;
+  }
+  if (typeof clearRuntimePanelBindings !== "undefined") {
+    moduleState.clearRuntimePanelBindings = clearRuntimePanelBindings;
+    global.clearRuntimePanelBindings = clearRuntimePanelBindings;
   }
   if (ns.core && typeof ns.core.registerModule === "function") {
     ns.core.registerModule("components/viewerPanel/runtime/bindEvents");

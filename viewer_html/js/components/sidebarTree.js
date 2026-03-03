@@ -310,56 +310,104 @@ function renderSidebarTree(state) {
     </aside>
   `;
 }
+
+let sidebarTreeEventRoot = null;
+let sidebarTreeActions = {};
+let disposeSidebarTreeEvents = null;
+
+function clearSidebarTreeBindings() {
+  if (typeof disposeSidebarTreeEvents === "function") {
+    try {
+      disposeSidebarTreeEvents();
+    } catch (_error) {
+      // ignore cleanup failures on detached roots
+    }
+  }
+  disposeSidebarTreeEvents = null;
+  sidebarTreeEventRoot = null;
+}
+
 function bindSidebarTreeEvents(root, actions) {
-  root.querySelectorAll("[data-tree-toggle-path]").forEach((button) => {
-    button.addEventListener("click", (event) => {
-      event.stopPropagation();
-      actions.toggleTreePath(button.dataset.treeTogglePath || "/");
-    });
-  });
+  if (!root) {
+    return;
+  }
 
-  root.querySelectorAll("[data-tree-retry-path]").forEach((button) => {
-    button.addEventListener("click", () => {
-      void actions.loadTreeChildren(button.dataset.treeRetryPath || "/", { force: true });
-    });
-  });
+  sidebarTreeActions = actions && typeof actions === "object" ? actions : {};
+  if (sidebarTreeEventRoot === root && typeof disposeSidebarTreeEvents === "function") {
+    return;
+  }
 
-  root.querySelectorAll("[data-tree-select-path]").forEach((button) => {
-    button.addEventListener("click", () => {
-      actions.selectTreeNode({
-        path: button.dataset.treeSelectPath || "/",
-        type: button.dataset.treeSelectType || "group",
-        name: button.dataset.treeSelectName || "",
-      });
-    });
-  });
+  clearSidebarTreeBindings();
+  sidebarTreeEventRoot = root;
 
-  root.querySelectorAll("[data-tree-compare-add-path]").forEach((button) => {
-    const onCompareAdd = (event) => {
+  const onClick = (event) => {
+    const target = event.target;
+    if (!(target instanceof Element)) {
+      return;
+    }
+
+    const compareButton = target.closest("[data-tree-compare-add-path]");
+    if (compareButton && root.contains(compareButton)) {
       event.preventDefault();
       event.stopPropagation();
 
-      if (button.disabled) {
+      if (compareButton.disabled) {
         return;
       }
 
-      const shape = String(button.dataset.treeCompareAddShape || "")
+      const shape = String(compareButton.dataset.treeCompareAddShape || "")
         .split(",")
         .map((entry) => Number(entry))
         .filter((entry) => Number.isFinite(entry) && entry >= 0);
 
-      actions.addLineCompareDataset({
-        path: button.dataset.treeCompareAddPath || "/",
-        name: button.dataset.treeCompareAddName || "",
-        type: button.dataset.treeCompareAddType || "dataset",
-        dtype: button.dataset.treeCompareAddDtype || "",
-        ndim: Number(button.dataset.treeCompareAddNdim),
-        shape,
-      });
-    };
+      if (typeof sidebarTreeActions.addLineCompareDataset === "function") {
+        sidebarTreeActions.addLineCompareDataset({
+          path: compareButton.dataset.treeCompareAddPath || "/",
+          name: compareButton.dataset.treeCompareAddName || "",
+          type: compareButton.dataset.treeCompareAddType || "dataset",
+          dtype: compareButton.dataset.treeCompareAddDtype || "",
+          ndim: Number(compareButton.dataset.treeCompareAddNdim),
+          shape,
+        });
+      }
+      return;
+    }
 
-    button.addEventListener("click", onCompareAdd);
-  });
+    const toggleButton = target.closest("[data-tree-toggle-path]");
+    if (toggleButton && root.contains(toggleButton)) {
+      event.stopPropagation();
+      if (typeof sidebarTreeActions.toggleTreePath === "function") {
+        sidebarTreeActions.toggleTreePath(toggleButton.dataset.treeTogglePath || "/");
+      }
+      return;
+    }
+
+    const retryButton = target.closest("[data-tree-retry-path]");
+    if (retryButton && root.contains(retryButton)) {
+      if (typeof sidebarTreeActions.loadTreeChildren === "function") {
+        void sidebarTreeActions.loadTreeChildren(retryButton.dataset.treeRetryPath || "/", {
+          force: true,
+        });
+      }
+      return;
+    }
+
+    const selectButton = target.closest("[data-tree-select-path]");
+    if (selectButton && root.contains(selectButton)) {
+      if (typeof sidebarTreeActions.selectTreeNode === "function") {
+        sidebarTreeActions.selectTreeNode({
+          path: selectButton.dataset.treeSelectPath || "/",
+          type: selectButton.dataset.treeSelectType || "group",
+          name: selectButton.dataset.treeSelectName || "",
+        });
+      }
+    }
+  };
+
+  root.addEventListener("click", onClick);
+  disposeSidebarTreeEvents = function disposeSidebarTreeEventsImpl() {
+    root.removeEventListener("click", onClick);
+  };
 }
   if (typeof renderSidebarTree !== "undefined") {
     moduleState.renderSidebarTree = renderSidebarTree;
@@ -368,6 +416,10 @@ function bindSidebarTreeEvents(root, actions) {
   if (typeof bindSidebarTreeEvents !== "undefined") {
     moduleState.bindSidebarTreeEvents = bindSidebarTreeEvents;
     global.bindSidebarTreeEvents = bindSidebarTreeEvents;
+  }
+  if (typeof clearSidebarTreeBindings !== "undefined") {
+    moduleState.clearSidebarTreeBindings = clearSidebarTreeBindings;
+    global.clearSidebarTreeBindings = clearSidebarTreeBindings;
   }
   if (ns.core && typeof ns.core.registerModule === "function") {
     ns.core.registerModule("components/sidebarTree");

@@ -62,6 +62,29 @@
     }
     ns.core.loadedModules[moduleId] = true;
   };
+  ns.core.requireModules = function requireModules(moduleIds, scope) {
+    var ids = Array.isArray(moduleIds) ? moduleIds : [];
+    var missing = [];
+
+    for (var i = 0; i < ids.length; i += 1) {
+      var id = ids[i];
+      if (id && !ns.core.loadedModules[id]) {
+        missing.push(id);
+      }
+    }
+
+    if (missing.length > 0) {
+      console.error(
+        "[HDFViewer] Missing required modules" + (scope ? " for " + scope : "") + ":",
+        missing.join(", ")
+      );
+    }
+
+    return {
+      ok: missing.length === 0,
+      missing: missing,
+    };
+  };
 
   ns.core.registerModule("core/namespace");
 

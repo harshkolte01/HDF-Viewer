@@ -14,19 +14,91 @@
   }
 
   var moduleState = ensurePath(ns, "app.viewerBoot");
-
   var root = document.getElementById("viewer-app");
   var renderQueued = false;
-  var bootContext = {
-    deepLinkKey: null,
-    deepLinkBucket: null,
-    hasFile: false,
-  };
+
+  function setBootFailureStatus(message) {
+    var statusNode = document.getElementById("global-status");
+    if (!statusNode) {
+      return;
+    }
+
+    statusNode.textContent = String(message || "Viewer bootstrap failed.");
+    statusNode.classList.remove("info");
+    statusNode.classList.add("error");
+  }
 
   function resolveActions() {
-    return typeof actions !== "undefined" && actions && typeof actions === "object"
-      ? actions
-      : {};
+    if (typeof actions !== "undefined" && actions && typeof actions === "object") {
+      return actions;
+    }
+    if (ns.state && ns.state.actions && typeof ns.state.actions === "object") {
+      return ns.state.actions;
+    }
+    return {};
+  }
+
+  function verifyRuntimeDependencies() {
+    var missingGlobals = [];
+
+    if (typeof getState !== "function") {
+      missingGlobals.push("getState");
+    }
+    if (typeof subscribe !== "function") {
+      missingGlobals.push("subscribe");
+    }
+    if (typeof renderViewerView !== "function") {
+      missingGlobals.push("renderViewerView");
+    }
+    if (typeof bindViewerViewEvents !== "function") {
+      missingGlobals.push("bindViewerViewEvents");
+    }
+
+    var missingModules = [];
+    var requiredModules = [
+      "core/namespace",
+      "core/config",
+      "core/domRefs",
+      "utils/format",
+      "api/client",
+      "api/contracts",
+      "api/hdf5Service",
+      "state/store",
+      "state/reducers",
+      "components/sidebarTree",
+      "components/viewerPanel",
+      "views/viewerView",
+    ];
+
+    if (ns.core && typeof ns.core.requireModules === "function") {
+      var requirement = ns.core.requireModules(requiredModules, "app-viewer");
+      if (!requirement.ok) {
+        missingModules = requirement.missing || [];
+      }
+    }
+
+    var hasRoot = !!root;
+    if (!hasRoot) {
+      missingGlobals.push("#viewer-app");
+    }
+
+    if (missingGlobals.length > 0 || missingModules.length > 0) {
+      console.error("[HDFViewer] Runtime dependency check failed.", {
+        missingGlobals: missingGlobals,
+        missingModules: missingModules,
+      });
+      return {
+        ok: false,
+        missingGlobals: missingGlobals,
+        missingModules: missingModules,
+      };
+    }
+
+    return {
+      ok: true,
+      missingGlobals: [],
+      missingModules: [],
+    };
   }
 
   function queueRender() {
@@ -58,8 +130,10 @@
     }
 
     var state = getState();
+    var missingFile = state && state.viewerBlocked === true;
+
     renderViewerView(state, {
-      missingFile: !bootContext.hasFile,
+      missingFile: missingFile,
       deepLinkExample: "?file=<url-encoded-object-key>&bucket=<bucket-name>",
     });
 
@@ -69,24 +143,35 @@
   }
 
   async function bootstrapApp() {
-    var actionsApi = resolveActions();
+    var deps = verifyRuntimeDependencies();
+    if (!deps.ok) {
+      setBootFailureStatus("Viewer bootstrap failed: missing runtime dependencies.");
+      return;
+    }
 
     if (typeof validateViewerDomIds === "function") {
       var validation = validateViewerDomIds(document);
       if (!validation.ok) {
+        setBootFailureStatus(
+          "Viewer bootstrap failed: missing required DOM IDs (" +
+            validation.missing.join(", ") +
+            ")."
+        );
         return;
       }
     }
 
-    await Promise.allSettled([
-      typeof initViewerViewTemplate === "function" ? initViewerViewTemplate() : Promise.resolve(),
-    ]);
+    if (typeof initViewerViewTemplate === "function") {
+      await Promise.allSettled([initViewerViewTemplate()]);
+    }
 
     if (typeof subscribe === "function") {
       subscribe(queueRender);
     }
 
+    var actionsApi = resolveActions();
     var mql = window.matchMedia("(max-width: 1024px)");
+
     function handleViewportChange(e) {
       if (typeof actionsApi.setSidebarOpen === "function") {
         actionsApi.setSidebarOpen(!e.matches);
@@ -103,22 +188,26 @@
       actionsApi.setSidebarOpen(false);
     }
 
-    bootContext.deepLinkKey = new URLSearchParams(location.search).get("file");
-    bootContext.deepLinkBucket = new URLSearchParams(location.search).get("bucket");
-    bootContext.hasFile = Boolean(bootContext.deepLinkKey);
+    var params = new URLSearchParams(location.search);
+    var deepLinkKey = params.get("file");
+    var deepLinkBucket = params.get("bucket");
+    var hasFile = Boolean(deepLinkKey);
 
-    if (bootContext.hasFile && typeof actionsApi.openViewer === "function") {
+    if (hasFile && typeof actionsApi.openViewer === "function") {
       history.replaceState({}, "", location.pathname);
       actionsApi.openViewer({
-        key: bootContext.deepLinkKey,
+        key: deepLinkKey,
         etag: null,
-        bucket: bootContext.deepLinkBucket || null,
+        bucket: deepLinkBucket || null,
       });
 
       if (typeof actionsApi.loadFiles === "function") {
         void actionsApi.loadFiles();
       }
     } else {
+      if (typeof actionsApi.goHome === "function") {
+        actionsApi.goHome();
+      }
       if (typeof clearViewerRuntimeBindings === "function") {
         clearViewerRuntimeBindings();
       }
@@ -129,18 +218,15 @@
 
   void bootstrapApp();
 
-  if (typeof queueRender !== "undefined") {
-    moduleState.queueRender = queueRender;
-    global.queueRender = queueRender;
-  }
-  if (typeof renderApp !== "undefined") {
-    moduleState.renderApp = renderApp;
-    global.renderApp = renderApp;
-  }
-  if (typeof bootstrapApp !== "undefined") {
-    moduleState.bootstrapApp = bootstrapApp;
-    global.bootstrapApp = bootstrapApp;
-  }
+  moduleState.queueRender = queueRender;
+  moduleState.renderApp = renderApp;
+  moduleState.bootstrapApp = bootstrapApp;
+  moduleState.verifyRuntimeDependencies = verifyRuntimeDependencies;
+
+  global.queueRender = queueRender;
+  global.renderApp = renderApp;
+  global.bootstrapApp = bootstrapApp;
+  global.verifyRuntimeDependencies = verifyRuntimeDependencies;
 
   if (ns.core && typeof ns.core.registerModule === "function") {
     ns.core.registerModule("app-viewer");

@@ -221,3 +221,84 @@ viewer_html/
 - Theme and CSS remain the same values and styles as existing old_web assets.
 - Backend API contract remains unchanged.
 - Doc artifact is created in root `docs/` as the agent context record for this planning work.
+
+## HTML-ID Implementation Variant (2026-03-03)
+
+### Final DOM ID contract
+- `viewer-app`
+- `viewer-sidebar`
+- `sidebar-header`
+- `tree-panel`
+- `tree-list`
+- `tree-status`
+- `viewer-main`
+- `viewer-topbar`
+- `breadcrumb-file`
+- `breadcrumb-path`
+- `viewer-subbar`
+- `subbar-tabs`
+- `subbar-actions`
+- `viewer-panel`
+- `display-pane`
+- `inspect-pane`
+- `display-status`
+- `inspect-status`
+- `global-status`
+- `sidebar-backdrop`
+- `sidebar-toggle-btn`
+- `sidebar-close-btn`
+- `viewer-back-btn`
+- `viewer-fullscreen-btn`
+
+### Script order (plain JS, non-module)
+1. `config/runtime-config.js`
+2. `js/core/namespace.js`
+3. `js/core/config.js`
+4. `js/core/domRefs.js`
+5. `js/utils/format.js`
+6. `js/utils/lru.js`
+7. `js/utils/export.js`
+8. `js/api/client.js`
+9. `js/api/contracts.js`
+10. `js/api/hdf5Service.js`
+11. `js/state/store.js`
+12. `js/state/reducers/utils.js`
+13. `js/state/reducers/filesActions.js`
+14. `js/state/reducers/treeActions.js`
+15. `js/state/reducers/viewActions.js`
+16. `js/state/reducers/displayConfigActions.js`
+17. `js/state/reducers/dataActions.js`
+18. `js/state/reducers/compareActions.js`
+19. `js/state/reducers.js`
+20. `js/components/viewerPanel/shared.js`
+21. `js/components/viewerPanel/render/config.js`
+22. `js/components/viewerPanel/render/previews.js`
+23. `js/components/viewerPanel/render/dimensionControls.js`
+24. `js/components/viewerPanel/render/sections.js`
+25. `js/components/viewerPanel/render.js`
+26. `js/components/viewerPanel/runtime/common.js`
+27. `js/components/viewerPanel/runtime/matrixRuntime.js`
+28. `js/components/viewerPanel/runtime/lineRuntime.js`
+29. `js/components/viewerPanel/runtime/heatmapRuntime.js`
+30. `js/components/viewerPanel/runtime/bindEvents.js`
+31. `js/components/viewerPanel/runtime.js`
+32. `js/components/viewerPanel.js`
+33. `js/components/sidebarTree.js`
+34. `js/views/viewerView.js`
+35. `js/app-viewer.js`
+
+### Implementation status by phase
+- `Phase 1`: Complete (static HTML shell with full ID contract).
+- `Phase 2`: Complete (`core/domRefs` utility, ID validation, UI helper methods).
+- `Phase 3`: Complete (plain JS module conversion with shared namespace and non-module boot).
+- `Phase 4`: Complete (ID-driven viewer orchestration with static shell regions).
+- `Phase 5`: Complete (tree/panel bindings converted to delegated stable handlers; compare/export behaviors retained).
+- `Phase 6`: Complete (matrix/line/heatmap runtimes preserved and initialized from panel runtime binder).
+- `Phase 7`: Complete (viewer-only deep-link lifecycle, missing-file blocking, back-to-guidance behavior).
+- `Phase 8`: Complete for current scope (dependency checks, blocked-state guards, status/error surface hardening).
+- `Phase 9`: Complete (this section plus agent context docs and verification notes).
+
+### Browser support and constraints
+- Target: modern evergreen browsers.
+- Fullscreen API required for global fullscreen control.
+- No support for legacy browsers without `fetch`, `AbortController`, or `URL`.

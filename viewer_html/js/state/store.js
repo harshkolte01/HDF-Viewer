@@ -13,6 +13,7 @@
   var moduleState = ensurePath(ns, "state.store");
 const state = {
   route: "home",
+  viewerBlocked: true,
   files: [],
   loading: false,
   error: null,
