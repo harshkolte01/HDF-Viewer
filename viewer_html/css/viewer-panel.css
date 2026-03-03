@@ -9,13 +9,14 @@
 
 .panel-canvas {
     flex: 1;
+    min-height: 0;        /* critical: lets flex child shrink below content height */
     overflow-y: auto;
     padding: var(--spacing-xl);
+    scrollbar-gutter: stable;
 }
 
 .panel-canvas.panel-canvas-line-fixed {
-    overflow-y: hidden;
-    min-height: 0;
+    overflow-y: auto;
 }
 
 /* Panel States */
@@ -151,6 +152,8 @@
     grid-column: 1;
     grid-row: 1;
     min-height: 0;
+    align-self: start;
+    align-content: start;
 }
 
 .preview-layout.is-line .preview-content {
@@ -158,49 +161,16 @@
     grid-row: 1;
 }
 
-.preview-shell.preview-shell-line-fixed {
-    height: 100%;
-    min-height: 0;
-}
-
-.preview-shell.preview-shell-line-fixed .preview-layout.is-line {
-    height: 100%;
-    min-height: 0;
-}
-
+/* preview-shell-line-fixed: charts use clamp heights; no fill-viewport chain needed */
 .preview-shell.preview-shell-line-fixed .preview-sidebar {
-    overflow: hidden;
-}
-
-.preview-shell.preview-shell-line-fixed .preview-content {
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
-}
-
-.preview-shell.preview-shell-line-fixed .data-section {
-    flex: 1;
-    min-height: 0;
-}
-
-.preview-shell.preview-shell-line-fixed .line-chart-shell-full {
-    flex: 1;
-    min-height: 0;
-}
-
-.preview-shell.preview-shell-line-fixed .line-chart-stage {
-    flex: 1;
-    min-height: 0;
-}
-
-.preview-shell.preview-shell-line-fixed .line-chart-canvas {
-    height: 100%;
-    min-height: 0;
+    align-self: start;
+    align-content: start;
 }
 
 .preview-sidebar {
     display: grid;
     gap: var(--spacing-md);
+    align-content: start;
 }
 
 .dimension-summary {
@@ -826,11 +796,11 @@
 }
 
 .line-chart-shell-full {
-    min-height: clamp(250px, 40vh, 420px);
+    /* min-height removed — canvas height drives the shell size */
 }
 
 .line-chart-shell-full .line-chart-canvas {
-    height: clamp(220px, 42vh, 480px);
+    height: clamp(220px, calc(100dvh - 400px), 360px);
     cursor: crosshair;
 }
 
@@ -979,18 +949,33 @@ body.line-panel-fullscreen-active {
     overscroll-behavior: contain;
     min-width: 0;
     max-width: 100%;
+    overflow: hidden;
 }
 
 .line-chart-canvas {
+    position: relative;
     width: 100%;
     max-width: 100%;
     min-width: 0;
-    height: clamp(200px, 45vh, 480px);
+    height: clamp(200px, calc(100dvh - 400px), 360px);
+    overflow: hidden;
+    touch-action: none;
+}
+
+/* Visual chrome only on the pure line-chart canvas, not on heatmap canvas container */
+.line-chart-canvas:not(.heatmap-chart-canvas) {
     border-radius: var(--radius-md);
     background: var(--surface-alt);
     border: 1px solid var(--border);
-    overflow: hidden;
-    touch-action: none;
+}
+
+/* SVG absolutely fills canvas — removed from normal flow to prevent resize loops */
+.line-chart-canvas > svg[data-line-svg] {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
 }
 
 .line-chart-canvas:focus {
@@ -999,7 +984,7 @@ body.line-panel-fullscreen-active {
 }
 
 .heatmap-chart-shell {
-    min-height: clamp(250px, 45vh, 460px);
+    /* height driven by .heatmap-chart-canvas + linked plot content */
 }
 
 .heatmap-chart-toolbar {
@@ -1251,6 +1236,7 @@ body.line-panel-fullscreen-active {
     display: flex;
     flex-direction: column;
     gap: var(--spacing-sm);
+    scroll-margin-top: var(--spacing-md);
 }
 
 .heatmap-linked-plot[hidden] {
@@ -1280,20 +1266,22 @@ body.line-panel-fullscreen-active {
 
 .heatmap-linked-plot-shell-host {
     width: 100%;
+    overflow: hidden;
 }
 
 .heatmap-inline-line-shell {
     margin: 0;
-    min-height: clamp(230px, 36vh, 390px);
+    /* min-height removed — canvas height drives the shell size */
     overflow-anchor: none;
 }
 
 .heatmap-inline-line-shell .line-chart-canvas {
-    height: clamp(210px, 34vh, 380px);
+    height: clamp(200px, calc(100dvh - 520px), 300px);
     overflow-anchor: none;
 }
 
 .heatmap-inline-line-shell .line-chart-stage {
+    overflow: hidden;
     overflow-anchor: none;
 }
 
@@ -1407,18 +1395,12 @@ body.line-panel-fullscreen-active {
         grid-row: 2;
     }
 
-    .preview-shell.preview-shell-line-fixed {
-        height: auto;
-        max-height: calc(100dvh - 120px);
-        overflow-y: auto;
-    }
-
     .line-chart-shell-full {
-        min-height: clamp(200px, 35vh, 350px);
+        /* shell height driven by canvas */
     }
 
     .line-chart-shell-full .line-chart-canvas {
-        height: clamp(180px, 35vh, 380px);
+        height: clamp(180px, calc(100dvh - 420px), 320px);
     }
 
     .preview-sidebar {
@@ -1441,7 +1423,6 @@ body.line-panel-fullscreen-active {
 
     .panel-canvas.panel-canvas-line-fixed {
         overflow-y: auto;
-        max-height: calc(100dvh - 100px);
     }
 
     .info-row {
@@ -1531,7 +1512,7 @@ body.line-panel-fullscreen-active {
     }
 
     .line-chart-shell-full .line-chart-canvas {
-        height: clamp(160px, 30vh, 320px);
+        height: clamp(160px, calc(100dvh - 440px), 280px);
     }
 }
 

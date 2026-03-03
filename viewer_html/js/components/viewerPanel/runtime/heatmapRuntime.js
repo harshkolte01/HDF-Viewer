@@ -867,6 +867,91 @@ function initializeHeatmapRuntime(shell) {
     }
   }
 
+  function isScrollableY(element) {
+    if (typeof window === "undefined" || !element) {
+      return false;
+    }
+    const style = window.getComputedStyle(element);
+    const overflowY = (style.overflowY || "").toLowerCase();
+    const canScrollY =
+      overflowY === "auto" || overflowY === "scroll" || overflowY === "overlay";
+    return canScrollY && element.scrollHeight > element.clientHeight + 1;
+  }
+
+  function resolveLinkedPlotScrollHost() {
+    let current = linkedPlotPanel ? linkedPlotPanel.parentElement : null;
+    while (current) {
+      if (isScrollableY(current)) {
+        return current;
+      }
+      current = current.parentElement;
+    }
+    if (typeof document !== "undefined" && document.scrollingElement) {
+      return document.scrollingElement;
+    }
+    return null;
+  }
+
+  function scrollLinkedPlotIntoView(smooth = true) {
+    if (
+      runtime.destroyed ||
+      runtime.fullscreenActive ||
+      !linkedPlotPanel ||
+      linkedPlotPanel.hidden
+    ) {
+      return;
+    }
+
+    const scrollHost = resolveLinkedPlotScrollHost();
+    const rootScroller =
+      typeof document !== "undefined"
+        ? document.scrollingElement || document.documentElement || document.body
+        : null;
+    if (scrollHost && scrollHost !== rootScroller) {
+      const panelRect = linkedPlotPanel.getBoundingClientRect();
+      const hostRect = scrollHost.getBoundingClientRect();
+      const margin = 12;
+      const outsideViewport =
+        panelRect.top < hostRect.top + margin || panelRect.bottom > hostRect.bottom - margin;
+      if (!outsideViewport) {
+        return;
+      }
+      const targetTop = Math.max(
+        0,
+        scrollHost.scrollTop + (panelRect.top - hostRect.top) - margin
+      );
+      try {
+        scrollHost.scrollTo({
+          top: targetTop,
+          behavior: smooth ? "smooth" : "auto",
+        });
+      } catch (_error) {
+        scrollHost.scrollTop = targetTop;
+      }
+      return;
+    }
+
+    try {
+      linkedPlotPanel.scrollIntoView({
+        block: "start",
+        inline: "nearest",
+        behavior: smooth ? "smooth" : "auto",
+      });
+    } catch (_error) {
+      linkedPlotPanel.scrollIntoView(true);
+    }
+  }
+
+  function revealLinkedPlotIntoView() {
+    scrollLinkedPlotIntoView(false);
+    if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
+      window.requestAnimationFrame(() => scrollLinkedPlotIntoView(true));
+    } else {
+      scrollLinkedPlotIntoView(true);
+    }
+    setTimeout(() => scrollLinkedPlotIntoView(false), 220);
+  }
+
   function normalizeSelectedCell(cell) {
     if (!cell) {
       return null;
@@ -908,7 +993,7 @@ function initializeHeatmapRuntime(shell) {
     );
     renderHeatmap();
     if (!isSameSelection) {
-      renderLinkedPlotLine();
+      renderLinkedPlotLine({ revealPanel: true });
     } else {
       setLinkedPlotTitle(runtime.selectedCell);
       syncPlotAxisButtons();
@@ -928,7 +1013,7 @@ function initializeHeatmapRuntime(shell) {
     };
   }
 
-  function renderLinkedPlotLine() {
+  function renderLinkedPlotLine(options = {}) {
     if (!runtime.selectedCell || !linkedPlotShellHost) {
       return;
     }
@@ -984,6 +1069,9 @@ function initializeHeatmapRuntime(shell) {
         ? lineShell.__lineRuntimeCleanup
         : null;
     persistViewState();
+    if (options.revealPanel === true) {
+      revealLinkedPlotIntoView();
+    }
   }
 
   function setPanState() {
