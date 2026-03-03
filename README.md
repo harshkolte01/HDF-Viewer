@@ -1,4 +1,7 @@
 # HDF Viewer
+http://152.53.240.143:9201
+sec-chat-application.vercel.app
+
 
 HDF Viewer is a full-stack system for browsing, inspecting, and visualizing HDF5 files stored in MinIO or S3-compatible storage.
 
@@ -6,6 +9,7 @@ The current production UI is `old_web/` (vanilla ES modules).
 The API server is `backend/` (Flask).
 
 ## Current Stack
+
 
 | Layer | Directory | Status | Core Tech |
 |---|---|---|---|
