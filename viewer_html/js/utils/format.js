@@ -1,3 +1,4 @@
+// Viewer HTML module: Provides shared HTML escaping and byte formatting helpers used by renderers.
 (function (global) {
   "use strict";
   var ns = global.HDFViewer;

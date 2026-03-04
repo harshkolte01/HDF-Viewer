@@ -1,3 +1,4 @@
+// Viewer HTML module: Provides runtime facade binding function used by higher-level viewer panel integration.
 (function (global) {
   "use strict";
   var ns = global.HDFViewer;
@@ -27,3 +28,4 @@ function bindViewerPanelEvents(root, actions) {
     ns.core.registerModule("components/viewerPanel/runtime");
   }
 })(typeof window !== "undefined" ? window : globalThis);
+

@@ -1,3 +1,4 @@
+// Viewer HTML module: Implements virtualized matrix block streaming, viewport rendering, and matrix CSV export actions.
 (function (global) {
   "use strict";
   var ns = global.HDFViewer;

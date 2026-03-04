@@ -1,3 +1,4 @@
+// Viewer HTML module: Manages runtime cleanup registries and shared DOM utilities for matrix, line, and heatmap runtimes.
 (function (global) {
   "use strict";
   var ns = global.HDFViewer;

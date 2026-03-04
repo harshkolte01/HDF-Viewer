@@ -1,3 +1,4 @@
+// Viewer HTML module: Defines shared chart/table constants and helper functions used by panel renderers and runtimes.
 (function (global) {
   "use strict";
   var ns = global.HDFViewer;

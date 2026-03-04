@@ -1,3 +1,4 @@
+// Viewer HTML module: Implements cached HDF5 API operations for files, tree, metadata, preview, and mode-specific data fetches.
 (function (global) {
   "use strict";
   var ns = global.HDFViewer;

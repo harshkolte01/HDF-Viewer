@@ -1,3 +1,4 @@
+// Viewer HTML module: Handles file list loading, viewer open/reset lifecycle, and route-level file selection state.
 (function (global) {
   "use strict";
   var ns = global.HDFViewer;
@@ -207,3 +208,4 @@ function createFileActions(deps) {
     ns.core.registerModule("state/reducers/filesActions");
   }
 })(typeof window !== "undefined" ? window : globalThis);
+

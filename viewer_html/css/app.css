@@ -1,3 +1,4 @@
+/* Viewer HTML styles: Shared base/home-level layout and table styling used across viewer_html pages. */
 * {
   margin: 0;
   padding: 0;
@@ -591,3 +592,4 @@ body {
     white-space: nowrap;
   }
 }
+

@@ -1,3 +1,4 @@
+// Viewer HTML module: Implements canvas heatmap runtime with zoom/pan/plot mode, linked line plot, and export support.
 (function (global) {
   "use strict";
   var ns = global.HDFViewer;
@@ -2119,3 +2120,4 @@ function initializeHeatmapRuntime(shell) {
     ns.core.registerModule("components/viewerPanel/runtime/heatmapRuntime");
   }
 })(typeof window !== "undefined" ? window : globalThis);
+

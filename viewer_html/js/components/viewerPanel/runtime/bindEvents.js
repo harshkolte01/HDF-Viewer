@@ -1,4 +1,5 @@
-﻿(function (global) {
+// Viewer HTML module: Delegates panel interaction events and initializes per-shell matrix, line, and heatmap runtimes.
+(function (global) {
   "use strict";
   var ns = global.HDFViewer;
   if (!ns) {
@@ -242,3 +243,4 @@
     ns.core.registerModule("components/viewerPanel/runtime/bindEvents");
   }
 })(typeof window !== "undefined" ? window : globalThis);
+

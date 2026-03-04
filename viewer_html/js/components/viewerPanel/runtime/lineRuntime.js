@@ -1,3 +1,4 @@
+// Viewer HTML module: Implements interactive line runtime with zoom/pan/click-zoom, compare overlays, and export support.
 (function (global) {
   "use strict";
   var ns = global.HDFViewer;

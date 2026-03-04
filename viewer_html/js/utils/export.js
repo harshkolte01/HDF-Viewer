@@ -1,3 +1,4 @@
+// Viewer HTML module: Provides CSV and PNG export utilities with safe filename and CSV cell handling.
 (function (global) {
   "use strict";
   var ns = global.HDFViewer;

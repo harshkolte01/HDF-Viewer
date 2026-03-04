@@ -1,3 +1,4 @@
+// Viewer HTML module: Assembles the viewer panel wrapper and chooses inspect or display section rendering.
 (function (global) {
   "use strict";
   var ns = global.HDFViewer;

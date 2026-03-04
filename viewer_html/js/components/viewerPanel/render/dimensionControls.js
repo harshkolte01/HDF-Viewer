@@ -1,3 +1,4 @@
+// Viewer HTML module: Renders dimension selectors and fixed-index controls for multidimensional dataset slicing.
 (function (global) {
   "use strict";
   var ns = global.HDFViewer;

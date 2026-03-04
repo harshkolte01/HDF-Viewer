@@ -1,3 +1,4 @@
+/* Viewer HTML styles: Minimal shared chart surface style used by lightweight preview components. */
 .chart-surface {
   width: 100%;
   min-height: 240px;
@@ -5,3 +6,4 @@
   border-radius: var(--radius-md);
   background: var(--surface-alt);
 }
+

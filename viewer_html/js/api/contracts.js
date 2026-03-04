@@ -1,3 +1,4 @@
+// Viewer HTML module: Normalizes backend payloads into predictable frontend contracts for files, tree, meta, preview, and data.
 (function (global) {
   "use strict";
   var ns = global.HDFViewer;

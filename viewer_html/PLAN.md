@@ -1,304 +1,226 @@
-# Viewer_HTML Single-Entry Plain-JS Viewer (Production Plan)
+# Viewer_HTML Full-Proof Implementation Plan (HTML-ID Shell + Full Parity)
 
 ## Summary
-Build a viewer-only frontend in `viewer_html/` with one entry page (`index.html`) and no ES modules (`import/export` removed).  
-The runtime will keep full old_web viewer parity (sidebar tree, top bar, secondary top bar, inspect/display, matrix/line/heatmap full runtimes, compare, export, fullscreen), use unchanged theme/CSS values, and be self-contained for deployment.
+Implement `viewer_html` as a full production viewer using a static, ID-driven `index.html` shell and plain JavaScript files (no ES modules), while preserving full old_web viewer behavior: tree navigation, inspect/display switching, matrix/line/heatmap full runtimes, compare mode, export, fullscreen, caching, and responsive behavior.
 
-## Locked Decisions
-- JavaScript strategy: multi-file plain scripts with a shared global namespace.
-- Feature scope: full parity with current old_web viewer behavior.
-- Missing `?file=` behavior: block viewer with clear guidance (no auto-open fallback).
-- Asset strategy: self-contained `viewer_html` (own copied CSS/assets and plain JS runtime).
-
-## Final Target Structure
-```text
-viewer_html/
-  index.html
-  assets/
-    ...copied from old_web/assets
-  css/
-    tokens.css
-    app.css
-    home.css
-    viewer.css
-    viewer-panel.css
-    components/
-      tree.css
-      table.css
-      charts.css
-  js/
-    core/
-      namespace.js
-      config.js
-    utils/
-      format.js
-      lru.js
-      export.js
-    api/
-      client.js
-      contracts.js
-      hdf5Service.js
-    state/
-      store.js
-      reducers.js
-      reducers/
-        utils.js
-        filesActions.js
-        treeActions.js
-        viewActions.js
-        displayConfigActions.js
-        dataActions.js
-        compareActions.js
-    components/
-      sidebarTree.js
-      viewerPanel.js
-      viewerPanel/
-        shared.js
-        render.js
-        runtime.js
-        render/
-          config.js
-          previews.js
-          dimensionControls.js
-          sections.js
-        runtime/
-          common.js
-          bindEvents.js
-          matrixRuntime.js
-          lineRuntime.js
-          heatmapRuntime.js
-    views/
-      viewerView.js
-    app-viewer.js
-```
+## Success Criteria
+1. `viewer_html/index.html` contains the permanent layout shell with unique IDs for sidebar, topbar, secondary bar, display pane, and inspect pane.
+2. All viewer features available in old_web viewer route are available in `viewer_html`.
+3. No `import`/`export` and no `type="module"` anywhere in `viewer_html`.
+4. API contract remains unchanged and all data requests use `fetch` with abort support.
+5. Implementation is stable on repeated interactions, fast path switching, and fullscreen transitions.
 
 ## Public Interfaces / Contracts
-- URL contract for viewer page:
-  - Required: `?file=<url-encoded-object-key>`
-  - Optional: `&bucket=<bucket-name>`
-- Missing file UX contract:
-  - Render full viewer shell with blocking empty-state panel: “Missing `file` query parameter”.
-  - No tree/data requests until parameter is present.
-- Global runtime contract:
-  - `window.HDFViewer` namespace contains all modules and boot entry.
-  - No `type="module"` scripts anywhere in `viewer_html/index.html`.
-- Backend API contract: unchanged
-  - `GET /files`
-  - `POST /files/refresh`
-  - `GET /files/<key>/children`
-  - `GET /files/<key>/meta`
-  - `GET /files/<key>/preview`
-  - `GET /files/<key>/data`
-  - `GET /files/<key>/export/csv`
 
-## Implementation Plan
+## 1. URL Contract
+1. Required query param: `file=<url-encoded-object-key>`.
+2. Optional query param: `bucket=<bucket-name>`.
+3. Missing `file` behavior: render shell, show blocking guidance in status area, skip data calls.
 
-## Phase 1: Bootstrap viewer_html shell
-1. Create `viewer_html/index.html` as the single entry page.
-2. Copy CSS and assets from `old_web` into `viewer_html` unchanged.
-3. Keep stylesheet includes aligned with current viewer runtime (`tokens.css`, `app.css`, `viewer.css`, `viewer-panel.css`, component CSS; keep `home.css` copied for parity/safety).
-4. Add script tags with `defer` in strict dependency order (defined in Phase 3).
+## 2. Runtime Config Contract
+1. Load `viewer_html/config/runtime-config.js` before app scripts.
+2. Read `window.__CONFIG__.API_BASE_URL` with fallback default.
+3. Use normalized base URL (strip trailing slashes).
 
-## Phase 2: Non-module architecture scaffold
-1. Add `js/core/namespace.js`:
-   - Create `window.HDFViewer` root object.
-   - Pre-create domains: `core`, `utils`, `api`, `state`, `components`, `views`, `app`.
-2. Add `js/core/config.js`:
-   - Port `API_BASE_URL`, endpoint builders, `encodeObjectKeyForPath`.
-   - Resolve runtime config from `window.__CONFIG__` with safe default.
-3. Enforce coding rule for every JS file:
-   - Remove all `import`/`export`.
-   - Wrap file in IIFE `(function(ns){ ... })(window.HDFViewer);`
-   - Publish symbols into namespace object explicitly.
+## 3. DOM ID Contract in `viewer_html/index.html`
+1. `viewer-app`
+2. `viewer-sidebar`
+3. `sidebar-header`
+4. `tree-panel`
+5. `tree-list`
+6. `tree-status`
+7. `viewer-main`
+8. `viewer-topbar`
+9. `breadcrumb-file`
+10. `breadcrumb-path`
+11. `viewer-subbar`
+12. `subbar-tabs`
+13. `subbar-actions`
+14. `viewer-panel`
+15. `display-pane`
+16. `inspect-pane`
+17. `display-status`
+18. `inspect-status`
+19. `global-status`
+20. `sidebar-backdrop`
+21. `sidebar-toggle-btn`
+22. `sidebar-close-btn`
+23. `viewer-back-btn`
+24. `viewer-fullscreen-btn`
 
-## Phase 3: Port modules by layer (exact order)
-1. Utilities:
-   - `format.js`, `lru.js`, `export.js`
-2. API:
-   - `client.js`, `contracts.js`, `hdf5Service.js`
-3. State:
-   - `store.js`
-   - `reducers/utils.js`
-   - `reducers/filesActions.js`
-   - `reducers/treeActions.js`
-   - `reducers/viewActions.js`
-   - `reducers/displayConfigActions.js`
-   - `reducers/dataActions.js`
-   - `reducers/compareActions.js`
-   - `reducers.js`
-4. Viewer panel base:
-   - `components/viewerPanel/shared.js`
-   - `components/viewerPanel/render/config.js`
-   - `components/viewerPanel/render/previews.js`
-   - `components/viewerPanel/render/dimensionControls.js`
-   - `components/viewerPanel/render/sections.js`
-   - `components/viewerPanel/render.js`
-   - `components/viewerPanel/runtime/common.js`
-   - `components/viewerPanel/runtime/matrixRuntime.js`
-   - `components/viewerPanel/runtime/lineRuntime.js`
-   - `components/viewerPanel/runtime/heatmapRuntime.js`
-   - `components/viewerPanel/runtime/bindEvents.js`
-   - `components/viewerPanel/runtime.js`
-   - `components/viewerPanel.js`
-5. Tree + view:
-   - `components/sidebarTree.js`
-   - `views/viewerView.js`
-6. Boot:
-   - `app-viewer.js`
+## 4. JS Global Contract
+1. Global root: `window.HDFViewer`.
+2. Required namespaces: `core`, `utils`, `api`, `state`, `components`, `views`, `app`.
+3. Runtime export bridge contract stays supported via shell node property `__exportApi`.
 
-## Phase 4: Viewer-only boot logic
-1. Replace old `app.js` route model with viewer-only boot:
-   - Always render viewer shell into `#app-root`.
-   - Parse `file` and `bucket` query params.
-2. If `file` is present:
-   - Dispatch `openViewer({ key:file, etag:null, bucket })`.
-   - Start at inspect mode and lazy-load tree root.
-3. If `file` is missing:
-   - Render blocking guidance state.
-   - Show exact deep-link format example in UI.
-4. Keep existing behavior for:
-   - Sidebar collapse/responsive behavior.
-   - Display/inspect switching.
-   - Matrix/line/heatmap full runtimes.
-   - Compare flow.
-   - Export CSV/PNG.
-   - Fullscreen interactions.
-
-## Phase 5: Production hardening
-1. Add lightweight runtime assertions:
-   - Validate required dataset attributes on runtime shells.
-   - Fail gracefully with status messages, not thrown uncaught errors.
-2. Add namespace collision guard:
-   - Abort boot with console error if `window.HDFViewer` already initialized unexpectedly.
-3. Add script-order guard:
-   - Each module checks dependency presence and logs explicit missing module path.
-
-## Phase 6: Docs update
-1. Add planning doc in root docs:
-   - `docs/AGENT_CONTEXT_2026-03-03_VIEWER_HTML_PLAIN_JS_PRODUCTION_PLAN.md`
-2. Document:
-   - Why non-module conversion is needed.
-   - Final folder structure.
-   - Script load order.
-   - URL/deep-link contract.
-   - Regression checklist.
-3. Add pointer in existing setup guide:
-   - Link from `OLD_WEB_VIEWER_ONLY_SETUP_GUIDE.md` to the new viewer_html plan note.
-
-## Test Cases and Scenarios
-
-## Functional parity tests
-1. Boot with valid `?file=` and optional `&bucket=` opens viewer and loads tree root.
-2. Missing `?file=` shows blocking guidance state and performs no viewer data calls.
-3. Tree expand/collapse/select works with lazy child loading and retry behavior.
-4. Inspect mode loads metadata and displays summary + raw JSON.
-5. Display mode loads preview for dataset selection.
-6. Matrix full view: virtual scrolling, status updates, CSV displayed/full export.
-7. Line full view: pan/zoom/zoom-click/window controls/fullscreen, CSV+PNG export.
-8. Line compare: enable/disable, add/remove/clear, compatibility enforcement, legend/status.
-9. Heatmap full view: zoom/pan/plot mode/linked line shell/fullscreen, CSV+PNG export.
-10. Back-to-files control remains present but is safely no-op or guidance-return in viewer-only context.
-
-## Error and resilience tests
-1. Backend 4xx/5xx responses show user-facing status text without app crash.
-2. Aborted requests do not surface false error banners.
-3. Invalid `file` key displays recoverable error state in tree/panel.
-4. Export without loaded full runtime shows expected “Load full … before exporting” message.
-
-## Responsive tests
-1. `<=1024px`: sidebar defaults collapsed, backdrop/toggle works.
-2. Desktop: sidebar open/collapse class behavior matches existing viewer CSS.
-3. Fullscreen entry/exit state remains consistent after rerenders.
-
-## Non-module compliance tests
-1. `viewer_html/index.html` has no `type="module"` scripts.
-2. `viewer_html/js/**/*.js` contains no `import` or `export` statements.
-3. Scripts execute successfully when loaded as plain deferred scripts in order.
-
-## Assumptions and Defaults
-- “Only one index.html” means one HTML entrypoint, not one-file-only app artifact.
-- Full old_web viewer behavior is required in first release (not a staged subset).
-- Theme and CSS remain the same values and styles as existing old_web assets.
-- Backend API contract remains unchanged.
-- Doc artifact is created in root `docs/` as the agent context record for this planning work.
-
-## HTML-ID Implementation Variant (2026-03-03)
-
-### Final DOM ID contract
-- `viewer-app`
-- `viewer-sidebar`
-- `sidebar-header`
-- `tree-panel`
-- `tree-list`
-- `tree-status`
-- `viewer-main`
-- `viewer-topbar`
-- `breadcrumb-file`
-- `breadcrumb-path`
-- `viewer-subbar`
-- `subbar-tabs`
-- `subbar-actions`
-- `viewer-panel`
-- `display-pane`
-- `inspect-pane`
-- `display-status`
-- `inspect-status`
-- `global-status`
-- `sidebar-backdrop`
-- `sidebar-toggle-btn`
-- `sidebar-close-btn`
-- `viewer-back-btn`
-- `viewer-fullscreen-btn`
-
-### Script order (plain JS, non-module)
+## 5. Script Load Order Contract
 1. `config/runtime-config.js`
 2. `js/core/namespace.js`
 3. `js/core/config.js`
-4. `js/core/domRefs.js`
-5. `js/utils/format.js`
-6. `js/utils/lru.js`
-7. `js/utils/export.js`
-8. `js/api/client.js`
-9. `js/api/contracts.js`
-10. `js/api/hdf5Service.js`
-11. `js/state/store.js`
-12. `js/state/reducers/utils.js`
-13. `js/state/reducers/filesActions.js`
-14. `js/state/reducers/treeActions.js`
-15. `js/state/reducers/viewActions.js`
-16. `js/state/reducers/displayConfigActions.js`
-17. `js/state/reducers/dataActions.js`
-18. `js/state/reducers/compareActions.js`
-19. `js/state/reducers.js`
-20. `js/components/viewerPanel/shared.js`
-21. `js/components/viewerPanel/render/config.js`
-22. `js/components/viewerPanel/render/previews.js`
-23. `js/components/viewerPanel/render/dimensionControls.js`
-24. `js/components/viewerPanel/render/sections.js`
-25. `js/components/viewerPanel/render.js`
-26. `js/components/viewerPanel/runtime/common.js`
-27. `js/components/viewerPanel/runtime/matrixRuntime.js`
-28. `js/components/viewerPanel/runtime/lineRuntime.js`
-29. `js/components/viewerPanel/runtime/heatmapRuntime.js`
-30. `js/components/viewerPanel/runtime/bindEvents.js`
-31. `js/components/viewerPanel/runtime.js`
-32. `js/components/viewerPanel.js`
-33. `js/components/sidebarTree.js`
-34. `js/views/viewerView.js`
-35. `js/app-viewer.js`
+4. `js/utils/format.js`
+5. `js/utils/lru.js`
+6. `js/utils/export.js`
+7. `js/api/client.js`
+8. `js/api/contracts.js`
+9. `js/api/hdf5Service.js`
+10. `js/state/store.js`
+11. `js/state/reducers/utils.js`
+12. `js/state/reducers/filesActions.js`
+13. `js/state/reducers/treeActions.js`
+14. `js/state/reducers/viewActions.js`
+15. `js/state/reducers/displayConfigActions.js`
+16. `js/state/reducers/dataActions.js`
+17. `js/state/reducers/compareActions.js`
+18. `js/state/reducers.js`
+19. `js/components/viewerPanel/shared.js`
+20. `js/components/viewerPanel/render/config.js`
+21. `js/components/viewerPanel/render/previews.js`
+22. `js/components/viewerPanel/render/dimensionControls.js`
+23. `js/components/viewerPanel/render/sections.js`
+24. `js/components/viewerPanel/render.js`
+25. `js/components/viewerPanel/runtime/common.js`
+26. `js/components/viewerPanel/runtime/matrixRuntime.js`
+27. `js/components/viewerPanel/runtime/lineRuntime.js`
+28. `js/components/viewerPanel/runtime/heatmapRuntime.js`
+29. `js/components/viewerPanel/runtime/bindEvents.js`
+30. `js/components/viewerPanel/runtime.js`
+31. `js/components/viewerPanel.js`
+32. `js/components/sidebarTree.js`
+33. `js/views/viewerView.js`
+34. `js/app-viewer.js`
 
-### Implementation status by phase
-- `Phase 1`: Complete (static HTML shell with full ID contract).
-- `Phase 2`: Complete (`core/domRefs` utility, ID validation, UI helper methods).
-- `Phase 3`: Complete (plain JS module conversion with shared namespace and non-module boot).
-- `Phase 4`: Complete (ID-driven viewer orchestration with static shell regions).
-- `Phase 5`: Complete (tree/panel bindings converted to delegated stable handlers; compare/export behaviors retained).
-- `Phase 6`: Complete (matrix/line/heatmap runtimes preserved and initialized from panel runtime binder).
-- `Phase 7`: Complete (viewer-only deep-link lifecycle, missing-file blocking, back-to-guidance behavior).
-- `Phase 8`: Complete for current scope (dependency checks, blocked-state guards, status/error surface hardening).
-- `Phase 9`: Complete (this section plus agent context docs and verification notes).
+## Architecture Decisions
+1. Keep shell markup static in `index.html` and update only region content from JS.
+2. Use event delegation on stable containers instead of rebinding listeners to every button on rerender.
+3. Preserve old_web state/action model and API normalization contracts.
+4. Preserve old_web runtime behavior for matrix, line, heatmap, compare, export, fullscreen.
+5. Keep CSS theme unchanged (existing copied tokens and component styles).
 
-### Browser support and constraints
-- Target: modern evergreen browsers.
-- Fullscreen API required for global fullscreen control.
-- No support for legacy browsers without `fetch`, `AbortController`, or `URL`.
+## Implementation Plan
+
+## Phase 1: Build static HTML shell
+1. Replace `#app-root`-only body with permanent viewer shell containing all IDs in the DOM ID contract.
+2. Keep all existing CSS links.
+3. Keep script list and order from Script Load Order Contract.
+4. Add minimal non-JS fallback text in `global-status`.
+
+## Phase 2: Core DOM bridge and guards
+1. Add a core DOM refs utility inside existing `viewerView` layer or new `core/domRefs` file.
+2. Validate all required IDs at boot and fail fast with clear console message listing missing IDs.
+3. Add helper methods for class toggles, status messages, and pane visibility.
+4. Add script-order guard checks for every file that depends on prior namespace paths.
+
+## Phase 3: Port API and state logic to functional implementation
+1. Replace phase scaffold in `api/client.js` with fetch wrapper using `AbortController`.
+2. Replace phase scaffold in `api/contracts.js` and `api/hdf5Service.js` with normalized payload handling and caches.
+3. Replace phase scaffold in `state/store.js` and all reducer files with old_web-equivalent logic.
+4. Keep state schema parity including compare, display config, and full-view flags.
+5. Keep stale-while-refresh preview strategy and request dedupe behavior.
+
+## Phase 4: Viewer view orchestration (ID-driven)
+1. Implement `views/viewerView.js` as shell orchestrator that targets static IDs.
+2. Render topbar content into `breadcrumb-file` and `breadcrumb-path`.
+3. Render subbar tabs/actions into `subbar-tabs` and `subbar-actions`.
+4. Render tree markup into `tree-list`.
+5. Render display/inspect content into `display-pane` and `inspect-pane`.
+6. Switch modes by toggling classes and hidden attributes, not by replacing full shell HTML.
+
+## Phase 5: Component implementation
+1. Implement `components/sidebarTree.js` with lazy expand, retry, selection, compare-add button behavior.
+2. Implement `components/viewerPanel.js` and `viewerPanel/render*.js` with matrix, line, and heatmap section renderers.
+3. Keep dimension controls and metadata rendering parity.
+4. Keep status surfaces (`display-status`, `inspect-status`, `tree-status`) synchronized to current state.
+5. Maintain dataset compatibility checks for compare mode.
+
+## Phase 6: Runtime implementation for full views
+1. Implement `matrixRuntime.js` with virtual block loading, request queueing, and scroll-linked rendering.
+2. Implement `lineRuntime.js` with pan, zoom, zoom-click, quality/window controls, compare overlay, fullscreen, export hooks.
+3. Implement `heatmapRuntime.js` with canvas draw, colormap/grid controls, pan/zoom, plot mode linked line runtime, fullscreen, export hooks.
+4. Keep cleanup registries in `runtime/common.js` and call cleanup on pane rerender or mode change.
+5. Ensure runtime shells attach `__exportApi` for subbar export actions.
+
+## Phase 7: App boot and deep-link lifecycle
+1. Implement `app-viewer.js` boot sequence.
+2. Parse `file` and `bucket`.
+3. Initialize shell render and register delegated events once.
+4. If `file` exists, dispatch `openViewer` and load root children.
+5. If `file` missing, show guidance and disable data actions.
+6. Keep sidebar responsive behavior (`matchMedia <= 1024px`) and backdrop handling.
+7. Keep viewer fullscreen control at whole-page level.
+
+## Phase 8: Hardening and regression safety
+1. Add robust error mapping for network, abort, and contract failures.
+2. Prevent stale async responses from overwriting latest state.
+3. Guard export actions when runtime shell is not active.
+4. Add safe handling when selected path moves from dataset to group during inflight requests.
+5. Add defensive checks for invalid shape/ndim/dtype metadata.
+6. Add UTF-safe and spreadsheet-safe CSV escaping behavior parity.
+
+## Phase 9: Documentation updates
+1. Keep existing `viewer_html/PLAN.md` as primary full-parity plan and append this HTML-ID full-implementation variant section.
+2. Add new context note:
+   - `docs/AGENT_CONTEXT_2026-03-03_VIEWER_HTML_HTML_ID_FULL_IMPLEMENTATION_PLAN.md`
+3. Document:
+   - Final ID contract
+   - Script order
+   - Feature parity checklist
+   - Known browser support and constraints
+
+## Test Cases and Scenarios
+
+## A. Shell and boot
+1. All required IDs exist and boot succeeds.
+2. Missing one required ID produces deterministic boot error.
+3. Missing `file` shows blocking message and no `/children` request.
+4. Valid `file` loads tree root and default inspect state.
+
+## B. Tree and navigation
+1. Expand/collapse root and nested groups.
+2. Retry failed child loads.
+3. Breadcrumb click loads ancestor path.
+4. Dataset selection switches to preview/metadata appropriately.
+
+## C. Inspect and display
+1. Inspect mode shows metadata summary and raw JSON.
+2. Display mode loads preview and tab-specific section.
+3. Tab switches preserve expected flags and clear incompatible full-view states.
+
+## D. Matrix runtime
+1. Full matrix load works for 2D and ND slices.
+2. Scroll triggers block requests and cache reuse.
+3. CSV displayed and CSV full export both function.
+
+## E. Line runtime
+1. Full line load supports pan, zoom, zoom-click, reset, jump controls.
+2. Compare mode supports add/remove/clear and compatibility validation.
+3. SVG PNG export and CSV export function.
+4. Fullscreen enter/exit stable across rerenders.
+
+## F. Heatmap runtime
+1. Full heatmap load supports pan, zoom, colormap, grid toggle.
+2. Plot mode linked line panel works and closes cleanly.
+3. Canvas PNG export and CSV export function.
+4. Fullscreen enter/exit stable across rerenders.
+
+## G. Error and race handling
+1. Rapid path changes cancel stale requests.
+2. Abort errors do not show as hard failures.
+3. 4xx/5xx show friendly status without uncaught exceptions.
+4. Invalid API payload produces controlled error status.
+
+## H. Responsive and accessibility baseline
+1. Sidebar behavior correct on desktop and mobile breakpoints.
+2. Keyboard navigation works for primary controls.
+3. Buttons and tabs expose clear labels and disabled states.
+
+## I. Non-module compliance
+1. No `import` or `export` in `viewer_html/js/**/*.js`.
+2. No `type="module"` in `viewer_html/index.html`.
+3. App runs from static server in modern browsers.
+
+## Assumptions and Defaults
+1. Scope is full parity with old_web viewer behavior, not a reduced subset.
+2. Fetch is the single HTTP mechanism; no XMLHttpRequest usage.
+3. Browser target is modern evergreen browsers only.
+4. CSS visual language remains unchanged from copied old_web theme files.
+5. Existing scaffold files in `viewer_html/js` are replaced in place rather than creating a parallel runtime tree.

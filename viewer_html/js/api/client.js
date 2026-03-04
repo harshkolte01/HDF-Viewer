@@ -1,3 +1,4 @@
+// Viewer HTML module: Wraps fetch with abort linking, in-flight cancellation keys, and normalized API errors.
 (function (global) {
   "use strict";
   var ns = global.HDFViewer;

@@ -1,3 +1,4 @@
+// Viewer HTML module: Renders fast preview HTML/SVG for table, line, and sampled heatmap modes before full runtimes load.
 (function (global) {
   "use strict";
   var ns = global.HDFViewer;

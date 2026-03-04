@@ -1,3 +1,4 @@
+// Viewer HTML module: Loads metadata and preview data with dedupe, stale-update safety, and warmed preview selection logic.
 (function (global) {
   "use strict";
   var ns = global.HDFViewer;

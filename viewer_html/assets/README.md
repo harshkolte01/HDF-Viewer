@@ -1,13 +1,10 @@
 # assets
 
-Static assets used by `old_web`.
+Static visual assets consumed by the viewer shell and related UI.
 
-## Files
+## What is implemented
+- `logo.svg` is available for optional branding use.
 
-- `logo.svg`: optional logo/branding asset.
-
-## Runtime Notes
-
-- No direct JS module imports currently point to this folder.
-- Assets are consumed by HTML/CSS when needed.
-- Compare and export features do not require additional asset files.
+## How it is implemented
+- Assets are plain static files referenced directly from HTML/CSS when needed.
+- No JavaScript module import pipeline is required for this folder.

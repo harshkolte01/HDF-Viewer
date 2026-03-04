@@ -1,3 +1,4 @@
+// Viewer HTML module: Validates and manages line comparison dataset selection with dtype and shape compatibility rules.
 (function (global) {
   "use strict";
   var ns = global.HDFViewer;

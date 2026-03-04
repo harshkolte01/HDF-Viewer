@@ -1,4 +1,5 @@
-﻿(function (global) {
+// Viewer HTML module: Initializes the global HDFViewer namespace, module registry, and dependency guards for plain-script loading.
+(function (global) {
   "use strict";
 
   if (!global) {
@@ -90,3 +91,4 @@
 
   global.HDFViewer = ns;
 })(typeof window !== "undefined" ? window : globalThis);
+

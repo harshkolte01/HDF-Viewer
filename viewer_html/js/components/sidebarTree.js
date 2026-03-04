@@ -1,3 +1,4 @@
+// Viewer HTML module: Renders the lazy tree sidebar and delegates tree selection, retry, toggle, and compare-add events.
 (function (global) {
   "use strict";
   var ns = global.HDFViewer;
@@ -425,3 +426,4 @@ function bindSidebarTreeEvents(root, actions) {
     ns.core.registerModule("components/sidebarTree");
   }
 })(typeof window !== "undefined" ? window : globalThis);
+

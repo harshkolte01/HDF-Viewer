@@ -1,3 +1,4 @@
+/* Viewer HTML styles: Reusable file table component styles for listing rows, metadata, and action controls. */
 .table-container {
   overflow-x: auto;
 }
@@ -144,3 +145,4 @@
     white-space: nowrap;
   }
 }
+

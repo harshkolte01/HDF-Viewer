@@ -1,3 +1,4 @@
+/* Viewer HTML styles: Inspect/display pane, matrix/line/heatmap panel, runtime, and responsive chart styles. */
 /* Viewer Panel Styles - Simple Text Layout */
 .viewer-panel {
     flex: 1;
@@ -1535,5 +1536,6 @@ body.line-panel-fullscreen-active {
         height: clamp(160px, calc(100dvh - 440px), 280px);
     }
 }
+
 
 

@@ -1,4 +1,5 @@
-﻿(function (global) {
+// Viewer HTML module: Orchestrates static shell rendering, status updates, delegated UI events, and export dispatching.
+(function (global) {
   "use strict";
 
   var ns = global.HDFViewer;
@@ -835,3 +836,4 @@
     ns.core.registerModule("views/viewerView");
   }
 })(typeof window !== "undefined" ? window : globalThis);
+

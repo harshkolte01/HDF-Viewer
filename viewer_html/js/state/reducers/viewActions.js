@@ -1,3 +1,4 @@
+// Viewer HTML module: Handles sidebar, mode/tab toggles, display options, and full-view enable transitions.
 (function (global) {
   "use strict";
   var ns = global.HDFViewer;

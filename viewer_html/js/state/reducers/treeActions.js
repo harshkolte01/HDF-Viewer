@@ -1,3 +1,4 @@
+// Viewer HTML module: Handles tree expand/select/breadcrumb interactions and lazy child loading behavior.
 (function (global) {
   "use strict";
   var ns = global.HDFViewer;

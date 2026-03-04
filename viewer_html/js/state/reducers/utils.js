@@ -1,3 +1,4 @@
+// Viewer HTML module: Contains shared reducer helpers for path normalization and multidimensional display configuration math.
 (function (global) {
   "use strict";
   var ns = global.HDFViewer;

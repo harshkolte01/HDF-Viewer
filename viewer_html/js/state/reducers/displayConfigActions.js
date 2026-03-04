@@ -1,3 +1,4 @@
+// Viewer HTML module: Stages and applies display dimensions and fixed indices for multidimensional dataset views.
 (function (global) {
   "use strict";
   var ns = global.HDFViewer;

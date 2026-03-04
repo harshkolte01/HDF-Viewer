@@ -1,3 +1,4 @@
+// Viewer HTML module: Composes all action factories into the shared actions API consumed by views and runtimes.
 (function (global) {
   "use strict";
   var ns = global.HDFViewer;
@@ -52,3 +53,4 @@ Object.assign(
     ns.core.registerModule("state/reducers");
   }
 })(typeof window !== "undefined" ? window : globalThis);
+

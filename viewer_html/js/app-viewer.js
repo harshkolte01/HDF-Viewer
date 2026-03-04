@@ -1,4 +1,5 @@
-﻿(function (global) {
+// Viewer HTML module: Bootstraps viewer lifecycle, validates dependencies, parses deep links, and wires state-driven rendering.
+(function (global) {
   "use strict";
 
   var ns = global.HDFViewer;
@@ -232,3 +233,4 @@
     ns.core.registerModule("app-viewer");
   }
 })(typeof window !== "undefined" ? window : globalThis);
+

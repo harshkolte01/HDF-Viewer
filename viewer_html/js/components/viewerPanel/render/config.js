@@ -1,3 +1,4 @@
+// Viewer HTML module: Builds runtime selection keys and resolves matrix/line/heatmap runtime config from state and preview.
 (function (global) {
   "use strict";
   var ns = global.HDFViewer;

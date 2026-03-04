@@ -1,3 +1,4 @@
+// Viewer HTML module: Implements a lightweight in-memory LRU cache used by data and runtime layers.
 (function (global) {
   "use strict";
   var ns = global.HDFViewer;

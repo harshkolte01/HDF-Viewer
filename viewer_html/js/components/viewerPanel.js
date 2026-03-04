@@ -1,3 +1,4 @@
+// Viewer HTML module: Exposes stable viewer-panel facade functions that delegate to render and runtime bind implementations.
 (function (global) {
   "use strict";
   var ns = global.HDFViewer;
@@ -40,3 +41,4 @@ function bindViewerPanelEvents(root, actions) {
     ns.core.registerModule("components/viewerPanel");
   }
 })(typeof window !== "undefined" ? window : globalThis);
+

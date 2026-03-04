@@ -1,4 +1,5 @@
-﻿(function (global) {
+// Viewer HTML module: Builds normalized API endpoint helpers and exposes runtime config for all viewer modules.
+(function (global) {
   "use strict";
 
   var ns = global.HDFViewer;
@@ -118,3 +119,4 @@
     ns.core.registerModule("core/config");
   }
 })(typeof window !== "undefined" ? window : globalThis);
+

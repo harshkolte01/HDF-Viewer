@@ -1,3 +1,4 @@
+// Viewer HTML module: Builds display and inspect sections, toolbars, and virtual runtime shells with data attributes.
 (function (global) {
   "use strict";
   var ns = global.HDFViewer;

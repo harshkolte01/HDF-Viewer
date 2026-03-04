@@ -1,3 +1,4 @@
+// Viewer HTML module: Defines the mutable global viewer state object with subscribe and setState update hooks.
 (function (global) {
   "use strict";
   var ns = global.HDFViewer;
@@ -112,3 +113,4 @@ function subscribe(listener) {
     ns.core.registerModule("state/store");
   }
 })(typeof window !== "undefined" ? window : globalThis);
+

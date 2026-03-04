@@ -1,3 +1,4 @@
+// Viewer HTML module: Centralizes static viewer shell DOM IDs and helper functions for status, visibility, and class toggling.
 (function (global) {
   "use strict";
 
@@ -152,3 +153,4 @@
     ns.core.registerModule("core/domRefs");
   }
 })(typeof window !== "undefined" ? window : globalThis);
+
