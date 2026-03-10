@@ -157,6 +157,14 @@ function createFileActions(deps) {
   },
 
   goHome() {
+    try {
+      var returnUrl = sessionStorage.getItem("hdfViewerReturnUrl");
+      if (returnUrl) {
+        sessionStorage.removeItem("hdfViewerReturnUrl");
+        window.location.href = returnUrl;
+        return;
+      }
+    } catch (_e) {}
     setState({
       route: "home",
       viewerBlocked: true,

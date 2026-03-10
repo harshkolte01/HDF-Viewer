@@ -192,7 +192,14 @@
     var params = new URLSearchParams(location.search);
     var deepLinkKey = params.get("file");
     var deepLinkBucket = params.get("bucket");
+    var deepLinkReturnUrl = params.get("returnUrl");
     var hasFile = Boolean(deepLinkKey);
+
+    if (deepLinkReturnUrl) {
+      try {
+        sessionStorage.setItem("hdfViewerReturnUrl", deepLinkReturnUrl);
+      } catch (_e) {}
+    }
 
     if (hasFile && typeof actionsApi.openViewer === "function") {
       history.replaceState({}, "", location.pathname);

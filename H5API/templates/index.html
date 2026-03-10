@@ -377,8 +377,9 @@
   }
 
   function goToFile(key) {
-    const url = `${VIEWER_BASE}/?file=${encodeURIComponent(key)}&bucket=${encodeURIComponent(currentBucket)}`;
-    window.open(url, '_blank');
+    const returnUrl = encodeURIComponent(window.location.href);
+    const url = `${VIEWER_BASE}/?file=${encodeURIComponent(key)}&bucket=${encodeURIComponent(currentBucket)}&returnUrl=${returnUrl}`;
+    window.location.href = url;
   }
 
   // ── Init ────────────────────────────────────────────────────────
