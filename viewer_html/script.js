@@ -17008,9 +17008,7 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
 
                 var backButton = target.closest("#viewer-back-btn");
                 if (backButton && safeRoot.contains(backButton)) {
-                    if (typeof eventActions.goHome === "function") {
-                        eventActions.goHome();
-                    }
+                    window.location.assign("https://hdf-viewer.vercel.app");
                     return;
                 }
 
