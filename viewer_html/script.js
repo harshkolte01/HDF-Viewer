@@ -194,7 +194,6 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
     // String values are static paths; functions accept an object key and return the encoded path.
     var API_ENDPOINTS = Object.freeze({
         FILES: "/files",
-        FILES_REFRESH: "/files/refresh",
         FILE_CHILDREN: function (key) {
             return "/files/" + encodeObjectKeyForPath(key) + "/children";
         },
@@ -278,6 +277,7 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
     var REQUIRED_IDS = [
         "viewer-app",
         "viewer-sidebar",
+        "viewer-sidebar-resizer",
         "tree-panel",
         "tree-list",
         "tree-status",
@@ -308,6 +308,7 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
         return {
             viewerApp: rootDoc.getElementById("viewer-app"),
             viewerSidebar: rootDoc.getElementById("viewer-sidebar"),
+            viewerSidebarResizer: rootDoc.getElementById("viewer-sidebar-resizer"),
             treePanel: rootDoc.getElementById("tree-panel"),
             treeList: rootDoc.getElementById("tree-list"),
             treeStatus: rootDoc.getElementById("tree-status"),
@@ -1548,18 +1549,6 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
     function getCancelChannel(type, fileKey, path) {
         return `${type}:${fileKey}:${path}`;
     }
-    // Resets all frontend caches; called after a backend refresh flush so stale data is not served
-    function clearFrontendCaches() {
-        frontendCache.files = null;
-        frontendCache.treeChildren.clear();
-        frontendCache.preview.clear();
-        frontendCache.matrixBlocks.clear();
-        frontendCache.lineData.clear();
-        frontendCache.heatmapData.clear();
-        frontendCache.metadata.clear();
-        previewRefreshInFlight.clear();
-        dataRequestsInFlight.clear();
-    }
     // Fetches the file listing; returns cached result unless force=true or cache is empty
     async function getFiles(options = {}) {
         const { force = false, signal } = options;
@@ -1577,15 +1566,6 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
         const normalized = assertSuccess(normalizeFilesResponse(payload), "getFiles");
         frontendCache.files = normalized;
         return normalized;
-    }
-    // Triggers a backend cache refresh and then re-fetches the file list; clears all frontend caches first
-    async function refreshFiles(options = {}) {
-        const { signal } = options;
-        const payload = await apiClient.post(API_ENDPOINTS.FILES_REFRESH, null, {}, { signal });
-
-        clearFrontendCaches();
-
-        return payload;
     }
     // Fetches children for a path in the HDF5 tree; per-file and per-etag cache prevents redundant network round-trips
     async function getFileChildren(key, path = "/", options = {}) {
@@ -1896,24 +1876,14 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
     }
     const __default_export__ = {
         getFiles,
-        refreshFiles,
         getFileChildren,
         getFileMeta,
         getFilePreview,
         getFileData,
-        clearFrontendCaches,
     };
-    if (typeof clearFrontendCaches !== "undefined") {
-        moduleState.clearFrontendCaches = clearFrontendCaches;
-        global.clearFrontendCaches = clearFrontendCaches;
-    }
     if (typeof getFiles !== "undefined") {
         moduleState.getFiles = getFiles;
         global.getFiles = getFiles;
-    }
-    if (typeof refreshFiles !== "undefined") {
-        moduleState.refreshFiles = refreshFiles;
-        global.refreshFiles = refreshFiles;
     }
     if (typeof getFileChildren !== "undefined") {
         moduleState.getFileChildren = getFileChildren;
@@ -1969,7 +1939,6 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
         files: [],
         loading: false,
         error: null,
-        refreshing: false,
         searchQuery: "",
 
         // --- Selected file ---
@@ -2457,7 +2426,7 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
     // Destructures all dependencies from the shared deps bundle for use inside action functions
     function unpackDeps(deps) {
         const { actions, getState, setState, api, utils } = deps;
-        const { getFiles, refreshFiles, getFileChildren, getFileMeta, getFilePreview } = api;
+        const { getFiles, getFileChildren, getFileMeta, getFilePreview } = api;
         const {
             normalizePath,
             getAncestorPaths,
@@ -2482,7 +2451,6 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
             getState,
             setState,
             getFiles,
-            refreshFiles,
             getFileChildren,
             getFileMeta,
             getFilePreview,
@@ -2510,7 +2478,6 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
             getState,
             setState,
             getFiles,
-            refreshFiles,
             getDisplayConfigDefaults,
         } = unpackDeps(deps);
 
@@ -2536,22 +2503,6 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
                         loading: false,
                         error: error.message || "Failed to load files",
                     });
-                }
-            },
-
-            // Triggers a backend cache refresh, clears frontend caches, then reloads the file list
-            async refreshFileList() {
-                setState({ refreshing: true, error: null });
-
-                try {
-                    await refreshFiles();
-                    await actions.loadFiles();
-                } catch (error) {
-                    setState({
-                        error: error.message || "Failed to refresh files",
-                    });
-                } finally {
-                    setState({ refreshing: false });
                 }
             },
 
@@ -2676,7 +2627,7 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
     // Destructures all needed dependencies from the shared deps bundle
     function unpackDeps(deps) {
         const { actions, getState, setState, api, utils } = deps;
-        const { getFiles, refreshFiles, getFileChildren, getFileMeta, getFilePreview } = api;
+        const { getFiles, getFileChildren, getFileMeta, getFilePreview } = api;
         const {
             normalizePath,
             getAncestorPaths,
@@ -2701,7 +2652,6 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
             getState,
             setState,
             getFiles,
-            refreshFiles,
             getFileChildren,
             getFileMeta,
             getFilePreview,
@@ -2971,7 +2921,7 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
     var moduleState = ensurePath(ns, "state.reducers.viewActions");
     function unpackDeps(deps) {
         const { actions, getState, setState, api, utils } = deps;
-        const { getFiles, refreshFiles, getFileChildren, getFileMeta, getFilePreview } = api;
+        const { getFiles, getFileChildren, getFileMeta, getFilePreview } = api;
         const {
             normalizePath,
             getAncestorPaths,
@@ -2996,7 +2946,6 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
             getState,
             setState,
             getFiles,
-            refreshFiles,
             getFileChildren,
             getFileMeta,
             getFilePreview,
@@ -3245,7 +3194,7 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
     var moduleState = ensurePath(ns, "state.reducers.displayConfigActions");
     function unpackDeps(deps) {
         const { actions, getState, setState, api, utils } = deps;
-        const { getFiles, refreshFiles, getFileChildren, getFileMeta, getFilePreview } = api;
+        const { getFiles, getFileChildren, getFileMeta, getFilePreview } = api;
         const {
             normalizePath,
             getAncestorPaths,
@@ -3270,7 +3219,6 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
             getState,
             setState,
             getFiles,
-            refreshFiles,
             getFileChildren,
             getFileMeta,
             getFilePreview,
@@ -3358,6 +3306,30 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
             }
 
             const runtimeApi = shell.__heatmapRuntimeApi;
+            return runtimeApi && typeof runtimeApi.updateSelection === "function" ? runtimeApi : null;
+        }
+
+        function resolveActiveLineRuntimeApi(snapshot) {
+            if (typeof document === "undefined") {
+                return null;
+            }
+
+            const shell = document.querySelector(
+                '[data-line-shell]:not(.heatmap-inline-line-shell):not(.matrix-inline-line-shell)'
+            );
+            if (!shell) {
+                return null;
+            }
+
+            if ((shell.dataset.lineFileKey || "") !== String(snapshot.selectedFile || "")) {
+                return null;
+            }
+
+            if ((shell.dataset.linePath || "/") !== String(snapshot.selectedPath || "/")) {
+                return null;
+            }
+
+            const runtimeApi = shell.__lineRuntimeApi;
             return runtimeApi && typeof runtimeApi.updateSelection === "function" ? runtimeApi : null;
         }
 
@@ -3481,17 +3453,30 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
 
         function resolveFixedIndexPlaybackContext(snapshot, requestedDim = null) {
             const activeTab = snapshot.displayTab;
+            const isHeatmapPlaybackTab = activeTab === "heatmap" || activeTab === "image";
+            const isLinePlaybackTab = activeTab === "line";
             if (
                 snapshot.route !== "viewer" ||
                 snapshot.viewMode !== "display" ||
                 snapshot.selectedNodeType !== "dataset" ||
-                (activeTab !== "heatmap" && activeTab !== "image") ||
-                snapshot.heatmapFullEnabled !== true
+                (!isHeatmapPlaybackTab && !isLinePlaybackTab)
             ) {
                 return null;
             }
 
-            const runtimeApi = resolveActiveHeatmapRuntimeApi(snapshot);
+            let runtimeApi = null;
+            if (isLinePlaybackTab) {
+                if (snapshot.lineFullEnabled !== true) {
+                    return null;
+                }
+                runtimeApi = resolveActiveLineRuntimeApi(snapshot);
+            } else {
+                if (snapshot.heatmapFullEnabled !== true) {
+                    return null;
+                }
+                runtimeApi = resolveActiveHeatmapRuntimeApi(snapshot);
+            }
+
             if (!runtimeApi) {
                 return null;
             }
@@ -3610,6 +3595,57 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
                 fixedIndices,
                 displayDimsParam,
                 fixedIndicesParam,
+                selectionKey,
+            };
+        }
+
+        function buildLineLiveSelection(snapshot, displayDims, fixedIndices) {
+            const displayDimsParam = buildDisplayDimsParam(displayDims) || "";
+            const fixedIndicesParam = buildFixedIndicesParam(fixedIndices) || "";
+            const nextState = {
+                ...snapshot,
+                displayConfig: {
+                    ...(snapshot.displayConfig || getDisplayConfigDefaults()),
+                    displayDims,
+                    fixedIndices,
+                    stagedDisplayDims: displayDims,
+                    stagedFixedIndices: fixedIndices,
+                },
+            };
+            const lineConfig =
+                typeof global.resolveLineRuntimeConfig === "function"
+                    ? global.resolveLineRuntimeConfig(nextState, snapshot.preview)
+                    : null;
+            const lineIndex = toSafeInteger(lineConfig?.lineIndex, null);
+            const lineDim = lineIndex === null ? null : String(lineConfig?.lineDim || "row");
+            const totalPoints = Math.max(0, toSafeInteger(lineConfig?.totalPoints, 0));
+            const selectionKey =
+                typeof lineConfig?.selectionKey === "string" && lineConfig.selectionKey
+                    ? lineConfig.selectionKey
+                    : typeof global.buildLineSelectionKey === "function"
+                        ? global.buildLineSelectionKey(
+                            snapshot.selectedFile,
+                            snapshot.selectedPath,
+                            displayDimsParam,
+                            fixedIndicesParam,
+                            lineIndex
+                        )
+                        : [
+                            snapshot.selectedFile || "no-file",
+                            snapshot.selectedPath || "/",
+                            displayDimsParam || "none",
+                            fixedIndicesParam || "none",
+                            lineIndex ?? "auto",
+                        ].join("|");
+
+            return {
+                displayDims,
+                fixedIndices,
+                displayDimsParam,
+                fixedIndicesParam,
+                lineIndex,
+                lineDim,
+                totalPoints,
                 selectionKey,
             };
         }
@@ -3784,18 +3820,28 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
                 const sourceSize = Math.max(0, toSafeInteger(size, shape[dimIndex]));
                 const max = Math.max(0, sourceSize - 1);
                 const normalizedValue = Math.max(0, Math.min(max, toSafeInteger(value, 0)));
-                const canLiveUpdateHeatmap =
+                const liveUpdateMode =
                     snapshot.route === "viewer" &&
                     snapshot.viewMode === "display" &&
                     snapshot.selectedNodeType === "dataset" &&
-                    (snapshot.displayTab === "heatmap" || snapshot.displayTab === "image") &&
-                    snapshot.heatmapFullEnabled === true &&
                     Array.isArray(appliedDims) &&
                     appliedDims.length === 2 &&
-                    areDisplayDimsEqual(stagedDims, appliedDims);
+                    areDisplayDimsEqual(stagedDims, appliedDims)
+                        ? snapshot.displayTab === "line" && snapshot.lineFullEnabled === true
+                            ? "line"
+                            : (snapshot.displayTab === "heatmap" || snapshot.displayTab === "image") &&
+                              snapshot.heatmapFullEnabled === true
+                                ? "heatmap"
+                                : null
+                        : null;
 
-                const heatmapRuntimeApi = canLiveUpdateHeatmap ? resolveActiveHeatmapRuntimeApi(snapshot) : null;
-                if (heatmapRuntimeApi) {
+                const selectionRuntimeApi =
+                    liveUpdateMode === "line"
+                        ? resolveActiveLineRuntimeApi(snapshot)
+                        : liveUpdateMode === "heatmap"
+                            ? resolveActiveHeatmapRuntimeApi(snapshot)
+                            : null;
+                if (selectionRuntimeApi) {
                     const currentAppliedFixed = buildNextFixedIndices(
                         normalizeFixedIndicesForShape(config.fixedIndices, shape, appliedDims),
                         appliedDims,
@@ -3822,19 +3868,29 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
 
                     let updatePromise = Promise.resolve(true);
                     if (!areFixedIndicesEqual(nextFixedIndices, currentAppliedFixed)) {
-                        const nextSelection = buildHeatmapLiveSelection(snapshot, appliedDims, nextFixedIndices);
+                        const nextSelection =
+                            liveUpdateMode === "line"
+                                ? buildLineLiveSelection(snapshot, appliedDims, nextFixedIndices)
+                                : buildHeatmapLiveSelection(snapshot, appliedDims, nextFixedIndices);
                         updatePromise = Promise.resolve(
-                            heatmapRuntimeApi.updateSelection(
-                            {
-                                displayDims: nextSelection.displayDimsParam,
-                                fixedIndices: nextSelection.fixedIndicesParam,
-                                selectionKey: nextSelection.selectionKey,
-                            },
-                            {
-                                immediate: interaction === "change",
-                                preserveViewState: true,
-                                forceFullLoad,
-                            }
+                            selectionRuntimeApi.updateSelection(
+                                {
+                                    displayDims: nextSelection.displayDimsParam,
+                                    fixedIndices: nextSelection.fixedIndicesParam,
+                                    selectionKey: nextSelection.selectionKey,
+                                    ...(liveUpdateMode === "line"
+                                        ? {
+                                            lineIndex: nextSelection.lineIndex,
+                                            lineDim: nextSelection.lineDim,
+                                            totalPoints: nextSelection.totalPoints,
+                                        }
+                                        : {}),
+                                },
+                                {
+                                    immediate: interaction === "change",
+                                    preserveViewState: true,
+                                    forceFullLoad,
+                                }
                             )
                         ).then((result) => result !== false);
                     }
@@ -4016,7 +4072,7 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
     var moduleState = ensurePath(ns, "state.reducers.dataActions");
     function unpackDeps(deps) {
         const { actions, getState, setState, api, utils } = deps;
-        const { getFiles, refreshFiles, getFileChildren, getFileMeta, getFilePreview } = api;
+        const { getFiles, getFileChildren, getFileMeta, getFilePreview } = api;
         const {
             normalizePath,
             getAncestorPaths,
@@ -4041,7 +4097,6 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
             getState,
             setState,
             getFiles,
-            refreshFiles,
             getFileChildren,
             getFileMeta,
             getFilePreview,
@@ -4428,7 +4483,7 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
     var moduleState = ensurePath(ns, "state.reducers.compareActions");
     function unpackDeps(deps) {
         const { actions, getState, setState, api, utils } = deps;
-        const { getFiles, refreshFiles, getFileChildren, getFileMeta, getFilePreview } = api;
+        const { getFiles, getFileChildren, getFileMeta, getFilePreview } = api;
         const {
             normalizePath,
             getAncestorPaths,
@@ -4453,7 +4508,6 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
             getState,
             setState,
             getFiles,
-            refreshFiles,
             getFileChildren,
             getFileMeta,
             getFilePreview,
@@ -4787,7 +4841,6 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
         setState,
         api: {
             getFiles,
-            refreshFiles,
             getFileChildren,
             getFileMeta,
             getFilePreview,
@@ -5313,15 +5366,21 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
         const shape = controls.shape;
         const dims = controls.appliedDisplayDims;
         const fixedIndices = controls.appliedFixedIndices || {};
+        const dimensionLabels = Array.isArray(preview?.dimension_labels) ? preview.dimension_labels : [];
 
         if (!shape.length) {
             return {
                 supported: false,
+                shape: [],
+                displayDims: [],
+                fixedIndices: {},
+                dimensionLabels: [],
                 totalPoints: 0,
                 rowCount: 0,
                 displayDimsParam: "",
                 fixedIndicesParam: "",
                 lineIndex: null,
+                lineDim: null,
                 selectionKey: "",
             };
         }
@@ -5338,11 +5397,16 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
 
             return {
                 supported: totalPoints > 0,
+                shape,
+                displayDims: [],
+                fixedIndices: {},
+                dimensionLabels,
                 totalPoints,
                 rowCount: 1,
                 displayDimsParam: "",
                 fixedIndicesParam: "",
                 lineIndex: null,
+                lineDim: null,
                 selectionKey,
             };
         }
@@ -5350,11 +5414,16 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
         if (!Array.isArray(dims) || dims.length !== 2) {
             return {
                 supported: false,
+                shape,
+                displayDims: [],
+                fixedIndices,
+                dimensionLabels,
                 totalPoints: 0,
                 rowCount: 0,
                 displayDimsParam: "",
                 fixedIndicesParam: "",
                 lineIndex: null,
+                lineDim: null,
                 selectionKey: "",
             };
         }
@@ -5376,11 +5445,16 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
 
         return {
             supported: rowCount > 0 && totalPoints > 0,
+            shape,
+            displayDims: dims,
+            fixedIndices,
+            dimensionLabels,
             totalPoints,
             rowCount,
             displayDimsParam,
             fixedIndicesParam,
             lineIndex,
+            lineDim: lineIndex === null ? null : "row",
             selectionKey,
         };
     }
@@ -6226,7 +6300,7 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
           <div class="image-histogram-title" data-image-histogram-title="true">${escapeHtml(title)}</div>
           <div class="image-histogram-subtitle" data-image-histogram-subtitle="true">${escapeHtml(subtitle)}</div>
         </div>
-        <span class="image-histogram-badge" data-image-histogram-badge="true">${escapeHtml(badgeText)}</span>
+        
       </div>
       <div class="line-chart-toolbar image-histogram-toolbar">
         <div class="line-tool-group">
@@ -6669,9 +6743,14 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
         const stagedFixed = controls.stagedFixedIndices || {};
         const dimensionLabels = Array.isArray(preview?.dimension_labels) ? preview.dimension_labels : [];
         const playingFixedDim = toSafeInteger(state.displayConfig?.playingFixedDim, null);
-        const showAutoplayControls = state.displayTab === "heatmap" || state.displayTab === "image";
+        const showAutoplayControls =
+            state.displayTab === "heatmap" ||
+            state.displayTab === "image" ||
+            state.displayTab === "line";
         const canAutoplayHiddenDims =
-            showAutoplayControls && state.heatmapFullEnabled === true;
+            state.displayTab === "line"
+                ? state.lineFullEnabled === true
+                : showAutoplayControls && state.heatmapFullEnabled === true;
 
         if (!appliedDims || !stagedDims) {
             return "";
@@ -6864,7 +6943,10 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
     const SHOW_HEATMAP_HISTOGRAM = false;
 
     // Feature flag: when true, hidden-dimension playback controls are rendered inside the Heatmap/Image panel shell.
-    const SHOW_HEATMAP_PANEL_PLAYBACK_CONTROLS = false;
+    const SHOW_HEATMAP_PANEL_PLAYBACK_CONTROLS = true;
+
+    // Feature flag: when true, hidden-dimension playback controls are rendered inside the Line panel shell.
+    const SHOW_LINE_PANEL_PLAYBACK_CONTROLS = true;
 
     // Renders the correct SVG icon for a toolbar button based on its kind string
     function renderToolIcon(kind) {
@@ -6980,6 +7062,24 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
                 ? preview.shape.length
                 : 0;
         const baseDtype = preview?.dtype || "";
+        const panelPlaybackControls =
+            SHOW_LINE_PANEL_PLAYBACK_CONTROLS === true &&
+            typeof global.renderFixedIndexControls === "function"
+                ? global.renderFixedIndexControls({
+                    shape: config.shape,
+                    displayDims: config.displayDims,
+                    fixedIndices: config.fixedIndices,
+                    dimensionLabels: config.dimensionLabels,
+                    playingFixedDim: toSafeInteger(state.displayConfig?.playingFixedDim, null),
+                    showPlayback: true,
+                    canAutoplayHiddenDims: state.lineFullEnabled === true,
+                    wrapperClassName: "line-panel-controls",
+                    containerClassName: "dim-sliders line-panel-dim-sliders",
+                    controlClassName: "line-panel-dim-slider",
+                    title: "Slice controls",
+                    titleClassName: "line-panel-controls-title",
+                })
+                : "";
         return `
     <div
       class="line-chart-shell line-chart-shell-full"
@@ -6992,6 +7092,7 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
       data-line-selection-key="${escapeHtml(config.selectionKey || "")}"
       data-line-total-points="${config.totalPoints}"
       data-line-index="${config.lineIndex ?? ""}"
+      data-line-dim="${escapeHtml(config.lineDim || "")}"
       data-line-compare-items="${escapeHtml(compareItemsPayload)}"
       data-line-base-shape="${escapeHtml(baseShape)}"
       data-line-base-ndim="${baseNdim}"
@@ -7047,6 +7148,7 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
           <span class="line-zoom-label" data-line-range-label="true">Range: --</span>
         </div>
       </div>
+      ${panelPlaybackControls}
       <div class="line-chart-stage">
         <div class="line-chart-canvas" data-line-canvas="true" tabindex="0" role="application" aria-label="Line chart">
           <svg
@@ -7074,7 +7176,6 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
         const config = resolveLineRuntimeConfig(state, preview);
         const canLoadFull = config.supported && config.totalPoints > 0;
         const isEnabled = state.lineFullEnabled === true && canLoadFull;
-
         const statusText = !config.supported
             ? config.rowCount === 0
                 ? "Line full view requires at least 1 row in the selected Y dimension."
@@ -7137,7 +7238,7 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
         >
           Clear compare
         </button>
-        <span class="${statusClass}" data-line-status="true">${escapeHtml(statusText)}</span>
+        <!-- <span class="${statusClass}" data-line-status="true">${escapeHtml(statusText)}</span> -->
       </div>
       <div class="line-compare-panel">
         <div class="line-compare-panel-label">
@@ -7225,6 +7326,30 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
           style="width:${config.cols * MATRIX_COL_WIDTH}px;height:${config.rows * MATRIX_ROW_HEIGHT}px;"
         ></div>
       </div>
+      <div class="matrix-linked-plot" data-matrix-linked-plot="true" hidden>
+        <div class="matrix-linked-plot-header">
+          <div class="matrix-linked-plot-title" data-matrix-linked-title="true">
+            Plot mode: click a row or column header to inspect its profile.
+          </div>
+          <div class="matrix-linked-plot-actions">
+            <button
+              type="button"
+              class="line-tool-btn line-tool-btn-icon"
+              data-matrix-plot-close="true"
+              aria-label="Close matrix plot"
+              title="Close plot"
+            >
+              <svg class="line-tool-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                <path d="M4 4l8 8M12 4l-8 8"></path>
+              </svg>
+            </button>
+          </div>
+        </div>
+        <div class="data-status info matrix-linked-plot-status" data-line-status="true">
+          Click a row or column header to plot.
+        </div>
+        <div class="matrix-linked-plot-shell-host" data-matrix-linked-shell-host="true"></div>
+      </div>
     </div>
   `;
     }
@@ -7239,7 +7364,7 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
             : config.rows <= 0 || config.cols <= 0
                 ? "No values available for the selected display dims."
                 : isEnabled
-                    ? "Streaming blocks as you scroll."
+                    ? "Streaming blocks as you scroll. Click a row or column header to plot."
                     : "Preview mode. Click Load full view.";
         const statusTone = !config.supported || config.rows <= 0 || config.cols <= 0 ? "error" : "info";
         const statusClass = `data-status ${statusTone === "error" ? "error" : "info"}`;
@@ -7340,6 +7465,13 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
           <span class="line-zoom-label" data-heatmap-range-label="true">Grid: --</span>
         </div>
       </div>
+      <div
+        class="heatmap-runtime-notice"
+        data-heatmap-runtime-notice="true"
+        role="status"
+        aria-live="polite"
+        hidden
+      ></div>
       ${panelPlaybackControls}
       <div class="line-chart-stage">
         <div
@@ -7453,7 +7585,7 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
         >
           Load high-res
         </button>
-        <span class="${statusClass}" data-heatmap-status="true">${escapeHtml(statusText)}</span>
+        <!-- <span class="${statusClass}" data-heatmap-status="true">${escapeHtml(statusText)}</span> -->
       </div>
       ${content}
     </div>
@@ -7497,7 +7629,7 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
         >
           Load high-res
         </button>
-        <span class="${statusClass}" data-heatmap-status="true">${escapeHtml(statusText)}</span>
+        <!-- <span class="${statusClass}" data-heatmap-status="true">${escapeHtml(statusText)}</span> -->
       </div>
       ${content}
     </div>
@@ -7888,6 +8020,11 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
 
     // Max concurrent block fetch requests to avoid flooding the backend on large table scrolls
     const MATRIX_MAX_PARALLEL_REQUESTS = 4;
+    const MATRIX_LINKED_PLOT_CACHE =
+        global.__matrixLinkedPlotCache instanceof Map
+            ? global.__matrixLinkedPlotCache
+            : new Map();
+    global.__matrixLinkedPlotCache = MATRIX_LINKED_PLOT_CACHE;
 
     // Returns a cached block or null; block key encodes all offset/limit parameters
     function getCachedMatrixBlock(runtime, rowOffset, colOffset, rowLimit, colLimit) {
@@ -7932,6 +8069,11 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
         const headerCellsLayer = shell.querySelector("[data-matrix-header-cells]");
         const indexLayer = shell.querySelector("[data-matrix-index]");
         const cellsLayer = shell.querySelector("[data-matrix-cells]");
+        const linkedPlotPanel = shell.querySelector("[data-matrix-linked-plot]");
+        const linkedPlotTitle = shell.querySelector("[data-matrix-linked-title]");
+        const linkedPlotStatusElement = shell.querySelector("[data-line-status]");
+        const linkedPlotShellHost = shell.querySelector("[data-matrix-linked-shell-host]");
+        const linkedPlotCloseButton = shell.querySelector("[data-matrix-plot-close]");
         const statusElement =
             shell.closest(".data-section")?.querySelector("[data-matrix-status]") || null;
 
@@ -7983,6 +8125,8 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
             headerPool: [],
             rowIndexPool: [],
             cellPool: [],
+            selectedPlot: null,
+            linkedLineCleanup: null,
         };
 
         const visible = {
@@ -7993,6 +8137,197 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
         };
 
         const clampIndex = (value, min, max) => Math.max(min, Math.min(max, value));
+
+        function setLinkedPlotTitle(plot = runtime.selectedPlot) {
+            if (!linkedPlotTitle) {
+                return;
+            }
+
+            if (!plot) {
+                linkedPlotTitle.textContent =
+                    "Plot mode: click a row or column header to inspect its profile.";
+                return;
+            }
+
+            linkedPlotTitle.textContent =
+                plot.kind === "row"
+                    ? `Selected row ${plot.index} | Plotting values across columns`
+                    : `Selected column ${plot.index} | Plotting values across rows`;
+        }
+
+        function clearLinkedLineRuntime() {
+            if (typeof runtime.linkedLineCleanup === "function") {
+                try {
+                    runtime.linkedLineCleanup();
+                } catch (_error) {
+                    // ignore cleanup errors for detached inline plots
+                }
+            }
+            runtime.linkedLineCleanup = null;
+            if (linkedPlotShellHost) {
+                linkedPlotShellHost.innerHTML = "";
+            }
+        }
+
+        function closeLinkedPlot() {
+            runtime.selectedPlot = null;
+            MATRIX_LINKED_PLOT_CACHE.delete(runtime.selectionKey);
+            clearLinkedLineRuntime();
+            if (linkedPlotPanel) {
+                linkedPlotPanel.hidden = true;
+            }
+            setLinkedPlotTitle(null);
+            setMatrixStatus(linkedPlotStatusElement, "Click a row or column header to plot.", "info");
+            queueRender();
+        }
+
+        function revealLinkedPlot() {
+            if (!linkedPlotPanel || linkedPlotPanel.hidden) {
+                return;
+            }
+
+            try {
+                linkedPlotPanel.scrollIntoView({
+                    block: "nearest",
+                    inline: "nearest",
+                    behavior: "smooth",
+                });
+            } catch (_error) {
+                linkedPlotPanel.scrollIntoView(false);
+            }
+        }
+
+        function normalizePlotSelection(kind, index) {
+            const normalizedKind =
+                kind === "row"
+                    ? "row"
+                    : kind === "col"
+                        ? "col"
+                        : null;
+            const normalizedIndex = toSafeInteger(index, null);
+            if (!normalizedKind || normalizedIndex === null) {
+                return null;
+            }
+
+            const maxIndex = normalizedKind === "row" ? runtime.rows - 1 : runtime.cols - 1;
+            if (maxIndex < 0 || normalizedIndex < 0 || normalizedIndex > maxIndex) {
+                return null;
+            }
+
+            const totalPoints = normalizedKind === "row" ? runtime.cols : runtime.rows;
+            if (totalPoints <= 0) {
+                return null;
+            }
+
+            const baseSelectionKey =
+                typeof buildLineSelectionKey === "function"
+                    ? buildLineSelectionKey(
+                        runtime.fileKey,
+                        runtime.path,
+                        runtime.displayDims,
+                        runtime.fixedIndices,
+                        normalizedIndex
+                    )
+                    : [
+                        runtime.fileKey || "no-file",
+                        runtime.path || "/",
+                        runtime.displayDims || "none",
+                        runtime.fixedIndices || "none",
+                        normalizedIndex,
+                    ].join("|");
+
+            return {
+                kind: normalizedKind,
+                index: normalizedIndex,
+                totalPoints,
+                lineDim: normalizedKind,
+                lineIndex: normalizedIndex,
+                selectionKey: `${baseSelectionKey}|${normalizedKind}`,
+                title:
+                    normalizedKind === "row"
+                        ? `Row profile: Row ${normalizedIndex} across columns`
+                        : `Column profile: Column ${normalizedIndex} across rows`,
+            };
+        }
+
+        function renderLinkedPlot(plot, options = {}) {
+            const normalizedPlot = normalizePlotSelection(plot?.kind, plot?.index);
+            if (!normalizedPlot) {
+                return false;
+            }
+
+            if (
+                typeof global.renderLinkedLineShellMarkup !== "function" ||
+                typeof initializeLineRuntime !== "function" ||
+                !linkedPlotPanel ||
+                !linkedPlotShellHost
+            ) {
+                setMatrixStatus(statusElement, "Inline line plot is unavailable.", "error");
+                return false;
+            }
+
+            runtime.selectedPlot = normalizedPlot;
+            MATRIX_LINKED_PLOT_CACHE.set(runtime.selectionKey, {
+                kind: normalizedPlot.kind,
+                index: normalizedPlot.index,
+            });
+            linkedPlotPanel.hidden = false;
+            setLinkedPlotTitle(normalizedPlot);
+            setMatrixStatus(linkedPlotStatusElement, `Loading ${normalizedPlot.title}...`, "info");
+            clearLinkedLineRuntime();
+
+            linkedPlotShellHost.innerHTML = global.renderLinkedLineShellMarkup({
+                fileKey: runtime.fileKey,
+                fileEtag: runtime.fileEtag,
+                path: runtime.path,
+                displayDims: runtime.displayDims,
+                fixedIndices: runtime.fixedIndices,
+                selectionKey: normalizedPlot.selectionKey,
+                totalPoints: normalizedPlot.totalPoints,
+                lineIndex: normalizedPlot.lineIndex,
+                lineDim: normalizedPlot.lineDim,
+                notation: runtime.notation,
+                lineGrid: true,
+                lineAspect: "line",
+                inlineShellClass: "matrix-inline-line-shell",
+            });
+
+            const lineShell = linkedPlotShellHost.querySelector("[data-line-shell]");
+            if (!lineShell) {
+                setMatrixStatus(statusElement, "Failed to create inline line plot.", "error");
+                return false;
+            }
+
+            const cleanup = initializeLineRuntime(lineShell);
+            runtime.linkedLineCleanup =
+                typeof cleanup === "function"
+                    ? cleanup
+                    : typeof lineShell.__lineRuntimeCleanup === "function"
+                        ? lineShell.__lineRuntimeCleanup
+                        : null;
+
+            if (options.reveal !== false) {
+                revealLinkedPlot();
+            }
+            queueRender();
+            return true;
+        }
+
+        function activatePlotFromTrigger(trigger, options = {}) {
+            if (!(trigger instanceof Element)) {
+                return false;
+            }
+
+            const plot = normalizePlotSelection(
+                String(trigger.dataset.matrixPlotKind || "").trim().toLowerCase(),
+                trigger.dataset.matrixPlotIndex
+            );
+            if (!plot) {
+                return false;
+            }
+
+            return renderLinkedPlot(plot, options);
+        }
 
         function queueRender() {
             if (runtime.destroyed || runtime.rafToken !== null) {
@@ -8015,8 +8350,8 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
             setMatrixStatus(
                 statusElement,
                 runtime.loadedBlocks > 0
-                    ? `Loaded ${runtime.loadedBlocks} block${runtime.loadedBlocks > 1 ? "s" : ""}.`
-                    : "Scroll to stream blocks.",
+                    ? `Loaded ${runtime.loadedBlocks} block${runtime.loadedBlocks > 1 ? "s" : ""}. Click a row or column header to plot.`
+                    : "Scroll to stream blocks. Click a row or column header to plot.",
                 "info"
             );
         }
@@ -8211,10 +8546,22 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
             );
             visibleCols.forEach((col, index) => {
                 const node = runtime.headerPool[index];
+                const isSelected =
+                    runtime.selectedPlot?.kind === "col" && runtime.selectedPlot?.index === col;
                 node.style.left = `${col * MATRIX_COL_WIDTH}px`;
                 node.style.width = `${MATRIX_COL_WIDTH}px`;
                 node.style.height = `${MATRIX_HEADER_HEIGHT}px`;
                 node.textContent = String(col);
+                node.dataset.matrixPlotTrigger = "true";
+                node.dataset.matrixPlotKind = "col";
+                node.dataset.matrixPlotIndex = String(col);
+                node.setAttribute("role", "button");
+                node.setAttribute("tabindex", "0");
+                node.setAttribute("aria-label", `Plot column ${col} as a line graph`);
+                node.setAttribute("aria-pressed", isSelected ? "true" : "false");
+                node.setAttribute("title", `Plot column ${col}`);
+                node.classList.add("matrix-cell-trigger");
+                node.classList.toggle("is-selected", isSelected);
             });
 
             indexLayer.style.transform = "";
@@ -8226,11 +8573,23 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
             );
             visibleRows.forEach((row, index) => {
                 const node = runtime.rowIndexPool[index];
+                const isSelected =
+                    runtime.selectedPlot?.kind === "row" && runtime.selectedPlot?.index === row;
                 node.style.left = "0px";
                 node.style.top = `${row * MATRIX_ROW_HEIGHT}px`;
                 node.style.width = `${MATRIX_INDEX_WIDTH}px`;
                 node.style.height = `${MATRIX_ROW_HEIGHT}px`;
                 node.textContent = String(row);
+                node.dataset.matrixPlotTrigger = "true";
+                node.dataset.matrixPlotKind = "row";
+                node.dataset.matrixPlotIndex = String(row);
+                node.setAttribute("role", "button");
+                node.setAttribute("tabindex", "0");
+                node.setAttribute("aria-label", `Plot row ${row} as a line graph`);
+                node.setAttribute("aria-pressed", isSelected ? "true" : "false");
+                node.setAttribute("title", `Plot row ${row}`);
+                node.classList.add("matrix-cell-trigger");
+                node.classList.toggle("is-selected", isSelected);
             });
 
             const totalCellCount = visibleRows.length * visibleCols.length;
@@ -8358,6 +8717,42 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
             }
         }
 
+        function resolvePlotTriggerTarget(target) {
+            if (!(target instanceof Element)) {
+                return null;
+            }
+            const trigger = target.closest("[data-matrix-plot-trigger='true']");
+            return trigger && shell.contains(trigger) ? trigger : null;
+        }
+
+        function onPlotTriggerClick(event) {
+            const trigger = resolvePlotTriggerTarget(event.target);
+            if (!trigger) {
+                return;
+            }
+            event.preventDefault();
+            activatePlotFromTrigger(trigger, { reveal: true });
+        }
+
+        function onPlotTriggerKeyDown(event) {
+            if (event.key !== "Enter" && event.key !== " ") {
+                return;
+            }
+
+            const trigger = resolvePlotTriggerTarget(event.target);
+            if (!trigger) {
+                return;
+            }
+
+            event.preventDefault();
+            activatePlotFromTrigger(trigger, { reveal: true });
+        }
+
+        function onCloseLinkedPlot(event) {
+            event?.preventDefault?.();
+            closeLinkedPlot();
+        }
+
         async function exportCsvDisplayed() {
             if (runtime.destroyed) {
                 throw new Error("Matrix runtime is no longer active.");
@@ -8437,6 +8832,13 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
             queueRender();
         };
         table.addEventListener("scroll", onScroll, { passive: true });
+        headerCellsLayer.addEventListener("click", onPlotTriggerClick);
+        headerCellsLayer.addEventListener("keydown", onPlotTriggerKeyDown);
+        indexLayer.addEventListener("click", onPlotTriggerClick);
+        indexLayer.addEventListener("keydown", onPlotTriggerKeyDown);
+        if (linkedPlotCloseButton) {
+            linkedPlotCloseButton.addEventListener("click", onCloseLinkedPlot);
+        }
 
         let resizeObserver = null;
         const onWindowResize = () => {
@@ -8451,17 +8853,31 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
         }
 
         updateStatusFromRuntime();
+        setLinkedPlotTitle(null);
+        setMatrixStatus(linkedPlotStatusElement, "Click a row or column header to plot.", "info");
+        const persistedPlot = MATRIX_LINKED_PLOT_CACHE.get(runtime.selectionKey);
+        if (persistedPlot && typeof persistedPlot === "object") {
+            renderLinkedPlot(persistedPlot, { reveal: false });
+        }
         queueRender();
 
         const cleanup = () => {
             runtime.destroyed = true;
             runtime.blockQueue = [];
             runtime.queuedBlockKeys.clear();
+            clearLinkedLineRuntime();
             runtime.activeCancelKeys.forEach((cancelKey) => {
                 cancelPendingRequest(cancelKey, "matrix-runtime-disposed");
             });
             runtime.activeCancelKeys.clear();
             table.removeEventListener("scroll", onScroll);
+            headerCellsLayer.removeEventListener("click", onPlotTriggerClick);
+            headerCellsLayer.removeEventListener("keydown", onPlotTriggerKeyDown);
+            indexLayer.removeEventListener("click", onPlotTriggerClick);
+            indexLayer.removeEventListener("keydown", onPlotTriggerKeyDown);
+            if (linkedPlotCloseButton) {
+                linkedPlotCloseButton.removeEventListener("click", onCloseLinkedPlot);
+            }
             if (resizeObserver) {
                 resizeObserver.disconnect();
             } else {
@@ -8508,7 +8924,80 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
     const LINE_FULLSCREEN_RESTORE_TTL_MS = 1200;
     // Fixed stroke colors for compare overlay series (index 0 = primary, 1-4 = additional series)
     const LINE_COMPARE_COLORS = ["#DC2626", "#16A34A", "#D97706", "#0EA5E9", "#334155"];
+    const LINE_WINDOW_RENDER_CACHE =
+        global.__lineWindowRenderCache instanceof Map
+            ? global.__lineWindowRenderCache
+            : new Map();
+    const MAX_LINE_WINDOW_RENDER_CACHE_ENTRIES = 320;
+    global.__lineWindowRenderCache = LINE_WINDOW_RENDER_CACHE;
     let lineFullscreenRestore = null;
+
+    function getLineWindowRenderCacheKey(runtime, start = runtime?.viewStart, span = runtime?.viewSpan) {
+        return [
+            runtime?.selectionKey || "no-selection",
+            runtime?.fileEtag || "no-etag",
+            runtime?.qualityRequested || "auto",
+            toSafeInteger(start, 0),
+            toSafeInteger(span, 0),
+        ].join("|");
+    }
+
+    function cloneLinePoints(points) {
+        return Array.isArray(points)
+            ? points
+                .map((point) => ({
+                    x: Number(point?.x),
+                    y: Number(point?.y),
+                }))
+                .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y))
+            : [];
+    }
+
+    function cloneCompareSeries(seriesList) {
+        return Array.isArray(seriesList)
+            ? seriesList
+                .map((entry) => ({
+                    isBase: entry?.isBase === true,
+                    path: String(entry?.path || ""),
+                    label: String(entry?.label || ""),
+                    color: String(entry?.color || "#2563EB"),
+                    points: cloneLinePoints(entry?.points),
+                }))
+                .filter((entry) => entry.points.length > 0)
+            : [];
+    }
+
+    function rememberLineWindowRender(runtime, snapshot) {
+        if (!runtime || !snapshot || typeof snapshot !== "object") {
+            return;
+        }
+        const cacheKey = getLineWindowRenderCacheKey(runtime, snapshot.viewStart, snapshot.viewSpan);
+        LINE_WINDOW_RENDER_CACHE.delete(cacheKey);
+        LINE_WINDOW_RENDER_CACHE.set(cacheKey, {
+            ...snapshot,
+            basePoints: cloneLinePoints(snapshot.basePoints),
+            compareSeries: cloneCompareSeries(snapshot.compareSeries),
+            failedCompareTargets: Array.isArray(snapshot.failedCompareTargets)
+                ? snapshot.failedCompareTargets.map((entry) => ({
+                    path: String(entry?.path || ""),
+                    label: String(entry?.label || ""),
+                    reason: String(entry?.reason || ""),
+                }))
+                : [],
+        });
+        while (LINE_WINDOW_RENDER_CACHE.size > MAX_LINE_WINDOW_RENDER_CACHE_ENTRIES) {
+            const oldestKey = LINE_WINDOW_RENDER_CACHE.keys().next().value;
+            if (!oldestKey) {
+                break;
+            }
+            LINE_WINDOW_RENDER_CACHE.delete(oldestKey);
+        }
+    }
+
+    function getLineWindowRender(runtime, start = runtime?.viewStart, span = runtime?.viewSpan) {
+        const cacheKey = getLineWindowRenderCacheKey(runtime, start, span);
+        return LINE_WINDOW_RENDER_CACHE.get(cacheKey) || null;
+    }
 
     function isNumericDtype(dtype) {
         const normalized = String(dtype || "").trim().toLowerCase();
@@ -8595,6 +9084,9 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
         lineFullscreenRestore = null;
         return key === selectionKey && Date.now() <= expiresAt;
     }
+
+    const LINE_SELECTION_UPDATE_DEBOUNCE_MS = 140;
+
     function initializeLineRuntime(shell) {
         if (!shell) {
             return null;
@@ -8706,6 +9198,7 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
             fetchTimer: null,
             requestSeq: 0,
             destroyed: false,
+            activeCancelKeys: new Set(),
             panEnabled: false,
             zoomClickEnabled: false,
             isPanning: false,
@@ -8729,7 +9222,12 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
             hoverDot: null,
             zoomFocusX: null,
             fullscreenActive: false,
+            recoveryRetryCount: 0,
+            recoveryRetryTimer: null,
         };
+
+        let selectionUpdateTimer = null;
+        let pendingSelectionUpdate = null;
 
         if (consumeLineFullscreenRestore(selectionKey)) {
             runtime.fullscreenActive = true;
@@ -8805,10 +9303,7 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
                 0,
                 runtime.totalPoints - 1
             ).toLocaleString()}`;
-            rangeLabel.textContent =
-                typeof pointCount === "number" && pointCount >= 0
-                    ? `${baseText} | ${pointCount.toLocaleString()} points`
-                    : baseText;
+            rangeLabel.textContent = baseText;
         }
 
         function syncQualityControl() {
@@ -9142,6 +9637,76 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
             legendElement.innerHTML = `${seriesMarkup}${failedMarkup}`;
         }
 
+        function clearRecoveryRetry() {
+            if (runtime.recoveryRetryTimer !== null) {
+                clearTimeout(runtime.recoveryRetryTimer);
+                runtime.recoveryRetryTimer = null;
+            }
+        }
+
+        function scheduleRecoveryFetch(reason = "retry") {
+            if (
+                runtime.destroyed ||
+                (Array.isArray(runtime.points) && runtime.points.length >= 2) ||
+                runtime.recoveryRetryCount >= 2
+            ) {
+                return;
+            }
+            clearRecoveryRetry();
+            const retrySelectionKey = runtime.selectionKey;
+            const retryStart = runtime.viewStart;
+            const retrySpan = runtime.viewSpan;
+            runtime.recoveryRetryCount += 1;
+            runtime.recoveryRetryTimer = setTimeout(() => {
+                runtime.recoveryRetryTimer = null;
+                if (
+                    runtime.destroyed ||
+                    retrySelectionKey !== runtime.selectionKey ||
+                    retryStart !== runtime.viewStart ||
+                    retrySpan !== runtime.viewSpan
+                ) {
+                    return;
+                }
+                setMatrixStatus(statusElement, `Retrying line range (${reason})...`, "info");
+                void fetchLineRange({ force: true, recovery: true });
+            }, 120 * runtime.recoveryRetryCount);
+        }
+
+        function applyCachedWindowSnapshot(snapshot, options = {}) {
+            if (!snapshot || typeof snapshot !== "object") {
+                return false;
+            }
+            const basePoints = cloneLinePoints(snapshot.basePoints);
+            const compareSeries = cloneCompareSeries(snapshot.compareSeries);
+            if (basePoints.length < 2) {
+                return false;
+            }
+            runtime.lineStep = Math.max(1, toSafeInteger(snapshot.lineStep, runtime.lineStep));
+            runtime.qualityApplied = normalizeLineQuality(snapshot.qualityApplied || runtime.qualityRequested);
+            runtime.requestedPoints = Math.max(
+                0,
+                toSafeInteger(snapshot.requestedPoints, basePoints.length)
+            );
+            runtime.returnedPoints = Math.max(
+                0,
+                toSafeInteger(snapshot.returnedPoints, basePoints.length)
+            );
+            runtime.failedCompareTargets = Array.isArray(snapshot.failedCompareTargets)
+                ? snapshot.failedCompareTargets.map((entry) => ({
+                    path: String(entry?.path || ""),
+                    label: String(entry?.label || ""),
+                    reason: String(entry?.reason || ""),
+                }))
+                : [];
+            updateRangeLabel(basePoints.length);
+            updateZoomLabel();
+            renderSeries(basePoints, compareSeries);
+            if (options.statusMessage) {
+                setMatrixStatus(statusElement, options.statusMessage, "info");
+            }
+            return true;
+        }
+
         function getSvgDimensions() {
             const rect = canvas.getBoundingClientRect();
             const w = Math.max(300, Math.round(rect.width) || LINE_SVG_WIDTH);
@@ -9461,14 +10026,15 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
             }, LINE_FETCH_DEBOUNCE_MS);
         }
 
-        async function fetchLineRange() {
+        async function fetchLineRange(options = {}) {
             if (runtime.destroyed) {
-                return;
+                return false;
             }
 
             const requestId = ++runtime.requestSeq;
             const offset = runtime.viewStart;
             const limit = runtime.viewSpan;
+            const forceRequest = options?.force === true;
 
             setMatrixStatus(statusElement, "Loading line range...", "info");
 
@@ -9499,6 +10065,7 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
                 params.etag = runtime.fileEtag;
             }
 
+            const requestCancelKeys = [];
             try {
                 const comparePrecheckFailures = [];
                 const compareTargets = [];
@@ -9583,23 +10150,28 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
 
                 // Base and compare ranges are fetched together; compare failures do not block base rendering.
                 const settledResponses = await Promise.allSettled(
-                    requestTargets.map((target) =>
-                        getFileData(runtime.fileKey, target.path, params, {
+                    requestTargets.map((target) => {
+                        const cancelKey = `${runtime.selectionKey}|${target.path}`;
+                        requestCancelKeys.push(cancelKey);
+                        runtime.activeCancelKeys.add(cancelKey);
+                        return getFileData(runtime.fileKey, target.path, params, {
+                            force: forceRequest,
                             cancelPrevious: true,
-                            cancelKey: `${runtime.selectionKey}|${target.path}`,
-                        })
-                    )
+                            cancelKey,
+                        });
+                    })
                 );
 
                 if (runtime.destroyed || requestId !== runtime.requestSeq) {
-                    return;
+                    return false;
                 }
 
                 const baseOutcome = settledResponses[0];
                 if (!baseOutcome || baseOutcome.status !== "fulfilled") {
                     const baseError = baseOutcome?.reason;
                     if (baseError?.isAbort || baseError?.code === "ABORTED") {
-                        return;
+                        scheduleRecoveryFetch("request interrupted");
+                        return false;
                     }
                     throw baseError || new Error("Failed to load base line dataset.");
                 }
@@ -9676,6 +10248,26 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
                 runtime.failedCompareTargets = failedTargets;
                 runtime.compareSeries = compareSeries;
 
+                if (baseSeries.points.length < 2 && limit >= 2) {
+                    scheduleRecoveryFetch("empty response");
+                } else {
+                    clearRecoveryRetry();
+                    runtime.recoveryRetryCount = 0;
+                }
+                if (baseSeries.points.length >= 2) {
+                    rememberLineWindowRender(runtime, {
+                        viewStart: offset,
+                        viewSpan: limit,
+                        basePoints: baseSeries.points,
+                        compareSeries,
+                        failedCompareTargets: failedTargets,
+                        lineStep: runtime.lineStep,
+                        qualityApplied: runtime.qualityApplied,
+                        requestedPoints: runtime.requestedPoints,
+                        returnedPoints: runtime.returnedPoints,
+                    });
+                }
+
                 if (Number.isFinite(runtime.pendingZoomFocusX)) {
                     runtime.zoomFocusX = runtime.pendingZoomFocusX;
                 }
@@ -9701,19 +10293,27 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
                     `${runtime.qualityApplied === "exact" ? "Exact" : "Overview"} loaded ${baseSeries.points.length.toLocaleString()} points (step ${runtime.lineStep}).${compareLoadedText}`,
                     "info"
                 );
+                return true;
             } catch (error) {
                 if (runtime.destroyed) {
-                    return;
+                    return false;
                 }
 
                 if (error?.isAbort || error?.code === "ABORTED") {
-                    return;
+                    scheduleRecoveryFetch("request interrupted");
+                    return false;
                 }
 
                 runtime.failedCompareTargets = [];
                 runtime.compareSeries = [];
                 updateLegend([], []);
                 setMatrixStatus(statusElement, error?.message || "Failed to load line range.", "error");
+                scheduleRecoveryFetch("load failed");
+                return false;
+            } finally {
+                requestCancelKeys.forEach((cancelKey) => {
+                    runtime.activeCancelKeys.delete(cancelKey);
+                });
             }
         }
 
@@ -9846,6 +10446,180 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
             exportPng,
         };
 
+        function cancelInFlightRequests() {
+            runtime.activeCancelKeys.forEach((cancelKey) => {
+                cancelPendingRequest(cancelKey, "line-runtime-selection-update");
+            });
+            runtime.activeCancelKeys.clear();
+        }
+
+        function clearPendingSelectionUpdate() {
+            if (selectionUpdateTimer !== null) {
+                clearTimeout(selectionUpdateTimer);
+                selectionUpdateTimer = null;
+            }
+            pendingSelectionUpdate = null;
+        }
+
+        function restoreSelectionViewState(selectionKey) {
+            const cachedView = LINE_VIEW_CACHE.get(selectionKey);
+            if (!cachedView || typeof cachedView !== "object") {
+                return false;
+            }
+
+            runtime.qualityRequested = normalizeLineQuality(
+                cachedView.qualityRequested || runtime.qualityRequested
+            );
+            const restored = clampViewport(cachedView.start, cachedView.span);
+            runtime.viewStart = restored.start;
+            runtime.viewSpan = restored.span;
+            runtime.panEnabled = cachedView.panEnabled === true;
+            runtime.zoomClickEnabled = cachedView.zoomClickEnabled === true;
+            runtime.zoomFocusX = Number.isFinite(cachedView.zoomFocusX) ? cachedView.zoomFocusX : null;
+            if (runtime.panEnabled && runtime.zoomClickEnabled) {
+                runtime.zoomClickEnabled = false;
+            }
+            return true;
+        }
+
+        async function applySelectionUpdate(nextSelection, options = {}) {
+            if (runtime.destroyed || !nextSelection || typeof nextSelection !== "object") {
+                return false;
+            }
+
+            const nextDisplayDims =
+                typeof nextSelection.displayDims === "string" ? nextSelection.displayDims : runtime.displayDims;
+            const nextFixedIndices =
+                typeof nextSelection.fixedIndices === "string" ? nextSelection.fixedIndices : runtime.fixedIndices;
+            const hasLineIndex = Object.prototype.hasOwnProperty.call(nextSelection, "lineIndex");
+            const nextLineIndex = hasLineIndex
+                ? nextSelection.lineIndex === null
+                    ? null
+                    : toSafeInteger(nextSelection.lineIndex, runtime.lineIndex)
+                : runtime.lineIndex;
+            const hasTotalPoints = Object.prototype.hasOwnProperty.call(nextSelection, "totalPoints");
+            const nextTotalPoints = hasTotalPoints
+                ? Math.max(0, toSafeInteger(nextSelection.totalPoints, runtime.totalPoints))
+                : runtime.totalPoints;
+            const nextLineDimValue =
+                typeof nextSelection.lineDim === "string" ? nextSelection.lineDim : runtime.lineDim;
+            const nextLineDim =
+                nextLineIndex === null
+                    ? null
+                    : String(nextLineDimValue || "").trim().toLowerCase() === "col"
+                        ? "col"
+                        : "row";
+            const nextSelectionKey = String(
+                nextSelection.selectionKey ||
+                buildLineSelectionKey(runtime.fileKey, runtime.path, nextDisplayDims, nextFixedIndices, nextLineIndex)
+            );
+
+            const dimsChanged = nextDisplayDims !== runtime.displayDims;
+            const fixedChanged = nextFixedIndices !== runtime.fixedIndices;
+            const totalPointsChanged = nextTotalPoints !== runtime.totalPoints;
+            const lineIndexChanged = nextLineIndex !== runtime.lineIndex;
+            const lineDimChanged = nextLineDim !== runtime.lineDim;
+            const selectionChanged = nextSelectionKey !== runtime.selectionKey;
+            if (
+                !dimsChanged &&
+                !fixedChanged &&
+                !totalPointsChanged &&
+                !lineIndexChanged &&
+                !lineDimChanged &&
+                !selectionChanged
+            ) {
+                return true;
+            }
+
+            const preserveViewState = options.preserveViewState === true && !totalPointsChanged;
+            persistViewState();
+            if (runtime.fetchTimer !== null) {
+                clearTimeout(runtime.fetchTimer);
+                runtime.fetchTimer = null;
+            }
+            runtime.requestSeq += 1;
+            cancelInFlightRequests();
+
+            runtime.displayDims = nextDisplayDims || "";
+            runtime.fixedIndices = nextFixedIndices || "";
+            runtime.totalPoints = Math.max(0, nextTotalPoints);
+            runtime.lineIndex = nextLineIndex;
+            runtime.lineDim = nextLineDim;
+            runtime.selectionKey = nextSelectionKey;
+            runtime.minSpan = Math.max(1, Math.min(LINE_MIN_VIEW_SPAN, Math.max(1, runtime.totalPoints)));
+            shell.dataset.lineDisplayDims = runtime.displayDims;
+            shell.dataset.lineFixedIndices = runtime.fixedIndices;
+            shell.dataset.lineTotalPoints = String(runtime.totalPoints);
+            shell.dataset.lineIndex =
+                runtime.lineIndex === null || runtime.lineIndex === undefined ? "" : String(runtime.lineIndex);
+            shell.dataset.lineDim = runtime.lineDim || "";
+            shell.dataset.lineSelectionKey = runtime.selectionKey;
+            runtime.pendingZoomFocusX = null;
+
+            if (preserveViewState) {
+                const preserved = clampViewport(runtime.viewStart, runtime.viewSpan);
+                runtime.viewStart = preserved.start;
+                runtime.viewSpan = preserved.span;
+            } else if (!restoreSelectionViewState(runtime.selectionKey)) {
+                runtime.viewStart = 0;
+                const reset = clampViewport(0, runtime.totalPoints);
+                runtime.viewStart = reset.start;
+                runtime.viewSpan = reset.span;
+                runtime.zoomFocusX = null;
+                runtime.panEnabled = false;
+                runtime.zoomClickEnabled = false;
+            }
+
+            syncPanState();
+            syncZoomClickState();
+            updateRangeLabel();
+            updateZoomLabel();
+            syncWindowControl();
+            syncJumpInput();
+            hideHover();
+            persistViewState();
+            setMatrixStatus(statusElement, "Updating line slice...", "info");
+            return await fetchLineRange();
+        }
+
+        function queueSelectionUpdate(nextSelection, options = {}) {
+            pendingSelectionUpdate = {
+                nextSelection: nextSelection && typeof nextSelection === "object" ? { ...nextSelection } : {},
+                options: { ...options },
+            };
+
+            if (options && options.immediate === true) {
+                const immediateUpdate = pendingSelectionUpdate;
+                clearPendingSelectionUpdate();
+                return applySelectionUpdate(immediateUpdate.nextSelection, immediateUpdate.options);
+            }
+
+            if (selectionUpdateTimer !== null) {
+                clearTimeout(selectionUpdateTimer);
+            }
+
+            return new Promise((resolve, reject) => {
+                selectionUpdateTimer = setTimeout(() => {
+                    selectionUpdateTimer = null;
+                    const queuedUpdate = pendingSelectionUpdate;
+                    pendingSelectionUpdate = null;
+                    if (!queuedUpdate) {
+                        resolve(false);
+                        return;
+                    }
+                    Promise.resolve(applySelectionUpdate(queuedUpdate.nextSelection, queuedUpdate.options))
+                        .then(resolve)
+                        .catch(reject);
+                }, LINE_SELECTION_UPDATE_DEBOUNCE_MS);
+            });
+        }
+
+        shell.__lineRuntimeApi = {
+            updateSelection(nextSelection, options = {}) {
+                return queueSelectionUpdate(nextSelection, options);
+            },
+        };
+
         function updateViewport(start, span, immediate = false) {
             const next = clampViewport(start, span);
             const changed = next.start !== runtime.viewStart || next.span !== runtime.viewSpan;
@@ -9856,6 +10630,11 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
             syncWindowControl();
             syncJumpInput();
             persistViewState();
+
+            const cachedWindow = getLineWindowRender(runtime, runtime.viewStart, runtime.viewSpan);
+            if (cachedWindow) {
+                applyCachedWindowSnapshot(cachedWindow);
+            }
 
             if (!changed) {
                 return false;
@@ -10249,6 +11028,12 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
             rerenderAfterFullscreenChange();
         }
 
+        function stopShellEventPropagation(event) {
+            if (event?.target instanceof Element && shell.contains(event.target)) {
+                event.stopPropagation();
+            }
+        }
+
         function onFullscreenEsc(event) {
             if (event.key === "Escape" && runtime.fullscreenActive) {
                 event.preventDefault();
@@ -10291,9 +11076,19 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
         updateRangeLabel();
         updateZoomLabel();
         persistViewState();
-        setMatrixStatus(statusElement, "Loading initial line range...", "info");
+        const cachedInitialWindow = getLineWindowRender(runtime);
+        if (cachedInitialWindow) {
+            applyCachedWindowSnapshot(cachedInitialWindow, {
+                statusMessage: "Restored cached line range. Refreshing...",
+            });
+        } else {
+            setMatrixStatus(statusElement, "Loading initial line range...", "info");
+        }
         void fetchLineRange();
 
+        shell.addEventListener("click", stopShellEventPropagation);
+        shell.addEventListener("change", stopShellEventPropagation);
+        shell.addEventListener("input", stopShellEventPropagation);
         canvas.addEventListener("wheel", onWheel, { passive: false });
         canvas.addEventListener("pointerdown", onPointerDown);
         canvas.addEventListener("pointermove", onPointerMove);
@@ -10375,6 +11170,9 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
                 if (shell.__lineRuntimeCleanup === cleanup) {
                     delete shell.__lineRuntimeCleanup;
                 }
+                if (shell.__lineRuntimeApi) {
+                    delete shell.__lineRuntimeApi;
+                }
                 if (shell.__exportApi) {
                     delete shell.__exportApi;
                 }
@@ -10392,10 +11190,13 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
                 window.removeEventListener("resize", onResize);
             }
             clearTimeout(resizeTimer);
+            clearRecoveryRetry();
             if (runtime.fetchTimer !== null) {
                 clearTimeout(runtime.fetchTimer);
                 runtime.fetchTimer = null;
             }
+            clearPendingSelectionUpdate();
+            cancelInFlightRequests();
             if (runtime.isPanning) {
                 endPan();
             }
@@ -10407,6 +11208,9 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
             canvas.removeEventListener("pointercancel", onPointerCancel);
             canvas.removeEventListener("pointerleave", onPointerLeave);
             canvas.removeEventListener("keydown", onKeyDown);
+            shell.removeEventListener("click", stopShellEventPropagation);
+            shell.removeEventListener("change", stopShellEventPropagation);
+            shell.removeEventListener("input", stopShellEventPropagation);
             if (panToggleButton) {
                 panToggleButton.removeEventListener("click", onTogglePan);
             }
@@ -10469,6 +11273,9 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
             LINE_RUNTIME_CLEANUPS.delete(cleanup);
             if (shell.__lineRuntimeCleanup === cleanup) {
                 delete shell.__lineRuntimeCleanup;
+            }
+            if (shell.__lineRuntimeApi) {
+                delete shell.__lineRuntimeApi;
             }
             if (shell.__exportApi) {
                 delete shell.__exportApi;
@@ -10935,9 +11742,10 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
     }
 
     function renderLinkedLineShellMarkup(config) {
+        const inlineShellClass = String(config?.inlineShellClass || "heatmap-inline-line-shell").trim();
         return `
     <div
-      class="line-chart-shell line-chart-shell-full heatmap-inline-line-shell"
+      class="line-chart-shell line-chart-shell-full ${escapeHtml(inlineShellClass)}"
       data-line-shell="true"
       data-line-file-key="${escapeHtml(config.fileKey || "")}"
       data-line-file-etag="${escapeHtml(config.fileEtag || "")}"
@@ -11051,6 +11859,7 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
         const minStat = shell.querySelector("[data-heatmap-stat-min]");
         const maxStat = shell.querySelector("[data-heatmap-stat-max]");
         const rangeStat = shell.querySelector("[data-heatmap-stat-range]");
+        const runtimeNotice = shell.querySelector("[data-heatmap-runtime-notice]");
         const histogramRoot = shell.querySelector("[data-image-histogram-root]");
         const intensityOverlay = shell.querySelector("[data-heatmap-intensity-overlay]");
         const intensityWindow = shell.querySelector("[data-heatmap-intensity-window]");
@@ -11066,6 +11875,7 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
         let linkedPlotCloseButton = shell.querySelector("[data-heatmap-plot-close]");
         const statusElement =
             shell.closest(".data-section")?.querySelector("[data-heatmap-status]") || null;
+        const previewLayout = shell.closest(".preview-layout");
 
         if (!canvasHost || !canvas) {
             return;
@@ -11184,6 +11994,10 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
             loadedPhase: "preview",
             fullscreenActive: false,
             loadSequence: 0,
+            initialHighResLoading: false,
+            controlsLocked: false,
+            hasShownFullLoadedNotice: false,
+            noticeTimer: null,
             intensityEnabled: false,
             intensityMin: null,
             intensityMax: null,
@@ -11196,6 +12010,127 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
 
         if (consumeHeatmapFullscreenRestore(selectionKey)) {
             runtime.fullscreenActive = true;
+        }
+
+        function clearRuntimeNoticeTimer() {
+            if (runtime.noticeTimer !== null) {
+                clearTimeout(runtime.noticeTimer);
+                runtime.noticeTimer = null;
+            }
+        }
+
+        function hideRuntimeNotice() {
+            clearRuntimeNoticeTimer();
+            if (!runtimeNotice) {
+                return;
+            }
+            runtimeNotice.hidden = true;
+            runtimeNotice.textContent = "";
+            runtimeNotice.classList.remove("info", "error", "is-visible");
+        }
+
+        function setRuntimeNotice(message, options = {}) {
+            if (!runtimeNotice) {
+                return;
+            }
+            const text = String(message || "").trim();
+            if (!text) {
+                hideRuntimeNotice();
+                return;
+            }
+            const tone = options.tone === "error" ? "error" : "info";
+            const autoHideMs = Math.max(0, Number(options.autoHideMs) || 0);
+            clearRuntimeNoticeTimer();
+            runtimeNotice.textContent = text;
+            runtimeNotice.hidden = false;
+            runtimeNotice.classList.remove("info", "error");
+            runtimeNotice.classList.add("is-visible", tone);
+            if (autoHideMs > 0) {
+                runtime.noticeTimer = setTimeout(() => {
+                    runtime.noticeTimer = null;
+                    if (runtime.destroyed || runtime.initialHighResLoading) {
+                        return;
+                    }
+                    hideRuntimeNotice();
+                }, autoHideMs);
+            }
+        }
+
+        function buildHighResLoadingNoticeText() {
+            return isImageMode ? "Loading full-resolution image..." : "Loading full-resolution heatmap...";
+        }
+
+        function buildHighResLoadedNoticeText() {
+            return isImageMode ? "Image fully loaded." : "Heatmap fully loaded.";
+        }
+
+        function getLockableHeatmapControls() {
+            const lockableElements = [];
+            const lockRoot = previewLayout || shell.closest(".preview-shell") || shell.parentElement;
+            const lockableSelectors = [
+                "[data-display-dim-select]",
+                "[data-fixed-index-range]",
+                "[data-fixed-index-number]",
+                "[data-fixed-index-play-action]",
+                "[data-dim-apply]",
+                "[data-dim-reset]",
+                "[data-heatmap-pan-toggle]",
+                "[data-heatmap-plot-toggle]",
+                "[data-heatmap-intensity-toggle]",
+                "[data-heatmap-zoom-in]",
+                "[data-heatmap-zoom-out]",
+                "[data-heatmap-reset-view]",
+                "[data-heatmap-fullscreen-toggle]",
+                "[data-heatmap-plot-close]",
+                "[data-heatmap-plot-axis]",
+            ];
+            if (!lockRoot) {
+                return lockableElements;
+            }
+            lockRoot.querySelectorAll(lockableSelectors.join(",")).forEach((element) => {
+                if (
+                    element instanceof HTMLButtonElement ||
+                    element instanceof HTMLInputElement ||
+                    element instanceof HTMLSelectElement
+                ) {
+                    lockableElements.push(element);
+                }
+            });
+            return lockableElements;
+        }
+
+        function setHeatmapControlsLocked(locked) {
+            const nextLocked = locked === true;
+            runtime.controlsLocked = nextLocked;
+            shell.classList.toggle("is-highres-loading", nextLocked);
+            canvasHost.classList.toggle("is-disabled", nextLocked);
+            canvasHost.setAttribute("aria-disabled", nextLocked ? "true" : "false");
+            if (nextLocked) {
+                if (!canvasHost.hasAttribute("data-prev-tabindex")) {
+                    canvasHost.setAttribute("data-prev-tabindex", canvasHost.getAttribute("tabindex") || "");
+                }
+                canvasHost.setAttribute("tabindex", "-1");
+            } else if (canvasHost.hasAttribute("data-prev-tabindex")) {
+                const previousTabIndex = canvasHost.getAttribute("data-prev-tabindex");
+                canvasHost.removeAttribute("data-prev-tabindex");
+                if (previousTabIndex) {
+                    canvasHost.setAttribute("tabindex", previousTabIndex);
+                } else {
+                    canvasHost.removeAttribute("tabindex");
+                }
+            }
+
+            getLockableHeatmapControls().forEach((control) => {
+                if (nextLocked) {
+                    if (!control.hasAttribute("data-runtime-prev-disabled")) {
+                        control.setAttribute("data-runtime-prev-disabled", control.disabled ? "1" : "0");
+                    }
+                    control.disabled = true;
+                } else if (control.hasAttribute("data-runtime-prev-disabled")) {
+                    control.disabled = control.getAttribute("data-runtime-prev-disabled") === "1";
+                    control.removeAttribute("data-runtime-prev-disabled");
+                }
+            });
         }
 
         function updateLabels() {
@@ -11543,6 +12478,7 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
             runtime.maxSizeClamped = cachedData.maxSizeClamped === true;
             runtime.effectiveMaxSize = Number(cachedData.effectiveMaxSize) || HEATMAP_MAX_SIZE;
             runtime.loadedPhase = cachedData.phase === "highres" ? "highres" : "preview";
+            runtime.hasShownFullLoadedNotice = runtime.loadedPhase === "highres";
 
             // View cache stores interaction state (zoom/pan/plot mode/selection), separate from pixel data cache.
             const cachedView = HEATMAP_SELECTION_VIEW_CACHE.get(runtime.cacheKey);
@@ -12513,39 +13449,75 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
         async function loadHighResHeatmap(options = {}) {
             const preserveViewState = options && options.preserveViewState === true;
             const forceFullLoad = options && options.forceFullLoad === true;
+            const lockControls = options && options.lockControls === true;
+            const announceLoaded = options && options.announceLoaded === true;
             const loadToken = ++runtime.loadSequence;
-            if (forceFullLoad) {
-                const fullResult = await fetchHeatmapAtSize(HEATMAP_MAX_SIZE, "Loading full resolution...", {
-                    preserveViewState,
-                    loadToken,
-                });
-                return fullResult.loaded === true;
+            let loaded = false;
+            if (lockControls) {
+                runtime.initialHighResLoading = true;
+                setHeatmapControlsLocked(true);
+                setRuntimeNotice(buildHighResLoadingNoticeText(), { tone: "info" });
             }
-            // Progressive loading: fast preview first (256), then full resolution (1024)
-            const PREVIEW_SIZE = 256;
-            const previewResult = await fetchHeatmapAtSize(PREVIEW_SIZE, "Loading heatmap preview...", {
-                preserveViewState,
-                loadToken,
-            });
-            if (runtime.destroyed || loadToken !== runtime.loadSequence) return false;
-            if (previewResult.loaded && HEATMAP_MAX_SIZE > PREVIEW_SIZE) {
-                // Small delay so the user sees the preview before the full load starts
-                await new Promise((r) => setTimeout(r, 50));
-                if (runtime.destroyed || loadToken !== runtime.loadSequence) return false;
-                const fullResult = await fetchHeatmapAtSize(HEATMAP_MAX_SIZE, "Loading full resolution...", {
+            try {
+                if (forceFullLoad) {
+                    const fullResult = await fetchHeatmapAtSize(HEATMAP_MAX_SIZE, "Loading full resolution...", {
+                        preserveViewState,
+                        loadToken,
+                    });
+                    loaded = fullResult.loaded === true;
+                    return loaded;
+                }
+                // Progressive loading: fast preview first (256), then full resolution (1024)
+                const PREVIEW_SIZE = 256;
+                const previewResult = await fetchHeatmapAtSize(PREVIEW_SIZE, "Loading heatmap preview...", {
                     preserveViewState,
                     loadToken,
                 });
-                return fullResult.loaded === true;
-            } else if (!previewResult.loaded) {
-                // Fallback: try full size directly
-                const fallbackResult = await fetchHeatmapAtSize(HEATMAP_MAX_SIZE, "Loading high-res heatmap...", {
-                    preserveViewState,
-                    loadToken,
-                });
-                return fallbackResult.loaded === true;
+                if (runtime.destroyed || loadToken !== runtime.loadSequence) {
+                    loaded = false;
+                    return false;
+                }
+                if (previewResult.loaded && HEATMAP_MAX_SIZE > PREVIEW_SIZE) {
+                    // Small delay so the user sees the preview before the full load starts
+                    await new Promise((r) => setTimeout(r, 50));
+                    if (runtime.destroyed || loadToken !== runtime.loadSequence) {
+                        loaded = false;
+                        return false;
+                    }
+                    const fullResult = await fetchHeatmapAtSize(HEATMAP_MAX_SIZE, "Loading full resolution...", {
+                        preserveViewState,
+                        loadToken,
+                    });
+                    loaded = fullResult.loaded === true;
+                    return loaded;
+                } else if (!previewResult.loaded) {
+                    // Fallback: try full size directly
+                    const fallbackResult = await fetchHeatmapAtSize(HEATMAP_MAX_SIZE, "Loading high-res heatmap...", {
+                        preserveViewState,
+                        loadToken,
+                    });
+                    loaded = fallbackResult.loaded === true;
+                    return loaded;
+                }
+                loaded = previewResult.loaded === true;
+                return loaded;
+            } finally {
+                if (lockControls) {
+                    runtime.initialHighResLoading = false;
+                    setHeatmapControlsLocked(false);
+                    if (runtime.destroyed) {
+                        hideRuntimeNotice();
+                    } else if (loaded && announceLoaded && !runtime.hasShownFullLoadedNotice) {
+                        runtime.hasShownFullLoadedNotice = true;
+                        setRuntimeNotice(buildHighResLoadedNoticeText(), {
+                            tone: "info",
+                            autoHideMs: 2200,
+                        });
+                    } else {
+                        hideRuntimeNotice();
+                    }
+                }
             }
-            return previewResult.loaded === true;
         }
 
         async function exportCsvDisplayed() {
@@ -13165,7 +14137,10 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
         if (!restoredFromCache) {
             updateLabels();
             renderHeatmap();
-            void loadHighResHeatmap();
+            void loadHighResHeatmap({
+                lockControls: true,
+                announceLoaded: true,
+            });
         }
 
         canvas.addEventListener("wheel", onWheel, { passive: false });
@@ -13259,6 +14234,7 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
             shell.removeEventListener("click", onShellClick);
             document.removeEventListener("keydown", onFullscreenEsc);
             stopIntensityDrag();
+            hideRuntimeNotice();
             if (runtime.fullscreenActive) {
                 rememberHeatmapFullscreen(runtime.selectionKey);
             }
@@ -13280,6 +14256,14 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
     if (typeof initializeHeatmapRuntime !== "undefined") {
         moduleState.initializeHeatmapRuntime = initializeHeatmapRuntime;
         global.initializeHeatmapRuntime = initializeHeatmapRuntime;
+    }
+    if (typeof renderLinkedLineShellMarkup !== "undefined") {
+        moduleState.renderLinkedLineShellMarkup = renderLinkedLineShellMarkup;
+        global.renderLinkedLineShellMarkup = renderLinkedLineShellMarkup;
+    }
+    if (typeof renderLinkedLinePanelMarkup !== "undefined") {
+        moduleState.renderLinkedLinePanelMarkup = renderLinkedLinePanelMarkup;
+        global.renderLinkedLinePanelMarkup = renderLinkedLinePanelMarkup;
     }
     if (ns.core && typeof ns.core.registerModule === "function") {
         ns.core.registerModule("components/viewerPanel/runtime/heatmapRuntime");
@@ -15081,8 +16065,16 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
     var disposeViewerViewBindings = null;
     var eventRoot = null;
     var eventActions = {};
+    var disposeSidebarResizeBindings = null;
+    var sidebarResizeRoot = null;
     // Guards against concurrent export button presses triggering duplicate downloads
     var exportRunning = false;
+    var SIDEBAR_RESIZE_STORAGE_KEY = "hdf-viewer.sidebar-width";
+    var SIDEBAR_RESIZE_MIN_RATIO = 0.15;
+    var SIDEBAR_RESIZE_MAX_RATIO = 0.42;
+    var SIDEBAR_RESIZE_MIN_PX = 240;
+    var SIDEBAR_RESIZE_MAX_PX = 680;
+    var SIDEBAR_RESIZE_STEP_PX = 20;
 
     // Returns escapeHtml from utils/format.js for XSS-safe rendering; falls back to an inline implementation
     function resolveEscapeHtml() {
@@ -15139,6 +16131,16 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
         eventRoot = null;
         eventActions = {};
         exportRunning = false;
+
+        if (typeof disposeSidebarResizeBindings === "function") {
+            try {
+                disposeSidebarResizeBindings();
+            } catch (_error) {
+                // ignore cleanup errors from detached nodes
+            }
+        }
+        disposeSidebarResizeBindings = null;
+        sidebarResizeRoot = null;
 
         if (typeof clearSidebarTreeBindings === "function") {
             clearSidebarTreeBindings();
@@ -15347,20 +16349,19 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
     `;
     }
 
-    function renderMissingFilePanel(exampleUrl) {
-        var esc = resolveEscapeHtml();
-        var example = exampleUrl || "?file=<url-encoded-object-key>";
+    var MISSING_FILE_VIEWER_MESSAGE = "Select the h5 file to open viewer.";
+
+    function renderMissingFilePanel(_exampleUrl) {
         return `
       <div class="panel-state">
-        <div class="state-title">Missing <code>file</code> query parameter</div>
-        <div class="state-text">Open viewer using <code>${esc(example)}</code>.</div>
+        <div class="state-text">${MISSING_FILE_VIEWER_MESSAGE}</div>
       </div>
     `;
     }
 
     function resolveTreeStatus(state, missingFile) {
         if (missingFile) {
-            return { tone: "info", message: "Provide file query parameter to load tree." };
+            return { tone: "info", message: "" };
         }
         if (!state.selectedFile) {
             return { tone: "info", message: "No active file selected." };
@@ -15385,7 +16386,7 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
         if (missingFile) {
             return {
                 tone: "info",
-                message: "Viewer is blocked until a file key is provided.",
+                message: "",
             };
         }
 
@@ -15403,7 +16404,7 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
         if (missingFile) {
             return {
                 tone: "info",
-                message: "Metadata loading is disabled until file is provided.",
+                message: "",
             };
         }
 
@@ -15420,16 +16421,13 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
     function resolveGlobalStatus(state, missingFile) {
         if (missingFile) {
             return {
-                tone: "error",
-                message: "Viewer is blocked until ?file= is provided.",
+                tone: "info",
+                message: "",
             };
         }
 
         if (state.error) {
             return { tone: "error", message: String(state.error) };
-        }
-        if (state.refreshing) {
-            return { tone: "info", message: "Refreshing files..." };
         }
 
         return { tone: "info", message: "" };
@@ -15627,6 +16625,293 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
         return document.getElementById("viewer-app") || root || document.documentElement;
     }
 
+    function getSidebarResizeElements(root) {
+        var rootDoc = root && root.ownerDocument ? root.ownerDocument : document;
+        return {
+            app: rootDoc.getElementById("viewer-app"),
+            sidebar: rootDoc.getElementById("viewer-sidebar"),
+            handle: rootDoc.getElementById("viewer-sidebar-resizer"),
+        };
+    }
+
+    function isSidebarResizeDesktopViewport() {
+        return typeof window !== "undefined" && window.innerWidth > 1024;
+    }
+
+    function getSidebarResizeBounds(viewportWidth) {
+        var safeViewport = Math.max(1, Math.round(Number(viewportWidth) || 0));
+        var minWidth = Math.max(SIDEBAR_RESIZE_MIN_PX, Math.round(safeViewport * SIDEBAR_RESIZE_MIN_RATIO));
+        var maxWidth = Math.max(
+            minWidth,
+            Math.min(SIDEBAR_RESIZE_MAX_PX, Math.round(safeViewport * SIDEBAR_RESIZE_MAX_RATIO))
+        );
+        return {
+            min: minWidth,
+            max: maxWidth,
+        };
+    }
+
+    function clampSidebarWidth(width, viewportWidth) {
+        var bounds = getSidebarResizeBounds(viewportWidth);
+        var safeWidth = Math.round(Number(width) || bounds.min);
+        return Math.max(bounds.min, Math.min(bounds.max, safeWidth));
+    }
+
+    function getCurrentSidebarWidth(root) {
+        var elements = getSidebarResizeElements(root);
+        return elements.sidebar ? Math.round(elements.sidebar.getBoundingClientRect().width || 0) : 0;
+    }
+
+    function readStoredSidebarWidth() {
+        try {
+            var raw = window.localStorage.getItem(SIDEBAR_RESIZE_STORAGE_KEY);
+            var parsed = Number(raw);
+            return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+        } catch (_error) {
+            return null;
+        }
+    }
+
+    function persistSidebarWidth(width) {
+        try {
+            window.localStorage.setItem(SIDEBAR_RESIZE_STORAGE_KEY, String(Math.round(width)));
+        } catch (_error) {
+            // ignore storage failures
+        }
+    }
+
+    function clearStoredSidebarWidth() {
+        try {
+            window.localStorage.removeItem(SIDEBAR_RESIZE_STORAGE_KEY);
+        } catch (_error) {
+            // ignore storage failures
+        }
+    }
+
+    function setSidebarWidth(root, width, options) {
+        var settings = options && typeof options === "object" ? options : {};
+        var elements = getSidebarResizeElements(root);
+        if (!elements.app) {
+            return null;
+        }
+        var viewportWidth =
+            elements.app.clientWidth ||
+            (typeof window !== "undefined" ? window.innerWidth : 0) ||
+            SIDEBAR_RESIZE_MIN_PX;
+        var nextWidth = clampSidebarWidth(width, viewportWidth);
+        elements.app.style.setProperty("--sidebar-width", nextWidth + "px");
+        if (settings.persist === true) {
+            persistSidebarWidth(nextWidth);
+        }
+        return nextWidth;
+    }
+
+    function resetSidebarWidth(root) {
+        var elements = getSidebarResizeElements(root);
+        if (!elements.app) {
+            return;
+        }
+        elements.app.style.removeProperty("--sidebar-width");
+        clearStoredSidebarWidth();
+    }
+
+    function syncSidebarResizeHandle(root) {
+        var elements = getSidebarResizeElements(root);
+        var app = elements.app;
+        var handle = elements.handle;
+        if (!app || !handle) {
+            return;
+        }
+        var resizeEnabled = isSidebarResizeDesktopViewport() && !app.classList.contains("sidebar-collapsed");
+        var viewportWidth =
+            app.clientWidth ||
+            (typeof window !== "undefined" ? window.innerWidth : 0) ||
+            SIDEBAR_RESIZE_MIN_PX;
+        var bounds = getSidebarResizeBounds(viewportWidth);
+        var width = clampSidebarWidth(getCurrentSidebarWidth(root), viewportWidth);
+        handle.classList.toggle("is-disabled", !resizeEnabled);
+        handle.setAttribute("aria-hidden", resizeEnabled ? "false" : "true");
+        handle.setAttribute("aria-valuemin", String(bounds.min));
+        handle.setAttribute("aria-valuemax", String(bounds.max));
+        handle.setAttribute("aria-valuenow", String(width));
+        handle.setAttribute("aria-valuetext", width + " pixels");
+        handle.tabIndex = resizeEnabled ? 0 : -1;
+    }
+
+    function bindSidebarResizeHandle(root) {
+        if (!root) {
+            return;
+        }
+
+        if (sidebarResizeRoot === root && typeof disposeSidebarResizeBindings === "function") {
+            syncSidebarResizeHandle(root);
+            return;
+        }
+
+        if (typeof disposeSidebarResizeBindings === "function") {
+            disposeSidebarResizeBindings();
+        }
+
+        sidebarResizeRoot = root;
+        var elements = getSidebarResizeElements(root);
+        var app = elements.app;
+        var handle = elements.handle;
+        if (!app || !handle) {
+            disposeSidebarResizeBindings = null;
+            return;
+        }
+
+        var activePointerId = null;
+        var dragStartX = 0;
+        var dragStartWidth = 0;
+        var storedWidth = readStoredSidebarWidth();
+        if (storedWidth !== null) {
+            setSidebarWidth(root, storedWidth, { persist: false });
+        }
+        syncSidebarResizeHandle(root);
+
+        function stopResize(persistWidth) {
+            if (activePointerId !== null && handle.hasPointerCapture && handle.hasPointerCapture(activePointerId)) {
+                try {
+                    handle.releasePointerCapture(activePointerId);
+                } catch (_error) {
+                    // ignore pointer release failures
+                }
+            }
+            if (persistWidth === true) {
+                persistSidebarWidth(getCurrentSidebarWidth(root));
+            }
+            activePointerId = null;
+            app.classList.remove("is-sidebar-resizing");
+            if (document.body) {
+                document.body.classList.remove("sidebar-resizing");
+            }
+            handle.classList.remove("is-active");
+            syncSidebarResizeHandle(root);
+        }
+
+        function onPointerMove(event) {
+            if (activePointerId === null || event.pointerId !== activePointerId) {
+                return;
+            }
+            event.preventDefault();
+            var deltaX = event.clientX - dragStartX;
+            setSidebarWidth(root, dragStartWidth + deltaX, { persist: false });
+            syncSidebarResizeHandle(root);
+        }
+
+        function onPointerUp(event) {
+            if (activePointerId === null || event.pointerId !== activePointerId) {
+                return;
+            }
+            event.preventDefault();
+            stopResize(true);
+        }
+
+        function onPointerCancel(event) {
+            if (activePointerId === null || event.pointerId !== activePointerId) {
+                return;
+            }
+            stopResize(false);
+        }
+
+        function onPointerDown(event) {
+            if (!isSidebarResizeDesktopViewport() || app.classList.contains("sidebar-collapsed")) {
+                return;
+            }
+            if (event.button !== 0) {
+                return;
+            }
+            event.preventDefault();
+            event.stopPropagation();
+            activePointerId = event.pointerId;
+            dragStartX = event.clientX;
+            dragStartWidth = getCurrentSidebarWidth(root);
+            app.classList.add("is-sidebar-resizing");
+            if (document.body) {
+                document.body.classList.add("sidebar-resizing");
+            }
+            handle.classList.add("is-active");
+            if (handle.setPointerCapture) {
+                try {
+                    handle.setPointerCapture(event.pointerId);
+                } catch (_error) {
+                    // ignore pointer capture failures
+                }
+            }
+        }
+
+        function onKeyDown(event) {
+            if (!isSidebarResizeDesktopViewport() || app.classList.contains("sidebar-collapsed")) {
+                return;
+            }
+            var viewportWidth =
+                app.clientWidth ||
+                (typeof window !== "undefined" ? window.innerWidth : 0) ||
+                SIDEBAR_RESIZE_MIN_PX;
+            var bounds = getSidebarResizeBounds(viewportWidth);
+            var currentWidth = getCurrentSidebarWidth(root);
+            if (event.key === "ArrowLeft") {
+                event.preventDefault();
+                setSidebarWidth(root, currentWidth - SIDEBAR_RESIZE_STEP_PX, { persist: true });
+                syncSidebarResizeHandle(root);
+                return;
+            }
+            if (event.key === "ArrowRight") {
+                event.preventDefault();
+                setSidebarWidth(root, currentWidth + SIDEBAR_RESIZE_STEP_PX, { persist: true });
+                syncSidebarResizeHandle(root);
+                return;
+            }
+            if (event.key === "Home") {
+                event.preventDefault();
+                setSidebarWidth(root, bounds.min, { persist: true });
+                syncSidebarResizeHandle(root);
+                return;
+            }
+            if (event.key === "End") {
+                event.preventDefault();
+                setSidebarWidth(root, bounds.max, { persist: true });
+                syncSidebarResizeHandle(root);
+            }
+        }
+
+        function onDoubleClick(event) {
+            if (!isSidebarResizeDesktopViewport() || app.classList.contains("sidebar-collapsed")) {
+                return;
+            }
+            event.preventDefault();
+            resetSidebarWidth(root);
+            syncSidebarResizeHandle(root);
+        }
+
+        function onWindowResize() {
+            if (app.style.getPropertyValue("--sidebar-width")) {
+                setSidebarWidth(root, getCurrentSidebarWidth(root), { persist: false });
+            }
+            syncSidebarResizeHandle(root);
+        }
+
+        handle.addEventListener("pointerdown", onPointerDown);
+        handle.addEventListener("keydown", onKeyDown);
+        handle.addEventListener("dblclick", onDoubleClick);
+        window.addEventListener("pointermove", onPointerMove);
+        window.addEventListener("pointerup", onPointerUp);
+        window.addEventListener("pointercancel", onPointerCancel);
+        window.addEventListener("resize", onWindowResize);
+
+        disposeSidebarResizeBindings = function disposeSidebarResizeBindingsImpl() {
+            stopResize(false);
+            handle.removeEventListener("pointerdown", onPointerDown);
+            handle.removeEventListener("keydown", onKeyDown);
+            handle.removeEventListener("dblclick", onDoubleClick);
+            window.removeEventListener("pointermove", onPointerMove);
+            window.removeEventListener("pointerup", onPointerUp);
+            window.removeEventListener("pointercancel", onPointerCancel);
+            window.removeEventListener("resize", onWindowResize);
+        };
+    }
+
     function updateFullscreenButton(root) {
         var btn = root.querySelector("#viewer-fullscreen-btn");
         if (!btn) {
@@ -15723,7 +17008,9 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
 
                 var backButton = target.closest("#viewer-back-btn");
                 if (backButton && safeRoot.contains(backButton)) {
-                    window.location.assign("https://hdf-viewer.vercel.app");
+                    if (typeof eventActions.goHome === "function") {
+                        eventActions.goHome();
+                    }
                     return;
                 }
 
@@ -15853,6 +17140,8 @@ window.__CONFIG__.API_BASE_URL = window.__CONFIG__.API_BASE_URL || "https://hdf-
 
         refreshExportButtonState(safeRoot);
         updateFullscreenButton(safeRoot);
+        bindSidebarResizeHandle(safeRoot);
+        syncSidebarResizeHandle(safeRoot);
 
         if (typeof bindSidebarTreeEvents === "function") {
             bindSidebarTreeEvents(safeRoot, eventActions);
